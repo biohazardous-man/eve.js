@@ -397,7 +397,13 @@ function marshalDecode(buffer) {
     buffer = Buffer.from(buffer, "hex");
   }
 
-  const state = { buf: buffer, pos: 0, storedObjects: [] };
+  const state = {
+    buf: buffer,
+    pos: 0,
+    storedObjects: [],
+    saveIndicesPos: null,
+    saveIndicesEnd: null,
+  };
 
   // Read and verify header
   const header = readUInt8(state);
@@ -412,8 +418,15 @@ function marshalDecode(buffer) {
 
   // Initialize stored objects array
   if (saveCount > 0) {
+    const saveIndicesBytes = saveCount * 4;
+    if (buffer.length - state.pos < saveIndicesBytes) {
+      throw new Error(
+        `Invalid marshal save table: need ${saveIndicesBytes} bytes, have ${buffer.length - state.pos}`,
+      );
+    }
     state.storedObjects = new Array(saveCount).fill(null);
-    state.saveIndex = 0;
+    state.saveIndicesPos = buffer.length - saveIndicesBytes;
+    state.saveIndicesEnd = buffer.length;
   }
 
   return decodeValue(state);
@@ -481,6 +494,39 @@ function readBytes(state, len) {
   return slice;
 }
 
+function readSaveIndex(state) {
+  if (state.saveIndicesPos === null || state.saveIndicesEnd === null) {
+    throw new Error("No marshal save index table available");
+  }
+  if (state.saveIndicesPos + 4 > state.saveIndicesEnd) {
+    throw new Error("Marshal save index table exhausted");
+  }
+
+  const index = state.buf.readUInt32LE(state.saveIndicesPos);
+  state.saveIndicesPos += 4;
+  return index;
+}
+
+function cloneDecodedValue(value) {
+  if (Buffer.isBuffer(value)) {
+    return Buffer.from(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => cloneDecodedValue(entry));
+  }
+
+  if (value && typeof value === "object") {
+    const cloned = {};
+    for (const [key, entryValue] of Object.entries(value)) {
+      cloned[key] = cloneDecodedValue(entryValue);
+    }
+    return cloned;
+  }
+
+  return value;
+}
+
 function readSizeEx(state) {
   const first = readUInt8(state);
   if (first === 0xff) {
@@ -498,6 +544,7 @@ function decodeValue(state) {
   const flagSave = (rawOp & SAVE_MASK) !== 0;
   const flagUnknown = (rawOp & UNKNOWN_MASK) !== 0;
   const op = rawOp & OPCODE_MASK;
+  const storageIndex = flagSave ? readSaveIndex(state) : 0;
 
   let result;
 
@@ -763,11 +810,7 @@ function decodeValue(state) {
         index > 0 &&
         index <= state.storedObjects.length
       ) {
-        result = state.storedObjects[index - 1];
-        // Deep clone to avoid mutations
-        if (result && typeof result === "object") {
-          result = JSON.parse(JSON.stringify(result));
-        }
+        result = cloneDecodedValue(state.storedObjects[index - 1]);
       } else {
         result = null;
       }
@@ -796,7 +839,9 @@ function decodeValue(state) {
 
   // Store object if flagSave is set
   if (flagSave && state.storedObjects) {
-    state.storedObjects.push(result);
+    if (storageIndex > 0 && storageIndex <= state.storedObjects.length) {
+      state.storedObjects[storageIndex - 1] = result;
+    }
   }
 
   return result;

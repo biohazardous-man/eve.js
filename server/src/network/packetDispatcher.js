@@ -7,9 +7,13 @@
  */
 
 const path = require("path");
+const fs = require("fs");
 const log = require(path.join(__dirname, "../utils/logger"));
 const { MACHONETMSG_TYPE, getTypeName } = require(
   path.join(__dirname, "../common/packetTypes"),
+);
+const { isMachoWrappedException } = require(
+  path.join(__dirname, "../common/machoErrors"),
 );
 const { decodePacket, decodeCallRequest, encodePacketTuple } = require(
   path.join(__dirname, "../common/pyPacket"),
@@ -18,6 +22,56 @@ const { encodeAddress } = require(
   path.join(__dirname, "../common/machoAddress"),
 );
 const config = require(path.join(__dirname, "../config"));
+const slashDebugPath = path.join(__dirname, "../../logs/slash-debug.log");
+
+function appendSlashDebug(entry) {
+  try {
+    fs.mkdirSync(path.dirname(slashDebugPath), { recursive: true });
+    fs.appendFileSync(
+      slashDebugPath,
+      `[${new Date().toISOString()}] ${entry}\n`,
+      "utf8",
+    );
+  } catch (error) {
+    log.warn(`[PacketDispatcher] Failed to write slash debug log: ${error.message}`);
+  }
+}
+
+function summarizeValue(value, depth = 0) {
+  if (depth > 4) {
+    return "<max-depth>";
+  }
+
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+
+  if (Buffer.isBuffer(value)) {
+    return `<Buffer:${value.toString("utf8")}>`;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => summarizeValue(item, depth + 1));
+  }
+
+  if (typeof value === "object") {
+    const summary = {};
+    for (const [key, entryValue] of Object.entries(value)) {
+      summary[key] = summarizeValue(entryValue, depth + 1);
+    }
+    return summary;
+  }
+
+  return String(value);
+}
 
 class PacketDispatcher {
   constructor(serviceManager) {
@@ -91,6 +145,11 @@ class PacketDispatcher {
     log.debug(
       `[CallReq] ${serviceName || "?"}::${call.method}() callID=${callID}`,
     );
+    if (serviceName === "slash") {
+      appendSlashDebug(
+        `CallReq method=${call.method} callID=${callID} args=${JSON.stringify(summarizeValue(call.args))} kwargs=${JSON.stringify(summarizeValue(call.kwargs))} raw=${JSON.stringify(summarizeValue(call.raw))}`,
+      );
+    }
 
     if (this.serviceManager && serviceName) {
       const service = this.serviceManager.lookup(serviceName);
@@ -118,7 +177,11 @@ class PacketDispatcher {
           log.err(
             `[CallReq] Error in ${serviceName}::${call.method}: ${err.message}`,
           );
-          this._sendCallResponse(pkt, null, session);
+          if (isMachoWrappedException(err)) {
+            this._sendErrorResponse(pkt, err.machoErrorResponse, session);
+          } else {
+            this._sendCallResponse(pkt, null, session);
+          }
           return true;
         }
       } else {
@@ -283,6 +346,47 @@ class PacketDispatcher {
     log.debug(
       `[CallRsp] Sending response for callID=${callID} payload=${JSON.stringify(responseObj, (k, v) => (typeof v === "bigint" ? v.toString() : v))}`,
     );
+    session.sendPacket(responseObj);
+  }
+
+  _sendErrorResponse(pkt, machoError, session) {
+    if (!session || !session.sendPacket) return;
+
+    const callID = pkt.source.callID || pkt.dest.callID || 0;
+    const responseTuple = [
+      MACHONETMSG_TYPE.ERRORRESPONSE,
+      encodeAddress(pkt.dest),
+      encodeAddress({
+        ...pkt.source,
+        callID,
+        service: null,
+      }),
+      session.userid || pkt.userID || null,
+      [
+        MACHONETMSG_TYPE.CALL_REQ,
+        machoError && machoError.errorCode !== undefined
+          ? machoError.errorCode
+          : 2,
+        [{ type: "substream", value: machoError ? machoError.payload : null }],
+      ],
+      { type: "dict", entries: [] },
+      pkt.oob || null,
+      pkt.bssid || null,
+      pkt.spanid || null,
+      pkt.extra9 || null,
+      pkt.extra10 || null,
+      pkt.extra11 || null,
+      pkt.extra12 || null,
+      pkt.extra13 || null,
+    ];
+
+    const responseObj = {
+      type: "object",
+      name: "carbon.common.script.net.machoNetPacket.ErrorResponse",
+      args: responseTuple,
+    };
+
+    log.debug(`[ErrorRsp] Sending wrapped exception for callID=${callID}`);
     session.sendPacket(responseObj);
   }
   /**

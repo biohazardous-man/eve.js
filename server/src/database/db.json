@@ -4,14 +4,14 @@
       "password": "auto",
       "hash": "e62bd2570e99a1dc63ecab114926b07f9e0a8573",
       "id": 1,
-      "role": "6917529029788565504",
+      "role": "6935543428298309632",
       "banned": false
     },
     "test1029": {
       "password": "auto",
       "hash": "768dd205820c660f18151665be6806b7344f6d11",
       "id": 2,
-      "role": "6917529029788565504",
+      "role": "6935543428298309632",
       "banned": false
     }
   },
@@ -43,8 +43,8 @@
       "aurBalance": 0,
       "balanceChange": 0,
       "skillPoints": 50000,
-      "shipTypeID": 606,
-      "shipName": "Velator",
+      "shipTypeID": 23917,
+      "shipName": "Wyvern",
       "bounty": 0,
       "skillQueueEndTime": 0,
       "daysLeft": 365,
@@ -55,7 +55,7 @@
       "unreadMailCount": 0,
       "upcomingEventCount": 0,
       "unprocessedNotifications": 0,
-      "shipID": 140000101,
+      "shipID": 140000114,
       "shortName": "none",
       "allianceMemberStartDate": 0,
       "skillTypeID": null,

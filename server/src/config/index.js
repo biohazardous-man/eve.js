@@ -1,26 +1,32 @@
 /**
  * EVE.js Server Configuration
  *
- * Version constants must match the client you're connecting with.
- * These values are from the Crucible v1.6.5 build 360229 client
- * (sourced from EVEVersion.h in evemu_Crucible-master).
+ * Default values live here. Optional local overrides can be supplied in
+ * evejs.config.local.json at the repository root, or with EVEJS_* env vars.
  */
 
-let _nextBoundId = 1;
+const fs = require("fs");
+const path = require("path");
 
-module.exports = {
-  // dev mode does the followng
+let nextBoundId = 1;
+
+const rootDir = path.resolve(__dirname, "../../..");
+const localConfigPath = path.join(rootDir, "evejs.config.local.json");
+const sharedConfigPath = path.join(rootDir, "evejs.config.json");
+
+const defaults = {
+  // dev mode does the following
   //  - auto creates users when they log in (and user is not in database)
   //  - authenticates you even when password is incorrect
-  devMode: false,
+  devMode: true,
 
-  // YOUR client directory
-  clientPath: "C:\\Users\\yumyy\\Documents\\EVE\\_GAME\\localhost",
+  // the launcher writes the detected client path here
+  clientPath: "",
   autoLaunch: true,
 
   // client version info
   clientVersion: 23.02,
-  clientBuild: 3145366,
+  clientBuild: 3223220,
   eveBirthday: 170472,
   machoVersion: 496,
   projectCodename: "crucible",
@@ -40,19 +46,87 @@ module.exports = {
 
   // image server
   // imageServerPort: 26001,
-  imageServerUrl: `http://127.0.0.1:26001/`,
+  imageServerUrl: "http://127.0.0.1:26001/",
 
-  // where microservices (such as skill plan, faction warefare..) will be sent instead of official CCP servers.
-  microservicesRedirectUrl: `http://localhost:26002/`,
+  // where microservices will be sent instead of official CCP servers.
+  microservicesRedirectUrl: "http://localhost:26002/",
 
   // chat server
   xmppServerPort: 5222,
 
   // proxy node ID: evemu uses 0xFFAA
   proxyNodeId: 0xffaa,
-
-  // shared bound object ID counter - prevents OID collisions across services
-  getNextBoundId() {
-    return _nextBoundId++;
-  },
 };
+
+function readJsonConfig(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    throw new Error(`Invalid JSON in ${filePath}: ${error.message}`);
+  }
+}
+
+function parseBoolean(value) {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  return undefined;
+}
+
+function parseNumber(value) {
+  if (typeof value !== "string" || value.trim() === "") {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function withDefinedEntries(values) {
+  return Object.fromEntries(
+    Object.entries(values).filter(([, value]) => value !== undefined),
+  );
+}
+
+const fileConfig = {
+  ...readJsonConfig(sharedConfigPath),
+  ...readJsonConfig(localConfigPath),
+};
+
+const envConfig = withDefinedEntries({
+  devMode: parseBoolean(process.env.EVEJS_DEV_MODE),
+  clientPath: process.env.EVEJS_CLIENT_PATH || undefined,
+  autoLaunch: parseBoolean(process.env.EVEJS_AUTO_LAUNCH),
+  logLevel: parseNumber(process.env.EVEJS_LOG_LEVEL),
+  serverPort: parseNumber(process.env.EVEJS_SERVER_PORT),
+  imageServerUrl: process.env.EVEJS_IMAGE_SERVER_URL || undefined,
+  microservicesRedirectUrl:
+    process.env.EVEJS_MICROSERVICES_REDIRECT_URL || undefined,
+  xmppServerPort: parseNumber(process.env.EVEJS_XMPP_SERVER_PORT),
+  proxyNodeId: parseNumber(process.env.EVEJS_PROXY_NODE_ID),
+});
+
+const config = {
+  ...defaults,
+  ...fileConfig,
+  ...envConfig,
+};
+
+config.getNextBoundId = function getNextBoundId() {
+  return nextBoundId++;
+};
+
+module.exports = config;

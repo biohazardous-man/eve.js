@@ -7,6 +7,10 @@
 const path = require("path");
 const BaseService = require(path.join(__dirname, "../baseService"));
 const log = require(path.join(__dirname, "../../utils/logger"));
+const { resolveShipByTypeID } = require(path.join(
+  __dirname,
+  "../chat/shipTypeRegistry",
+));
 
 class DogmaService extends BaseService {
   constructor() {
@@ -18,13 +22,28 @@ class DogmaService extends BaseService {
   }
 
   _getShipID(session) {
-    return (session && (session.shipID || session.shipid)) || 140000101;
+    return (
+      session &&
+      (session.activeShipID || session.shipID || session.shipid)
+    ) || 140000101;
   }
 
   _getShipTypeID(session) {
     return session && Number.isInteger(session.shipTypeID) && session.shipTypeID > 0
       ? session.shipTypeID
       : 606;
+  }
+
+  _getShipMetadata(session) {
+    const shipTypeID = this._getShipTypeID(session);
+    return (
+      resolveShipByTypeID(shipTypeID) || {
+        typeID: shipTypeID,
+        name: (session && session.shipName) || "Ship",
+        groupID: 25,
+        categoryID: 6,
+      }
+    );
   }
 
   _getLocationID(session) {
@@ -141,7 +160,7 @@ class DogmaService extends BaseService {
 
     const charID = this._getCharID(session);
     const shipID = this._getShipID(session);
-    const shipTypeID = this._getShipTypeID(session);
+    const shipMetadata = this._getShipMetadata(session);
     const ownerID = charID;
     const locationID = this._getLocationID(session);
 
@@ -158,12 +177,12 @@ class DogmaService extends BaseService {
 
     const shipInfoEntry = this._buildCommonGetInfoEntry({
       itemID: shipID,
-      typeID: shipTypeID,
+      typeID: shipMetadata.typeID,
       ownerID,
       locationID,
       flagID: 4,
-      groupID: 25,
-      categoryID: 6,
+      groupID: shipMetadata.groupID,
+      categoryID: shipMetadata.categoryID,
       description: "ship",
     });
 
@@ -211,18 +230,18 @@ class DogmaService extends BaseService {
   Handle_ShipGetInfo(args, session) {
     log.debug("[DogmaIM] ShipGetInfo");
     const shipID = this._getShipID(session);
-    const shipTypeID = this._getShipTypeID(session);
+    const shipMetadata = this._getShipMetadata(session);
     const ownerID = this._getCharID(session);
     const locationID = this._getLocationID(session);
 
     const entry = this._buildCommonGetInfoEntry({
       itemID: shipID,
-      typeID: shipTypeID,
+      typeID: shipMetadata.typeID,
       ownerID,
       locationID,
       flagID: 4,
-      groupID: 25,
-      categoryID: 6,
+      groupID: shipMetadata.groupID,
+      categoryID: shipMetadata.categoryID,
       description: "ship",
     });
 
@@ -257,15 +276,16 @@ class DogmaService extends BaseService {
     const itemID = isShip ? shipID : Number.parseInt(String(requestedItemID), 10) || shipID;
     const ownerID = this._getCharID(session);
     const locationID = this._getLocationID(session);
+    const shipMetadata = this._getShipMetadata(session);
 
     return this._buildCommonGetInfoEntry({
       itemID,
-      typeID: this._getShipTypeID(session),
+      typeID: shipMetadata.typeID,
       ownerID,
       locationID,
       flagID: isShip ? 4 : 0,
-      groupID: isShip ? 25 : 1,
-      categoryID: isShip ? 6 : 3,
+      groupID: isShip ? shipMetadata.groupID : 1,
+      categoryID: isShip ? shipMetadata.categoryID : 3,
       description: "item",
     });
   }

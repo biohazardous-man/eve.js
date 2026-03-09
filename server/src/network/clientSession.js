@@ -38,6 +38,7 @@ class ClientSession {
     // Character data (set after character selection)
     this.characterID = 0;
     this.characterName = "";
+    this.characterTypeID = 1373;
     this.corporationID = 0;
     this.allianceID = 0;
     this.stationID = 0;
@@ -45,6 +46,7 @@ class ClientSession {
     this.constellationID = 0;
     this.regionID = 0;
     this.shipID = 0;
+    this.shipName = "";
     this.hqID = 0;
     this.baseID = 0;
     this.warFactionID = 0;
