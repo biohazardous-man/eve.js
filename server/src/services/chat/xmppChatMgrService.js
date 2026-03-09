@@ -1,5 +1,13 @@
 const BaseService = require("../baseService");
 const log = require("../../utils/logger");
+const { getLocalChannelForSession } = require("./chatHub");
+
+function getCorpChannelName(session) {
+  const corpId = Number(
+    (session && (session.corporationID || session.corpid)) || 1000044,
+  );
+  return `corp_${corpId}`;
+}
 
 class XmppChatMgrService extends BaseService {
   constructor() {
@@ -14,6 +22,15 @@ class XmppChatMgrService extends BaseService {
   Handle_GetDeprecatedPrefsFallback(args, session) {
     log.debug("[XmppChatMgr] GetDeprecatedPrefsFallback called");
     return "localhost";
+  }
+
+  Handle_ResyncSystemChannelAccess(args, session) {
+    const channel = getLocalChannelForSession(session);
+    const channels = [channel.comparisonKey, getCorpChannelName(session)];
+    log.debug(
+      `[XmppChatMgr] ResyncSystemChannelAccess -> ${JSON.stringify(channels)}`,
+    );
+    return channels;
   }
 }
 

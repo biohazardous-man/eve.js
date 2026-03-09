@@ -32,19 +32,22 @@ this solves the issue where the client says ... has no attribute 'Index'
 ###     TO-DO LIST      ###
 ###########################
 
+- !! tidy up newly added files (new config, chat service)
 - make all files dependant of eachother AND database.. stop returning static data, and return valid data based on character state
 - implement linux support (e.g. give the user an option to auto launch the client)
 - sort the service files and place them in the correct folders
 - skill plan server (https)
 - factionwf server (https)
-- make chat server
 - (50% done) (image server works, paperdolls not) set up image server + make paperdolls work
+- bountyProxy::GetMyKillRights() implement
 
 ###########################
 ###   BIG TO-DO LIST    ###
 ###########################
 
 - add multi-user support
+  - i can connect multiple clients, but only one shows up in the guests list in jita. its because im only returning one character in stationsvc
+  - i will need to check db every time someone logs on to see how many users are online, then broadcast update to all players with updated list
 
 ###########################
 ###   WHERE I LEFT OFF  ###
@@ -58,3 +61,5 @@ the database is probly not updating the new character with items, until after th
 ###########################
 - removed files that were not necessary
 - implemented new database controller
+- chat server!
+  - with / cmd support

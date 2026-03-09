@@ -72,6 +72,7 @@ class MachoNetService extends BaseService {
         ["jumpCloneSvc", null],
         ["LPSvc", "station"],
         ["market", "solarsystem"],
+        ["slash", null],
         ["subscriptionMgr", null],
         ["loginCampaignManager", null],
         ["seasonalLoginCampaignManager", null],

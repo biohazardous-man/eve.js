@@ -1,6 +1,6 @@
 /**
  * HANDSHAKE CONTROLLER
- * (made with AI, revised by Icey)
+ * (made with AI, revised by Icey and John)
  * 
  * only supports PLACEBO packets
  *
@@ -18,7 +18,6 @@
  */
 
 const path = require("path");
-const fs = require("fs");
 const crypto = require("crypto");
 const log = require(path.join(__dirname, "../../utils/logger"));
 const config = require(path.join(__dirname, "../../config"));
@@ -41,6 +40,7 @@ const MARSHALED_NONE = Buffer.from([
   0x74, 0x04, 0x00, 0x00, 0x00, 0x4e, 0x6f, 0x6e, 0x65,
 ]);
 
+const DEV_ACCOUNT_ROLE = "6935543428298309632";
 // ---- handshake states
 const State = {
   SEND_VERSION: "SEND_VERSION",
@@ -437,7 +437,7 @@ class EVEHandshake {
         accounts[userName] = {
           passwordhash: passwordHash,
           id: Object.keys(accounts).length + 1,
-          role: "6917529029788565504", // TODO: change to owner / dev role
+          role: DEV_ACCOUNT_ROLE,
           banned: false,
         };
       }

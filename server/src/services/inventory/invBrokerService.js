@@ -8,6 +8,10 @@
 const path = require("path");
 const BaseService = require(path.join(__dirname, "../baseService"));
 const log = require(path.join(__dirname, "../../utils/logger"));
+const { resolveShipByTypeID } = require(path.join(
+  __dirname,
+  "../chat/shipTypeRegistry",
+));
 
 class InvBrokerService extends BaseService {
   constructor() {
@@ -29,13 +33,28 @@ class InvBrokerService extends BaseService {
   }
 
   _getShipId(session) {
-    return (session && (session.shipID || session.shipid)) || 140000101;
+    return (
+      session &&
+      (session.activeShipID || session.shipID || session.shipid)
+    ) || 140000101;
   }
 
   _getShipTypeId(session) {
     const shipTypeID =
       session && Number.isInteger(session.shipTypeID) ? session.shipTypeID : null;
     return shipTypeID && shipTypeID > 0 ? shipTypeID : 606;
+  }
+
+  _getShipMetadata(session) {
+    const shipTypeID = this._getShipTypeId(session);
+    return (
+      resolveShipByTypeID(shipTypeID) || {
+        typeID: shipTypeID,
+        name: (session && session.shipName) || "Ship",
+        groupID: 25,
+        categoryID: 6,
+      }
+    );
   }
 
   _extractKwarg(kwargs, key) {
@@ -58,16 +77,17 @@ class InvBrokerService extends BaseService {
   }
 
   _buildInvRow(session, overrides = {}) {
+    const shipMetadata = this._getShipMetadata(session);
     const itemID = overrides.itemID ?? this._getShipId(session);
-    const typeID = overrides.typeID ?? this._getShipTypeId(session);
+    const typeID = overrides.typeID ?? shipMetadata.typeID;
     const ownerID = overrides.ownerID ?? this._getCharacterId(session);
     const locationID = overrides.locationID ?? this._getStationId(session);
     const flagID = overrides.flagID ?? 4; // station hangar
     const singleton = overrides.singleton ?? 1;
     const quantity = overrides.quantity ?? 1;
     const stacksize = overrides.stacksize ?? quantity;
-    const groupID = overrides.groupID ?? 25; // Frigate
-    const categoryID = overrides.categoryID ?? 6; // Ship
+    const groupID = overrides.groupID ?? shipMetadata.groupID;
+    const categoryID = overrides.categoryID ?? shipMetadata.categoryID;
     const customInfo = overrides.customInfo ?? "";
 
     // Keep DBRowDescriptor-compatible order first, then convenience attrs.
@@ -118,19 +138,20 @@ class InvBrokerService extends BaseService {
   _itemOverridesFromId(session, itemID) {
     const id = Number.isInteger(itemID) ? itemID : Number(itemID);
     const shipID = this._getShipId(session);
+    const shipMetadata = this._getShipMetadata(session);
     if (id === shipID) {
       return {};
     }
 
     return {
       itemID: Number.isInteger(id) ? id : shipID,
-      typeID: this._getShipTypeId(session),
+      typeID: shipMetadata.typeID,
       ownerID: this._getCharacterId(session),
       locationID: this._getStationId(session),
       flagID: 4,
       quantity: 1,
-      groupID: 25,
-      categoryID: 6,
+      groupID: shipMetadata.groupID,
+      categoryID: shipMetadata.categoryID,
       customInfo: "",
       singleton: 1,
       stacksize: 1,
@@ -222,6 +243,7 @@ class InvBrokerService extends BaseService {
 
   Handle_GetSelfInvItem(args, session) {
     log.debug("[InvBroker] GetSelfInvItem");
+    const shipMetadata = this._getShipMetadata(session);
 
     return {
       type: "object",
@@ -230,13 +252,13 @@ class InvBrokerService extends BaseService {
         type: "dict",
         entries: [
           ["itemID", this._getShipId(session)],
-          ["typeID", this._getShipTypeId(session)],
+          ["typeID", shipMetadata.typeID],
           ["ownerID", this._getCharacterId(session)],
           ["locationID", this._getStationId(session)],
           ["flagID", 4],
           ["quantity", 1],
-          ["groupID", 25],
-          ["categoryID", 6],
+          ["groupID", shipMetadata.groupID],
+          ["categoryID", shipMetadata.categoryID],
           ["customInfo", ""],
           ["singleton", 1],
           ["stacksize", 1],

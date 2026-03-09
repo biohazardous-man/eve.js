@@ -11,6 +11,11 @@ const EVEHandshake = require(path.join(__dirname, "./handshake"));
 const { marshalDecode } = require(path.join(__dirname, "./utils/marshal"));
 const ClientSession = require(path.join(__dirname, "../clientSession"));
 const PacketDispatcher = require(path.join(__dirname, "../packetDispatcher"));
+const sessionRegistry = require(path.join(
+  __dirname,
+  "../../services/chat/sessionRegistry",
+));
+const chatHub = require(path.join(__dirname, "../../services/chat/chatHub"));
 const { MACHONETMSG_TYPE } = require(
   path.join(__dirname, "../../common/packetTypes"),
 );
@@ -106,6 +111,7 @@ module.exports = function (serviceManager) {
                 logInfo(
                   `session created for ${clientSession.userName} (ID: ${clientSession.userid})`,
                 );
+                sessionRegistry.register(clientSession);
 
                 // Send SessionInitialStateNotification to unblock client
                 // The client waits for this before making further service calls
@@ -166,12 +172,20 @@ module.exports = function (serviceManager) {
       });
 
       socket.on("close", () => {
+        if (clientSession) {
+          chatHub.unregisterSession(clientSession);
+          sessionRegistry.unregister(clientSession);
+        }
         logInfo(
           `connection closed: ${socket.remoteAddress}:${socket.remotePort}`,
         );
       });
 
       socket.on("error", (err) => {
+        if (clientSession) {
+          chatHub.unregisterSession(clientSession);
+          sessionRegistry.unregister(clientSession);
+        }
         log.err(`[TCP] socket error: ${err.message}`);
       });
     })
