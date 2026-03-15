@@ -1,5 +1,8 @@
 # Welcome to eve.js!
 
+warping is finally functional, took almost a week and a lot of brain power + ai support
+it was not an easy task, but now that its done, i hope everyone who uses this repo can use and enjoy it :)
+
 > [!WARNING]
 > This repo is still early-stage. The current focus is getting practical client features working, not full retail parity.
 
