@@ -1,14 +1,142 @@
+// EvEJS server config example.
+// This file supports // comments.
+// Missing keys are re-added with defaults when the server loads the real config files.
 {
-  "autoLaunch": false,
-  "COMMAND_FEEDBACK_DELAY_MS": 0,
-  "serverPort": 26000,
-  "publicHost": "",
-  "microservicesBindHost": "0.0.0.0",
-  "hotReloadEnabled": true,
-  "reloadOnFileChange": true,
-  "hotReloadDebounceMs": 750,
-  "chatServerHost": "",
-  "clientPath": "",
+  // Enables local development shortcuts such as auto-creating accounts and skipping password validation.
+  // Valid values: true or false.
+  // Default: false.
+
   "devMode": true,
-  "logLevel": 2
+
+  // Boot version reported to the client during the login handshake.
+  // Valid values: number matching your client build, for example 23.02.
+  // Default: 23.02.
+
+  "clientVersion": 23.02,
+
+  // Client build number reported to the client during the login handshake.
+  // Valid values: integer build number matching your client.
+  // Default: 3145366.
+
+  "clientBuild": 3145366,
+
+  // Birthday value used by the handshake version checks.
+  // Valid values: integer matching your client build.
+  // Default: 170472.
+
+  "eveBirthday": 170472,
+
+  // MachoNet protocol version reported during session bootstrap.
+  // Valid values: integer matching your client build.
+  // Default: 496.
+
+  "machoVersion": 496,
+
+  // Project codename reported to the client during startup.
+  // Valid values: string. For the current client keep this as "EvEJS".
+  // Default: "EvEJS".
+
+  "projectCodename": "EvEJS",
+
+  // Project region reported to the client during startup.
+  // Valid values: string. For the current client keep this as "ccp".
+  // Default: "ccp".
+
+  "projectRegion": "ccp",
+
+  // Full project version string reported to the client during startup.
+  // Valid values: string matching your client boot version, for example "V23.02@ccp".
+  // Default: "V23.02@ccp".
+
+  "projectVersion": "V23.02@ccp",
+
+  // Controls how much the server writes to the log output.
+  // Valid values: 0 = silent, 1 = normal server logging, 2 = verbose debug logging.
+  // Default: 1.
+
+  "logLevel": 1,
+
+  // TCP port used by the main game server listener.
+  // Valid values: available TCP port number.
+  // Default: 26000.
+
+  "serverPort": 26000,
+
+  // Base URL sent to the client for image and icon requests.
+  // Valid values: absolute URL string ending with a slash, for example "http://127.0.0.1:26001/".
+  // Default: "http://127.0.0.1:26001/".
+
+  "imageServerUrl": "http://127.0.0.1:26001/",
+
+  // Base URL used to redirect supported microservice calls away from CCP.
+  // Valid values: absolute URL string ending with a slash, for example "http://localhost:26002/".
+  // Default: "http://localhost:26002/".
+
+  "microservicesRedirectUrl": "http://localhost:26002/",
+
+  // TCP port used by the local XMPP chat stub server.
+  // Valid values: available TCP port number.
+  // Default: 5222.
+
+  "xmppServerPort": 5222,
+
+  // Enables the stubbed omega-license path for modern eve_public flows.
+  // Valid values: true or false.
+  // Default: true.
+
+  "omegaLicenseEnabled": true,
+
+  // How long GM and testing space debris persists before cleanup.
+  // Valid values: integer duration in milliseconds. 7200000 = 2 hours.
+  // Default: 7200000.
+
+  "spaceDebrisLifetimeMs": 7200000,
+
+  // Enables automatic CPU-based time dilation scaling.
+  // Valid values: true or false.
+  // Default: true.
+
+  "tidiAutoscaler": true,
+
+  // Controls which solar-system scenes are created during server startup.
+  // 1 = current lazy/default boot: only Jita and New Caldari are preloaded so the existing startup behavior stays the same.
+  // 2 = preload every high-security system by checking the solar-system security data for displayed security `0.5+` at startup, so newly added systems are picked up automatically.
+  // 3 = preload every solar system in New Eden at startup.
+  // Valid values: 1, 2, or 3. Any other value falls back to 1.
+  // Default: 1.
+
+  "NewEdenSystemLoading": 1,
+
+  // Turns on the startup rules we have written by hand in the local NPC data files.
+  // Plain-English meaning: if this is off, those custom NPC and CONCORD auto-spawns will not appear when a solar system scene is created.
+  // Valid values: true or false.
+  // Default: false.
+
+  "npcAuthoredStartupEnabled": false,
+
+  // Turns on generated default CONCORD gate coverage for high-security systems (`0.5+`).
+  // This is separate from npcAuthoredStartupEnabled, so generated default CONCORD can still appear even if authored startup is off.
+  // Valid values: true or false.
+  // Default: false.
+
+  "npcDefaultConcordStartupEnabled": false,
+
+  // When generated default CONCORD coverage is on, also place passive CONCORD patrol groups near stations in `1.0` and `0.9` systems.
+  // Think of these as visible station security screens, not the separate Crimewatch punishment fleet that warps in after a criminal act.
+  // Valid values: true or false.
+  // Default: true.
+
+  "npcDefaultConcordStationScreensEnabled": true,
+
+  // Enables automatic Crimewatch-driven CONCORD response to criminal actions in high-security space.
+  // Valid values: true or false.
+  // Default: true.
+
+  "crimewatchConcordResponseEnabled": true,
+
+  // Proxy node ID reported to the client and used when generating bound object IDs.
+  // Valid values: integer node ID. 65450 matches the traditional 0xFFAA value.
+  // Default: 65450.
+
+  "proxyNodeId": 65450
 }

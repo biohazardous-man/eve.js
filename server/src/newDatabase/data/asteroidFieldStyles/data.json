@@ -1,0 +1,237 @@
+{
+  "source": {
+    "provider": "Local asteroid field styles",
+    "generatedAt": "2026-03-19T00:00:00.000Z"
+  },
+  "count": 4,
+  "fieldStyles": [
+    {
+      "fieldStyleID": "empire_highsec_standard",
+      "name": "Empire High-Sec Standard Belt",
+      "securityMin": 0.45,
+      "securityMax": 1.1,
+      "asteroidCountMin": 16,
+      "asteroidCountMax": 24,
+      "clusterCountMin": 3,
+      "clusterCountMax": 4,
+      "fieldRadiusMinMeters": 26000,
+      "fieldRadiusMaxMeters": 34000,
+      "clusterRadiusMinMeters": 3500,
+      "clusterRadiusMaxMeters": 7000,
+      "verticalSpreadMinMeters": 2000,
+      "verticalSpreadMaxMeters": 5000,
+      "innerExclusionRadiusMeters": 2000,
+      "largeAsteroidCountMin": 0,
+      "largeAsteroidCountMax": 1,
+      "decorativeTypes": [
+        {
+          "typeID": 60559,
+          "weight": 4,
+          "radiusMinMeters": 900,
+          "radiusMaxMeters": 1800
+        },
+        {
+          "typeID": 60560,
+          "weight": 4,
+          "radiusMinMeters": 1000,
+          "radiusMaxMeters": 1900
+        },
+        {
+          "typeID": 60561,
+          "weight": 3,
+          "radiusMinMeters": 1100,
+          "radiusMaxMeters": 2100
+        },
+        {
+          "typeID": 60562,
+          "weight": 2,
+          "radiusMinMeters": 1200,
+          "radiusMaxMeters": 2200
+        }
+      ],
+      "largeTypes": [
+        {
+          "typeID": 90042,
+          "weight": 3
+        },
+        {
+          "typeID": 90445,
+          "weight": 2
+        }
+      ]
+    },
+    {
+      "fieldStyleID": "empire_lowsec_standard",
+      "name": "Empire Low-Sec Standard Belt",
+      "securityMin": 0.0,
+      "securityMax": 0.449999,
+      "asteroidCountMin": 20,
+      "asteroidCountMax": 30,
+      "clusterCountMin": 4,
+      "clusterCountMax": 5,
+      "fieldRadiusMinMeters": 30000,
+      "fieldRadiusMaxMeters": 38000,
+      "clusterRadiusMinMeters": 4500,
+      "clusterRadiusMaxMeters": 8500,
+      "verticalSpreadMinMeters": 2500,
+      "verticalSpreadMaxMeters": 6500,
+      "innerExclusionRadiusMeters": 2200,
+      "largeAsteroidCountMin": 1,
+      "largeAsteroidCountMax": 2,
+      "decorativeTypes": [
+        {
+          "typeID": 60559,
+          "weight": 3,
+          "radiusMinMeters": 1100,
+          "radiusMaxMeters": 2200
+        },
+        {
+          "typeID": 60560,
+          "weight": 4,
+          "radiusMinMeters": 1200,
+          "radiusMaxMeters": 2400
+        },
+        {
+          "typeID": 60561,
+          "weight": 4,
+          "radiusMinMeters": 1300,
+          "radiusMaxMeters": 2600
+        },
+        {
+          "typeID": 60562,
+          "weight": 3,
+          "radiusMinMeters": 1400,
+          "radiusMaxMeters": 2800
+        }
+      ],
+      "largeTypes": [
+        {
+          "typeID": 90042,
+          "weight": 2
+        },
+        {
+          "typeID": 90445,
+          "weight": 3
+        }
+      ]
+    },
+    {
+      "fieldStyleID": "nullsec_standard",
+      "name": "Null-Sec Standard Belt",
+      "securityMin": -1.0,
+      "securityMax": -0.000001,
+      "asteroidCountMin": 24,
+      "asteroidCountMax": 36,
+      "clusterCountMin": 5,
+      "clusterCountMax": 6,
+      "fieldRadiusMinMeters": 34000,
+      "fieldRadiusMaxMeters": 46000,
+      "clusterRadiusMinMeters": 5000,
+      "clusterRadiusMaxMeters": 10000,
+      "verticalSpreadMinMeters": 3000,
+      "verticalSpreadMaxMeters": 8000,
+      "innerExclusionRadiusMeters": 2600,
+      "largeAsteroidCountMin": 2,
+      "largeAsteroidCountMax": 3,
+      "decorativeTypes": [
+        {
+          "typeID": 60559,
+          "weight": 2,
+          "radiusMinMeters": 1300,
+          "radiusMaxMeters": 2600
+        },
+        {
+          "typeID": 60560,
+          "weight": 3,
+          "radiusMinMeters": 1400,
+          "radiusMaxMeters": 2800
+        },
+        {
+          "typeID": 60561,
+          "weight": 4,
+          "radiusMinMeters": 1500,
+          "radiusMaxMeters": 3100
+        },
+        {
+          "typeID": 60562,
+          "weight": 4,
+          "radiusMinMeters": 1600,
+          "radiusMaxMeters": 3400
+        }
+      ],
+      "largeTypes": [
+        {
+          "typeID": 90042,
+          "weight": 2
+        },
+        {
+          "typeID": 90445,
+          "weight": 3
+        },
+        {
+          "typeID": 90446,
+          "weight": 2
+        }
+      ]
+    },
+    {
+      "fieldStyleID": "wormhole_standard",
+      "name": "Wormhole Standard Belt",
+      "securityMin": -1.0,
+      "securityMax": 1.1,
+      "asteroidCountMin": 18,
+      "asteroidCountMax": 28,
+      "clusterCountMin": 4,
+      "clusterCountMax": 5,
+      "fieldRadiusMinMeters": 28000,
+      "fieldRadiusMaxMeters": 40000,
+      "clusterRadiusMinMeters": 4500,
+      "clusterRadiusMaxMeters": 9000,
+      "verticalSpreadMinMeters": 3000,
+      "verticalSpreadMaxMeters": 7500,
+      "innerExclusionRadiusMeters": 2400,
+      "largeAsteroidCountMin": 1,
+      "largeAsteroidCountMax": 3,
+      "decorativeTypes": [
+        {
+          "typeID": 60559,
+          "weight": 2,
+          "radiusMinMeters": 1200,
+          "radiusMaxMeters": 2400
+        },
+        {
+          "typeID": 60560,
+          "weight": 2,
+          "radiusMinMeters": 1400,
+          "radiusMaxMeters": 2600
+        },
+        {
+          "typeID": 60561,
+          "weight": 3,
+          "radiusMinMeters": 1500,
+          "radiusMaxMeters": 3000
+        },
+        {
+          "typeID": 60562,
+          "weight": 3,
+          "radiusMinMeters": 1600,
+          "radiusMaxMeters": 3200
+        }
+      ],
+      "largeTypes": [
+        {
+          "typeID": 90042,
+          "weight": 1
+        },
+        {
+          "typeID": 90445,
+          "weight": 2
+        },
+        {
+          "typeID": 90446,
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}

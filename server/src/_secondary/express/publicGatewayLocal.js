@@ -1145,6 +1145,13 @@ function getEmptySuccessResponseType(requestTypeName) {
   }
 
   if (
+    requestTypeName.startsWith("eve_public.sovereignty.mercenaryden.activity.api.") &&
+    requestTypeName.endsWith("GetAllRequest")
+  ) {
+    return getDefaultResponseTypeName(requestTypeName);
+  }
+
+  if (
     requestTypeName.startsWith("eve_public.sovereignty.skyhook.api.") &&
     requestTypeName.endsWith("GetTheftVulnerableSkyhooksInSolarSystemRequest")
   ) {
@@ -1460,4 +1467,5 @@ module.exports._testing = {
   buildBubbleShipStatesForCharacter,
   findLiveSessionByCharacterID,
   getObserverCharacterIDsForShip,
+  getEmptySuccessResponseType,
 };

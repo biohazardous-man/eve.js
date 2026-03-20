@@ -7,6 +7,10 @@ const {
   buildRowset,
   currentFileTime,
 } = require(path.join(__dirname, "../services/_shared/serviceHelpers"));
+const {
+  buildDamageState,
+  hasDamageableHealth,
+} = require(path.join(__dirname, "./combat/damage"));
 
 const BALL_MODE = Object.freeze({
   GOTO: 0,
@@ -158,9 +162,11 @@ function encodeHeader(packetType, stamp) {
 function encodeRigidBall(entity) {
   const position = buildVector(entity.position);
   const flags =
-    (entity.kind === "station" || entity.kind === "stargate"
+    entity.kind === "station" || entity.kind === "stargate"
       ? BALL_FLAG.IS_GLOBAL | BALL_FLAG.IS_MASSIVE
-      : BALL_FLAG.IS_GLOBAL);
+      : entity.kind === "container" || entity.kind === "wreck"
+        ? BALL_FLAG.IS_INTERACTIVE
+        : BALL_FLAG.IS_GLOBAL;
   const chunks = [];
   pushBigInt64(chunks, entity.itemID);
   pushUInt8(chunks, BALL_MODE.RIGID);
@@ -186,6 +192,17 @@ function getShipMode(entity) {
     default:
       return BALL_MODE.STOP;
   }
+}
+
+function isShipBallInteractive(entity) {
+  if (!entity || entity.kind !== "ship") {
+    return false;
+  }
+
+  return Boolean(
+    entity.session ||
+      ((Number(entity.pilotCharacterID ?? entity.characterID) || 0) > 0),
+  );
 }
 
 function getShipTargetPoint(entity) {
@@ -230,63 +247,92 @@ function getShipWarpFactor(entity) {
   );
 }
 
-function encodeShipBall(entity) {
-  const position = buildVector(entity.position);
-  const velocity = buildVector(entity.velocity);
-  const mode = getShipMode(entity);
+function buildAddBallsBootstrapEntity(entity) {
+  if (!entity || entity.kind !== "ship") {
+    return entity;
+  }
+  if (getShipMode(entity) !== BALL_MODE.WARP) {
+    return entity;
+  }
+  // Mid-warp AddBalls2 acquisitions are more stable for this client when the
+  // raw bootstrap ball stays neutral and the visible warp state is established
+  // by the follow-up EntityWarpIn update. Raw mode-3 bootstrap here leaves the
+  // responder ball malformed/invisible while damage still applies.
+  return {
+    ...entity,
+    mode: "STOP",
+    velocity: { x: 0, y: 0, z: 0 },
+    speedFraction: 0,
+  };
+}
+
+function encodeShipBall(entity, options = {}) {
+  const encodedEntity = options.forAddBalls
+    ? buildAddBallsBootstrapEntity(entity)
+    : entity;
+  const position = buildVector(encodedEntity.position);
+  const velocity = buildVector(encodedEntity.velocity);
+  const mode = getShipMode(encodedEntity);
+  const flags =
+    BALL_FLAG.IS_FREE |
+    (isShipBallInteractive(encodedEntity) ? BALL_FLAG.IS_INTERACTIVE : 0);
   const chunks = [];
-  pushBigInt64(chunks, entity.itemID);
+  pushBigInt64(chunks, encodedEntity.itemID);
   pushUInt8(chunks, mode);
-  pushFloat(chunks, toFiniteNumber(entity.radius, 1));
+  pushFloat(chunks, toFiniteNumber(encodedEntity.radius, 1));
   pushDouble(chunks, position.x);
   pushDouble(chunks, position.y);
   pushDouble(chunks, position.z);
-  pushUInt8(chunks, BALL_FLAG.IS_FREE | BALL_FLAG.IS_INTERACTIVE);
+  pushUInt8(chunks, flags);
 
-  pushDouble(chunks, toFiniteNumber(entity.mass, 1_000_000));
+  pushDouble(chunks, toFiniteNumber(encodedEntity.mass, 1_000_000));
   pushUInt8(chunks, 0);
-  pushBigInt64(chunks, entity.allianceID || -1);
-  pushInt32(chunks, entity.corporationID || 0);
+  pushBigInt64(chunks, encodedEntity.allianceID || -1);
+  pushInt32(chunks, encodedEntity.corporationID || 0);
   pushInt32(chunks, 0);
 
-  pushFloat(chunks, toFiniteNumber(entity.maxVelocity, 0));
+  pushFloat(chunks, toFiniteNumber(encodedEntity.maxVelocity, 0));
   pushDouble(chunks, velocity.x);
   pushDouble(chunks, velocity.y);
   pushDouble(chunks, velocity.z);
-  pushFloat(chunks, toFiniteNumber(entity.inertia, 1));
-  pushFloat(chunks, toFiniteNumber(entity.speedFraction, 0));
+  pushFloat(chunks, toFiniteNumber(encodedEntity.inertia, 1));
+  pushFloat(chunks, toFiniteNumber(encodedEntity.speedFraction, 0));
 
   pushUInt8(chunks, 0xff);
   switch (mode) {
     case BALL_MODE.GOTO: {
-      const targetPoint = getShipTargetPoint(entity);
+      const targetPoint = getShipTargetPoint(encodedEntity);
       pushDouble(chunks, targetPoint.x);
       pushDouble(chunks, targetPoint.y);
       pushDouble(chunks, targetPoint.z);
       break;
     }
     case BALL_MODE.FOLLOW:
-      pushBigInt64(chunks, entity.targetEntityID || 0);
-      pushFloat(chunks, toFiniteNumber(entity.followRange, 0));
+      pushBigInt64(chunks, encodedEntity.targetEntityID || 0);
+      pushFloat(chunks, toFiniteNumber(encodedEntity.followRange, 0));
       break;
     case BALL_MODE.WARP: {
-      const targetPoint = getShipTargetPoint(entity);
-      const warpState = entity && entity.warpState;
+      const targetPoint = getShipTargetPoint(encodedEntity);
       pushDouble(chunks, targetPoint.x);
       pushDouble(chunks, targetPoint.y);
       pushDouble(chunks, targetPoint.z);
-      // Raw mode-3 state in the bootstrap/state buffers follows the later
-      // DLL-backed SetState decode we mapped for V23.02:
-      // goto + effectStamp + totalDistance + stopDistance + warpFactor.
-      pushInt32(chunks, toInt32(warpState && warpState.effectStamp, 0));
-      pushDouble(chunks, toFiniteNumber(warpState && warpState.totalDistance, 0));
-      pushDouble(chunks, toFiniteNumber(warpState && warpState.stopDistance, 0));
-      pushInt32(chunks, getShipWarpFactor(entity));
+      // Newly-acquired ships already in warp must bootstrap with the native
+      // mode-3 tail shape the client actually accepts here:
+      // goto + warpFactor.
+      //
+      // A richer SetState-style tail (effectStamp/totalDistance/stopDistance)
+      // misaligns the AddBalls2 stream, and the client then rejects the ball
+      // with "_destiny ... Unknown ball mode 66 in dump", leaving invisible
+      // attackers that can still apply damage.
+      pushInt32(chunks, getShipWarpFactor(encodedEntity));
       break;
     }
     case BALL_MODE.ORBIT:
-      pushInt32(chunks, toInt32(entity.targetEntityID, 0));
-      pushDouble(chunks, toFiniteNumber(entity.orbitDistance, 0));
+      // Bootstrap orbit state uses the same wide target-ID contract as follow:
+      // int64 target ball ID + float radius. Using int32+double here made the
+      // client decode garbage follow targets for already-orbiting NPCs.
+      pushBigInt64(chunks, encodedEntity.targetEntityID || 0);
+      pushFloat(chunks, toFiniteNumber(encodedEntity.orbitDistance, 0));
       break;
     default:
       break;
@@ -294,9 +340,9 @@ function encodeShipBall(entity) {
   return Buffer.concat(chunks);
 }
 
-function encodeEntityBall(entity) {
+function encodeEntityBall(entity, options = {}) {
   if (entity.kind === "ship") {
-    return encodeShipBall(entity);
+    return encodeShipBall(entity, options);
   }
 
   return encodeRigidBall(entity);
@@ -331,50 +377,51 @@ function describeBallFlags(flags) {
   };
 }
 
-function debugDescribeEntityBall(entity) {
-  const encoded = encodeEntityBall(entity);
-  if (entity.kind === "ship") {
-    const mode = getShipMode(entity);
-    const flags = BALL_FLAG.IS_FREE | BALL_FLAG.IS_INTERACTIVE;
+function debugDescribeEntityBall(entity, options = {}) {
+  const debugEntity = options.forAddBalls
+    ? buildAddBallsBootstrapEntity(entity)
+    : entity;
+  const encoded = encodeEntityBall(entity, options);
+  if (debugEntity.kind === "ship") {
+    const mode = getShipMode(debugEntity);
+    const flags =
+      BALL_FLAG.IS_FREE |
+      (isShipBallInteractive(debugEntity) ? BALL_FLAG.IS_INTERACTIVE : 0);
     const summary = {
-      kind: entity.kind,
-      itemID: entity.itemID,
+      kind: debugEntity.kind,
+      itemID: debugEntity.itemID,
       mode: describeBallMode(mode),
       modeCode: mode,
       flags: describeBallFlags(flags),
-      radius: toFiniteNumber(entity.radius, 1),
-      position: buildVector(entity.position),
-      mass: toFiniteNumber(entity.mass, 1_000_000),
-      allianceID: entity.allianceID || -1,
-      corporationID: entity.corporationID || 0,
-      maxVelocity: toFiniteNumber(entity.maxVelocity, 0),
-      velocity: buildVector(entity.velocity),
-      inertia: toFiniteNumber(entity.inertia, 1),
-      speedFraction: toFiniteNumber(entity.speedFraction, 0),
+      radius: toFiniteNumber(debugEntity.radius, 1),
+      position: buildVector(debugEntity.position),
+      mass: toFiniteNumber(debugEntity.mass, 1_000_000),
+      allianceID: debugEntity.allianceID || -1,
+      corporationID: debugEntity.corporationID || 0,
+      maxVelocity: toFiniteNumber(debugEntity.maxVelocity, 0),
+      velocity: buildVector(debugEntity.velocity),
+      inertia: toFiniteNumber(debugEntity.inertia, 1),
+      speedFraction: toFiniteNumber(debugEntity.speedFraction, 0),
       modeData: null,
     };
     if (mode === BALL_MODE.GOTO) {
       summary.modeData = {
-        targetPoint: getShipTargetPoint(entity),
+        targetPoint: getShipTargetPoint(debugEntity),
       };
     } else if (mode === BALL_MODE.FOLLOW) {
       summary.modeData = {
-        targetEntityID: entity.targetEntityID || 0,
-        followRange: toFiniteNumber(entity.followRange, 0),
+        targetEntityID: debugEntity.targetEntityID || 0,
+        followRange: toFiniteNumber(debugEntity.followRange, 0),
       };
     } else if (mode === BALL_MODE.WARP) {
-      const warpState = entity && entity.warpState;
       summary.modeData = {
-        targetPoint: getShipTargetPoint(entity),
-        effectStamp: toInt32(warpState && warpState.effectStamp, 0),
-        totalDistance: toFiniteNumber(warpState && warpState.totalDistance, 0),
-        stopDistance: toFiniteNumber(warpState && warpState.stopDistance, 0),
-        warpFactor: getShipWarpFactor(entity),
+        targetPoint: getShipTargetPoint(debugEntity),
+        warpFactor: getShipWarpFactor(debugEntity),
       };
     } else if (mode === BALL_MODE.ORBIT) {
       summary.modeData = {
-        targetEntityID: entity.targetEntityID || 0,
-        orbitDistance: toFiniteNumber(entity.orbitDistance, 0),
+        targetEntityID: debugEntity.targetEntityID || 0,
+        orbitDistance: toFiniteNumber(debugEntity.orbitDistance, 0),
       };
     }
     return {
@@ -403,29 +450,39 @@ function debugDescribeEntityBall(entity) {
   };
 }
 
-function buildDamageState(entity) {
-  return [
-    [1.0, 110000.0, { type: "long", value: currentFileTime() }],
-    1.0,
-    1.0,
-  ];
-}
-
 function buildSlimItemDict(entity) {
+  const slimTypeID = toInt32(
+    entity && entity.slimTypeID,
+    toInt32(entity && entity.typeID, 0),
+  );
+  const slimGroupID = toInt32(
+    entity && entity.slimGroupID,
+    toInt32(entity && entity.groupID, 0),
+  );
+  const slimCategoryID = toInt32(
+    entity && entity.slimCategoryID,
+    toInt32(entity && entity.categoryID, 0),
+  );
+  const slimName = String(
+    entity && (
+      entity.slimName ||
+      entity.itemName
+    ) || "",
+  );
   const entries = [
     ["itemID", entity.itemID],
-    ["typeID", entity.typeID],
+    ["typeID", slimTypeID],
     ["ownerID", entity.ownerID || 0],
   ];
 
-  if (entity.itemName) {
-    entries.push(["name", entity.itemName]);
+  if (slimName) {
+    entries.push(["name", slimName]);
   }
-  if (entity.groupID !== undefined && entity.groupID !== null) {
-    entries.push(["groupID", entity.groupID]);
+  if (slimGroupID > 0) {
+    entries.push(["groupID", slimGroupID]);
   }
-  if (entity.categoryID !== undefined && entity.categoryID !== null) {
-    entries.push(["categoryID", entity.categoryID]);
+  if (slimCategoryID > 0) {
+    entries.push(["categoryID", slimCategoryID]);
   }
 
   if (entity.kind === "ship") {
@@ -434,9 +491,27 @@ function buildSlimItemDict(entity) {
     entries.push(["warFactionID", entity.warFactionID || 0]);
     entries.push(["charID", entity.characterID || 0]);
     entries.push(["skinMaterialSetID", entity.skinMaterialSetID ?? null]);
-    entries.push(["modules", buildList([])]);
-    entries.push(["securityStatus", 0.0]);
-    entries.push(["bounty", 0.0]);
+    entries.push([
+      "modules",
+      buildList(Array.isArray(entity.modules) ? entity.modules : []),
+    ]);
+    entries.push([
+      "securityStatus",
+      toFiniteNumber(entity.securityStatus, 0.0),
+    ]);
+    entries.push(["bounty", toFiniteNumber(entity.bounty, 0.0)]);
+    if (Number.isFinite(Number(entity.hostileResponseThreshold))) {
+      entries.push([
+        "hostile_response_threshold",
+        toFiniteNumber(entity.hostileResponseThreshold, -11),
+      ]);
+    }
+    if (Number.isFinite(Number(entity.friendlyResponseThreshold))) {
+      entries.push([
+        "friendly_response_threshold",
+        toFiniteNumber(entity.friendlyResponseThreshold, -11),
+      ]);
+    }
   } else if (entity.kind === "station") {
     entries.push(["corpID", entity.corporationID || 0]);
     entries.push(["allianceID", entity.allianceID || 0]);
@@ -496,6 +571,14 @@ function buildSlimItemDict(entity) {
       entries.push(["dunRotation", entity.dunRotation]);
     }
     entries.push(["jumps", buildStargateJumps(entity)]);
+  } else if (entity.kind === "container" || entity.kind === "wreck") {
+    entries.push(["isEmpty", entity.isEmpty ? 1 : 0]);
+    if (entity.kind === "wreck") {
+      entries.push(["launcherID", entity.launcherID ?? null]);
+    }
+    if (Array.isArray(entity.dunRotation) && entity.dunRotation.length === 3) {
+      entries.push(["dunRotation", entity.dunRotation]);
+    }
   }
 
   return buildDict(entries);
@@ -542,7 +625,7 @@ function buildSolItem(system) {
 function buildAddBallsStateBuffer(stamp, entities) {
   const chunks = [encodeHeader(1, stamp)];
   for (const entity of entities) {
-    chunks.push(encodeEntityBall(entity));
+    chunks.push(encodeEntityBall(entity, { forAddBalls: true }));
   }
   return Buffer.concat(chunks);
 }
@@ -555,10 +638,14 @@ function buildSetStateBuffer(stamp, entities) {
   return Buffer.concat(chunks);
 }
 
-function buildAddBalls2Payload(stateStamp, entities) {
+function buildAddBalls2Payload(
+  stateStamp,
+  entities,
+  simFileTime = currentFileTime(),
+) {
   const extraBallData = entities.map((entity) => {
-    if (entity.kind === "ship" || entity.kind === "station") {
-      return [buildSlimItemDict(entity), buildDamageState(entity)];
+    if (entity.kind === "station" || hasDamageableHealth(entity)) {
+      return [buildSlimItemDict(entity), buildDamageState(entity, simFileTime)];
     }
     return buildSlimItemDict(entity);
   });
@@ -574,10 +661,16 @@ function buildAddBalls2Payload(stateStamp, entities) {
   ];
 }
 
-function buildSetStatePayload(stateStamp, system, egoEntityID, entities) {
+function buildSetStatePayload(
+  stateStamp,
+  system,
+  egoEntityID,
+  entities,
+  simFileTime = currentFileTime(),
+) {
   const damageEntries = entities
-    .filter((entity) => entity.kind === "ship" || entity.kind === "station")
-    .map((entity) => [entity.itemID, buildDamageState(entity)]);
+    .filter((entity) => entity.kind === "station" || hasDamageableHealth(entity))
+    .map((entity) => [entity.itemID, buildDamageState(entity, simFileTime)]);
 
   const state = buildKeyVal([
     ["stamp", stateStamp],
@@ -793,12 +886,32 @@ function buildOnSpecialFXPayload(
   return ["OnSpecialFX", args];
 }
 
+function buildOnDamageStateChangePayload(entityID, damageState = null) {
+  return [
+    "OnDamageStateChange",
+    [
+      toInt32(entityID, 0),
+      damageState,
+    ],
+  ];
+}
+
 function buildOnSlimItemChangePayload(entityID, slimItem = null) {
   return [
     "OnSlimItemChange",
     [
       toInt32(entityID, 0),
       slimItem || null,
+    ],
+  ];
+}
+
+function buildTerminalPlayDestructionEffectPayload(entityID, destructionEffectID) {
+  return [
+    "TerminalPlayDestructionEffect",
+    [
+      toInt32(entityID, 0),
+      toInt32(destructionEffectID, 0),
     ],
   ];
 }
@@ -835,7 +948,9 @@ module.exports = {
   buildSetMaxSpeedPayload,
   buildSetBallMassivePayload,
   buildOnSpecialFXPayload,
+  buildOnDamageStateChangePayload,
   buildOnSlimItemChangePayload,
+  buildTerminalPlayDestructionEffectPayload,
   buildRemoveBallPayload,
   buildRemoveBallsPayload,
   debugDescribeEntityBall,

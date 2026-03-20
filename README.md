@@ -1,64 +1,157 @@
-# Welcome to eve.js!
+# EvEJS Elysian
 
 > [!WARNING]
-> This repo is still early-stage. The current focus is getting practical client features working, not full retail parity.
+> This project is still a work in progress. Some parts work well, and some parts are still being built.
 
+This project lets you run EVE against a local server on your own computer.
 
-> [!WARNING]
-> Due to github's file size limit, you will need to manually extract the .zip inside the /data folder in root dir :)
+If you are not technical, that is okay. Follow the steps below slowly, one by one.
 
-## Windows Quick Start
+## Before You Start
 
-1. Install dependencies once:
+You need:
+
+- a Windows PC
+- Node.js installed
+- this project on your computer
+- a separate copy of your EVE game folder
+
+Important:
+
+- do not use your normal everyday EVE folder
+- make a copy of EVE just for this project
+
+## The Easy Install
+
+### 1. Install Node.js
+
+Install Node.js.
+
+If the website asks which version you want, choose `LTS`.
+
+If you already have Node.js installed, you can skip this.
+
+### 2. Open This Folder In Terminal
+
+Open this project folder on your computer.
+
+Then open a terminal window inside it:
+
+- Windows 11: right-click inside the folder and choose `Open in Terminal`
+- Windows 10: open PowerShell and go to this folder
+
+### 3. Paste These Two Commands
+
+Paste these one at a time:
 
 ```powershell
 npm ci
 npm --prefix server ci
 ```
 
-2. Edit `scripts\windows\EvEJSConfig.bat`.
-3. Set `EVEJS_CLIENT_PATH` to your EVE client copy.
-4. Run `scripts\windows\InstallCerts.bat` once.
-5. Start the server with `scripts\windows\StartServerOnly.bat`.
-6. Start the client with either:
-   - `scripts\windows\StartClientOnly.bat`
-   - `scripts\windows\RunClientProxy.bat`
-   - `scripts\windows\RunClientProxyAndDebug.bat`
+Wait for both to finish.
 
-If you want the local proxy in a separate terminal, use:
+### 4. Put Your EVE Copy In The Simple Location
 
-```bat
-scripts\windows\StartServerNoProxy.bat
-scripts\windows\StartClientProxyOnly.bat
+The easiest option is to put your EVE copy here:
+
+```text
+client\EVE\tq
+```
+
+If you do that, you usually do not need to change anything else.
+
+If your EVE copy is somewhere else, open `scripts\windows\EvEJSConfig.bat` and change the client path there.
+
+### 5. Patch Your EVE Copy
+
+You need to do this once for your copied EVE folder.
+
+1. Open the `PATCHED_FILES` folder in this project.
+2. Copy `blue.dll`.
+3. Open your copied EVE folder.
+4. Open its `bin64` folder.
+5. Paste `blue.dll` there and replace the old one.
+6. Go back to the main EVE folder.
+7. Open `start.ini`.
+8. Change `CryptoAPI` to `Placebo`.
+9. Make sure the server address points to `127.0.0.1:26000`.
+10. Save the file.
+
+Small note:
+
+- `127.0.0.1` just means "this computer"
+
+### 6. Run The Trust Step
+
+Double-click:
+
+```text
+scripts\windows\InstallCerts.bat
+```
+
+This project already includes the main trust files you need.
+
+That script does the rest for you so Windows and the game trust the local connection.
+
+### 7. Start The Server
+
+Double-click:
+
+```text
+scripts\windows\StartServerOnly.bat
+```
+
+Leave that window open.
+
+### 8. Start The Game
+
+Double-click:
+
+```text
 scripts\windows\StartClientOnly.bat
 ```
 
-The full launcher guide is in [scripts/README.md](scripts/README.md).
+## What The Main Files Do
 
-## Important Notes
+- `scripts\windows\InstallCerts.bat`
+  Sets up the local trust step for you.
+- `scripts\windows\StartServerOnly.bat`
+  Starts the EvEJS server.
+- `scripts\windows\StartClientOnly.bat`
+  Starts your copied EVE client.
+- `scripts\windows\RunClientProxyAndDebug.bat`
+  Starts the client with an extra debug window. Only use this if you are trying to troubleshoot something.
 
-- The cert installer covers both chat TLS and the local public-gateway TLS used by ship skins.
-- The launcher scripts do not patch the client binaries for you. Your client still needs the normal EvEJS localhost setup such as the patched `blue.dll` and `start.ini`.
-- Chat setup and troubleshooting are documented in [docs/CHAT.md](docs/CHAT.md).
+## If It Does Not Work
 
-## Data Builders
+Check these first:
 
-Reference-data builders now live under `scripts/dev/`.
+- Did `npm ci` finish without errors?
+- Did `npm --prefix server ci` finish without errors?
+- Did you use a copied EVE folder, not your normal live one?
+- Did you copy `PATCHED_FILES\blue.dll` into the EVE `bin64` folder?
+- Did you change `CryptoAPI` to `Placebo` in `start.ini`?
+- Did you set the server address to `127.0.0.1:26000`?
+- Did you run `scripts\windows\InstallCerts.bat`?
+- Is the server window still open before you start the game?
 
-Useful commands:
+## If Your EVE Folder Is Somewhere Else
 
-```powershell
-npm run sync:ship-data
-npm run build:ship-cosmetics-data
-npm run build:reference-data
+Open:
+
+```text
+scripts\windows\EvEJSConfig.bat
 ```
 
-## Sharing The Repo
+Find the line that starts with:
 
-Create a clean source zip with:
-
-```powershell
-npm run zip:source
+```bat
+set "EVEJS_CLIENT_PATH=
 ```
 
-That uses `scripts\New-SourceZip.ps1` and excludes local scratch data such as `_local`, `client`, `node_modules`, and raw Fuzzwork dumps.
+Replace that path with the location of your copied EVE folder.
+
+## Want The Same Steps With More Hand-Holding?
+
+Open [docs/SETUP.md](docs/SETUP.md).

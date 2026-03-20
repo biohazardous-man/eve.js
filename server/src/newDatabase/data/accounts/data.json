@@ -1,0 +1,42 @@
+{
+  "test": {
+    "passwordhash": "e62bd2570e99a1dc63ecab114926b07f9e0a8573",
+    "id": 1,
+    "role": "431255270151428096",
+    "chatRole": "94575592714010624",
+    "banned": false,
+    "multiCharacterTrainingSlots": {
+      "2": "157469184000000000",
+      "3": "157469184000000000"
+    }
+  },
+  "test2": {
+    "passwordhash": "7adcc6ff762268403a8678945b8dd1aeb0f8c718",
+    "id": 2,
+    "role": "431255270151428096",
+    "chatRole": "94575592714010624",
+    "banned": false,
+    "multiCharacterTrainingSlots": {
+      "2": "157469184000000000",
+      "3": "157469184000000000"
+    }
+  },
+  "test3": {
+    "passwordhash": "8737b7756bc649c9fc8ce887d745600fbb830a6a",
+    "id": 3,
+    "role": "431255270151428096",
+    "chatRole": "90071993086640128",
+    "banned": false,
+    "multiCharacterTrainingSlots": {
+      "2": "157469184000000000",
+      "3": "157469184000000000"
+    }
+  },
+  "test2test": {
+    "passwordhash": "477214555164219c1a3a80bce7663eaadf70aa67",
+    "id": 4,
+    "role": "431255270151428096",
+    "chatRole": "90071993086640128",
+    "banned": false
+  }
+}

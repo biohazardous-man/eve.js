@@ -45,6 +45,9 @@ function readTlsCredentials() {
 }
 
 function writeTranscript(direction, xml) {
+  if (!log.isVerboseDebugEnabled()) {
+    return;
+  }
   try {
     ensureTranscriptDir();
     fs.appendFileSync(
@@ -398,6 +401,69 @@ function sendSessionSystemMessage(session, message, roomJid = null) {
   }
 }
 
+function buildRoomPresenceXml(roomJid, charId, recipient, options = {}) {
+  const available = options.available !== false;
+  const userData = getUserDataForCharacterId(charId);
+  const nick = String(charId || "").trim() || "capsuleer";
+  const userJid = `${nick}@localhost`;
+  const requestId = nextMessageId();
+  const itemRole = available ? "participant" : "none";
+  const presenceType = available ? "" : " type='unavailable'";
+  const userDataXml = buildEveUserDataElement(userData);
+
+  return [
+    `<presence from='${escapeXml(roomJid)}/${escapeXml(nick)}'`,
+    ` to='${escapeXml(recipient.boundJid)}'`,
+    ` id='${escapeXml(requestId)}'`,
+    presenceType,
+    `>${userDataXml}<x xmlns='http://jabber.org/protocol/muc#user'><item affiliation='member' role='${escapeXml(itemRole)}' jid='${escapeXml(userJid)}'/></x></presence>`,
+  ].join("");
+}
+
+function refreshSessionChatRolePresence(session) {
+  if (!session) {
+    return false;
+  }
+
+  const charId = Number(session.characterID || 0);
+  if (!charId) {
+    return false;
+  }
+
+  const relevantClients = [...connectedClients].filter(
+    (client) => getClientCharacterId(client) === charId,
+  );
+  if (relevantClients.length === 0) {
+    return false;
+  }
+
+  const roomJids = new Set();
+  for (const client of relevantClients) {
+    for (const roomJid of client.rooms) {
+      roomJids.add(roomJid);
+    }
+    if (client.lastRoomJid) {
+      roomJids.add(client.lastRoomJid);
+    }
+  }
+
+  let refreshed = false;
+  for (const roomJid of roomJids) {
+    const members = roomMembers.get(roomJid);
+    if (!members || members.size === 0) {
+      continue;
+    }
+
+    for (const member of members) {
+      sendXml(member, buildRoomPresenceXml(roomJid, charId, member, { available: false }));
+      sendXml(member, buildRoomPresenceXml(roomJid, charId, member, { available: true }));
+    }
+    refreshed = true;
+  }
+
+  return refreshed;
+}
+
 function moveSessionToCurrentLocalRoom(session) {
   if (!session) {
     return;
@@ -422,6 +488,26 @@ function moveSessionToCurrentLocalRoom(session) {
 
     addRoomMember(currentRoomJid, client);
     client.lastRoomJid = currentRoomJid;
+  }
+}
+
+function unregisterCharacterSession(session) {
+  if (!session) {
+    return;
+  }
+
+  const characterID = Number(session.characterID || 0);
+  if (!characterID) {
+    return;
+  }
+
+  for (const client of connectedClients) {
+    if (getClientCharacterId(client) !== characterID) {
+      continue;
+    }
+
+    removeClientFromRooms(client);
+    client.lastRoomJid = "";
   }
 }
 
@@ -514,6 +600,10 @@ function handleGroupMessage(client, xml) {
       (result.handled
         ? "Command executed."
         : `Unknown command: ${body}. Use /help.`);
+
+    if (result.refreshChatRolePresence) {
+      refreshSessionChatRolePresence(session);
+    }
 
     log.debug(`[XMPP] Command from ${client.userName}: ${body}`);
     sendSystemMessageToClient(client, roomJid, responseMessage);
@@ -745,7 +835,9 @@ function startXmppStub() {
 }
 
 module.exports = {
+  refreshSessionChatRolePresence,
   sendSessionSystemMessage,
   moveSessionToCurrentLocalRoom,
+  unregisterCharacterSession,
   startXmppStub,
 };

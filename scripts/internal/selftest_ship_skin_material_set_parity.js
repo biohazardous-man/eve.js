@@ -1,7 +1,7 @@
 const assert = require("assert");
 const path = require("path");
 
-const database = require(path.join(__dirname, "../../server/src/database"));
+const database = require(path.join(__dirname, "../../server/src/newDatabase"));
 const destiny = require(path.join(__dirname, "../../server/src/space/destiny"));
 const runtime = require(path.join(__dirname, "../../server/src/space/runtime"));
 const { findShipItemById } = require(path.join(

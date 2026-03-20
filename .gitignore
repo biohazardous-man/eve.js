@@ -1,9 +1,62 @@
-node_modules
+# Dependency folders
+node_modules/
+server/node_modules/
+
+# Project resources and scratch work
 resources
+_refs
 ref
-evejs.config.json
 _temp_files_ignore
-out.log
-out-clean.log
-mapMoons.jsonl
-types.jsonl
+_secondary
+_local
+.claude/
+
+# Local client copies and captures
+client/
+clientOld/
+
+# Local config
+evejs.config.local.json
+
+# Keep only the public setup docs in git
+docs/*
+!docs/SETUP.md
+scripts/README.md
+
+# Generated data dumps and local research inputs
+data/fuzzwork/
+data/eve-online-static-data-*/
+data/eve-survival/
+data/*.zip
+
+# Build output and archives
+dist/
+server/src/*.zip
+
+# Logs and temporary files
+logs/
+server/logs/
+server/*.log
+*.log
+tmp_*
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# Python helpers and decompilation artifacts
+chat_client_*.py
+chat_client_*.pyc
+__pycache__/
+*.pyc
+*.pyj
+*.decomp
+*.decomp.py
+
+# Generated TLS leaf certs
+server/src/_secondary/express/certs/gateway-dev-cert.pem
+server/src/_secondary/express/certs/gateway-dev-key.pem
+
+# OS clutter
+Thumbs.db
+.DS_Store

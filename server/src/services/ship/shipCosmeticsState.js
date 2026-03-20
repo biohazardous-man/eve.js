@@ -1,6 +1,6 @@
 const path = require("path");
 
-const database = require(path.join(__dirname, "../../database"));
+const database = require(path.join(__dirname, "../../newDatabase"));
 const log = require(path.join(__dirname, "../../utils/logger"));
 const { findShipItemById } = require(path.join(
   __dirname,

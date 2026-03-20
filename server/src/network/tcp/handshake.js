@@ -32,7 +32,16 @@ const {
 } = require(path.join(__dirname, "./utils/marshal"));
 
 // database
-const database = require("../../database")
+const database = require("../../newDatabase")
+const {
+  MAX_ACCOUNT_ROLE,
+  DEFAULT_CHAT_ROLE,
+  buildPersistedAccountRoleRecord,
+  roleToString,
+} = require(path.join(
+  __dirname,
+  "../../services/account/accountRoleProfiles",
+));
 
 // The "marshaledNone" from EVE_Consts.h — a pickled Python None object
 // 0x74 = cPickle header, then 4-byte length LE, then "None" as ASCII
@@ -40,7 +49,62 @@ const MARSHALED_NONE = Buffer.from([
   0x74, 0x04, 0x00, 0x00, 0x00, 0x4e, 0x6f, 0x6e, 0x65,
 ]);
 
-const DEV_ACCOUNT_ROLE = "6935543428298309632";
+//testing: marshaled Python expression for client signedFunc during handshake.
+//testing: GPS.py __Execute() captures stdout into outputBuffer → sent back in CryptoHandshakeResult.
+//testing: we log the result server-side in _handleFuncResult to see what blue.os APIs exist.
+//testing: prev: MARSHALED_NONE → eval("None") → no-op
+//testing: to revert: change MARSHALED_TIDI_PROBE back to MARSHALED_NONE on line ~505
+function buildMarshaledString(str) {
+  const buf = Buffer.alloc(1 + 4 + str.length);
+  buf[0] = 0x74; // 't' interned string type (Python 2.7 marshal)
+  buf.writeInt32LE(str.length, 1);
+  buf.write(str, 5, "ascii");
+  return buf;
+}
+const TIDI_DEFAULT_OVERLOAD_ADJUSTMENT = 0.8254;
+const TIDI_DEFAULT_UNDERLOAD_ADJUSTMENT = 1.059254;
+const TIDI_DISABLE_UNDERLOAD_SNAP_ADJUSTMENT = 1000.0;
+const TIDI_ENABLE_OVERLOAD_SNAP_ADJUSTMENT = 0.1;
+
+function buildTidiSignedFuncSource() {
+  return [
+    "import blue",
+    "blue.os.EnableSimDilation(0)",
+    "class _TiDiHandler(object):",
+    " __guid__ = 'svc.tidiHandler'",
+    " __notifyevents__ = ['OnSetTimeDilation']",
+    " def OnSetTimeDilation(self, maxD, minD, thresh):",
+    "  import blue",
+    "  blue.os.maxSimDilation = float(maxD)",
+    "  blue.os.minSimDilation = float(minD)",
+    "  blue.os.dilationOverloadThreshold = int(thresh)",
+    "  if int(thresh) == 100000000:",
+    `   blue.os.dilationOverloadAdjustment = ${TIDI_DEFAULT_OVERLOAD_ADJUSTMENT}`,
+    `   blue.os.dilationUnderloadAdjustment = ${TIDI_DISABLE_UNDERLOAD_SNAP_ADJUSTMENT}`,
+    "  else:",
+    `   blue.os.dilationOverloadAdjustment = ${TIDI_ENABLE_OVERLOAD_SNAP_ADJUSTMENT}`,
+    `   blue.os.dilationUnderloadAdjustment = ${TIDI_DEFAULT_UNDERLOAD_ADJUSTMENT}`,
+    "_h = _TiDiHandler()",
+    "sm.RegisterForNotifyEvent(_h, 'OnSetTimeDilation')",
+    "__builtins__['__tidiHandler'] = _h",
+    "print 'TIDI_HANDLER:OK'",
+  ].join("\\n");
+}
+//testing: Starts blue.dll's TiDi tick loop via EnableSimDilation(0) and registers
+//testing: a notification handler (OnSetTimeDilation) so the server can control dilation
+//testing: at runtime via /tidi or the solar system TiDi system.
+//testing: No TiDi is forced at login — the handler waits for a server notification.
+//testing: prev: phase 5 forced maxSimDilation/minSimDilation/dilationOverloadThreshold at login
+//testing: after: only EnableSimDilation + handler install; runtime notification sets params
+//testing: to revert: change buildTidiSignedFunc(...) back to MARSHALED_NONE on line ~533
+function buildTidiSignedFunc(clientId) {
+  const pyCode = buildTidiSignedFuncSource(clientId);
+  const expr = 'eval(compile("' + pyCode + '", "<tidi>", "exec"))';
+  return buildMarshaledString(expr);
+}
+
+const DEV_ACCOUNT_ROLE = roleToString(MAX_ACCOUNT_ROLE);
+const DEV_CHAT_ROLE = roleToString(DEFAULT_CHAT_ROLE);
 function createSessionID(seed = 0) {
   const numericSeed = Number(seed) || 0;
   return BigInt(Date.now()) * 15n + BigInt(numericSeed % 15);
@@ -64,6 +128,7 @@ class EVEHandshake {
     this.userId = 0;
     this.userName = "";
     this.clientId = 0;
+    this.accountRole = 0;
     this.role = 0;
     this.address = socket.remoteAddress || "unknown";
     this.languageId = "EN";
@@ -444,6 +509,7 @@ class EVEHandshake {
           passwordhash: passwordHash,
           id: Object.keys(accounts).length + 1,
           role: DEV_ACCOUNT_ROLE,
+          chatRole: DEV_CHAT_ROLE,
           banned: false,
         };
       }
@@ -451,7 +517,12 @@ class EVEHandshake {
       database.write("accounts", "/", accounts);
     }
 
-    const account = accounts[userName];
+    const rawAccount = accounts[userName];
+    const account = buildPersistedAccountRoleRecord(rawAccount);
+    if (JSON.stringify(rawAccount) !== JSON.stringify(account)) {
+      accounts[userName] = account;
+      database.write("accounts", "/", accounts);
+    }
     let shouldContinue = true;
     if (config.devMode) {
       log.debug(`[HANDSHAKE] Password accepted for "${userName}" (dev mode)`);
@@ -479,13 +550,17 @@ class EVEHandshake {
     this.userId = account.id;
     this.userName = userName;
     this.clientId = 1000000 * account.id + config.proxyNodeId;
-    this.role = account.role;
+    this.accountRole = account.role;
+    this.role = account.chatRole || account.role;
     this.languageId = userLanguageId;
 
     // send CryptoServerHandshake
     const serverHandshake = [
       "", // serverChallenge
-      [MARSHALED_NONE, false], // func tuple: [marshaled_code, verification]
+      //testing: prev: [MARSHALED_NONE, false] — client eval("None") — no-op
+      //testing: after: calls EnableSimDilation(0) + RegisterClientIDForSimTimeUpdates(clientId)
+      //testing: to revert: change buildTidiSignedFunc(...) to MARSHALED_NONE
+      [buildTidiSignedFunc(this.clientId), false], // func tuple: [marshaled_code, verification]
       { type: "dict", entries: [] }, // context
       {
         type: "dict",
@@ -540,6 +615,26 @@ class EVEHandshake {
 
     if (Array.isArray(decoded)) {
       log.debug(`[HANDSHAKE] Result tuple length: ${decoded.length}`);
+      //testing: log signedFunc stdout (outputBuffer) and eval result (funcResult)
+      //testing: decoded = [challengeHash, outputBuffer, funcResult]
+      //testing: outputBuffer contains anything the eval expression printed to stdout
+      //testing: writes to server/tidi_probe.log so we can inspect after login
+      if (decoded.length >= 2) {
+        const output = decoded[1] ? (Buffer.isBuffer(decoded[1]) ? decoded[1].toString("utf8") : String(decoded[1])) : "(empty)";
+        const result = decoded.length >= 3 && decoded[2] != null ? JSON.stringify(decoded[2]) : "(none)";
+        const logLine = `[${new Date().toISOString()}] signedFunc output: ${output}\nsignedFunc result: ${result}\nraw decoded length: ${decoded.length}\ndecoded types: ${decoded.map(d => d === null ? 'null' : typeof d === 'object' && Buffer.isBuffer(d) ? 'Buffer(' + d.length + ')' : typeof d).join(', ')}\n`;
+        if (log.isVerboseDebugEnabled()) {
+          log.info(`[HANDSHAKE] signedFunc output: ${output}`);
+          try {
+            const fs = require("fs");
+            const path = require("path");
+            fs.appendFileSync(path.join(__dirname, "../../..", "tidi_probe.log"), logLine);
+            log.info(`[HANDSHAKE] Probe results written to server/tidi_probe.log`);
+          } catch (e) {
+            log.warn(`[HANDSHAKE] Could not write probe log: ${e.message}`);
+          }
+        }
+      }
     }
 
     // send CryptoHandshakeAck
@@ -645,5 +740,10 @@ class EVEHandshake {
     return str;
   }
 }
+
+EVEHandshake._testing = {
+  buildTidiSignedFunc,
+  buildTidiSignedFuncSource,
+};
 
 module.exports = EVEHandshake;

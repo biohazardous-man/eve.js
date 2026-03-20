@@ -2,9 +2,12 @@
   "scripts": {
     "setup": "npm ci && npm --prefix server ci",
     "install:certs": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\Install-EvEJSCerts.ps1",
-    "sync:static-data": "node .\\scripts\\dev\\merge-jsonl-static-data-into-local.js",
+    "sync:static-data": "node .\\scripts\\dev\\merge-jsonl-static-data-into-local.js && node .\\scripts\\dev\\export-asteroid-belt-data.js",
     "sync:cosmetics-data": "node .\\scripts\\dev\\merge-jsonl-cosmetics-into-local.js",
     "verify:static-data": "node .\\scripts\\dev\\compare-jsonl-local-static-data.js",
+    "cleanup:invalid-fits": "node .\\scripts\\dev\\cleanup-invalid-fits.js",
+    "scrape:eve-survival-missions": "node .\\scripts\\dev\\scrape-eve-survival-missions.js",
+    "parse:eve-survival-missions": "node .\\scripts\\dev\\normalize-eve-survival-missions.js",
     "sync:reference-data": "npm run sync:static-data && npm run sync:cosmetics-data && npm run verify:static-data",
     "start:server": "npm --prefix server start",
     "zip:source": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\New-SourceZip.ps1"

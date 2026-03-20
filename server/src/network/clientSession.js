@@ -26,6 +26,7 @@ const sessionChangeDebugPath = path.join(
   "../../logs/session-change-debug.log",
 );
 const SESSION_CHANGE_ALLOWED_KEYS = new Set([
+  "role",
   "charid",
   "corpid",
   "allianceid",
@@ -50,6 +51,9 @@ const SESSION_CHANGE_ALLOWED_KEYS = new Set([
 ]);
 
 function appendSessionChangeDebug(entry) {
+  if (!log.isVerboseDebugEnabled()) {
+    return;
+  }
   try {
     fs.mkdirSync(path.dirname(sessionChangeDebugPath), { recursive: true });
     fs.appendFileSync(
@@ -64,6 +68,53 @@ function appendSessionChangeDebug(entry) {
   }
 }
 
+function summarizeAttributeChangeCounts(changes = []) {
+  const counts = new Map();
+  for (const change of Array.isArray(changes) ? changes : []) {
+    if (!Array.isArray(change) || change.length < 4) {
+      continue;
+    }
+
+    const attributeID = Number(change[3]);
+    if (!Number.isFinite(attributeID)) {
+      continue;
+    }
+
+    counts.set(attributeID, (counts.get(attributeID) || 0) + 1);
+  }
+
+  const entries = [...counts.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .map(([attributeID, count]) => `${attributeID}x${count}`);
+
+  if (entries.length <= 6) {
+    return entries.join(",");
+  }
+
+  return `${entries.slice(0, 6).join(",")},+${entries.length - 6} more`;
+}
+
+function buildNotificationLogMessage(notifyType, idType, payloadTuple = []) {
+  const base = `idType=${idType}`;
+  if (notifyType !== "OnModuleAttributeChanges") {
+    return base;
+  }
+
+  const payload = Array.isArray(payloadTuple) ? payloadTuple[0] : null;
+  const changes =
+    payload &&
+    typeof payload === "object" &&
+    payload.type === "list" &&
+    Array.isArray(payload.items)
+      ? payload.items
+      : [];
+  if (changes.length === 0) {
+    return `${base} changes=0`;
+  }
+
+  return `${base} changes=${changes.length} attrs=${summarizeAttributeChangeCounts(changes)}`;
+}
+
 class ClientSession {
   /**
    * @param {object} handshakeData - Data from the completed handshake
@@ -76,6 +127,8 @@ class ClientSession {
     this.userName = handshakeData.userName || "";
     this.clientID = handshakeData.clientId || 0;
     this.clientId = this.clientID; // alias for camelCase consistency
+    this.accountRole = handshakeData.accountRole || handshakeData.role || 0;
+    this.chatRole = handshakeData.chatRole || handshakeData.role || 0;
     this.role = handshakeData.role || 0;
     this.sid =
       typeof handshakeData.sessionId === "bigint"
@@ -142,17 +195,47 @@ class ClientSession {
       `[Session] Outgoing hex: ${marshaled.toString("hex").substring(0, 160)}...`,
     );
 
+    this._writePayload(marshaled);
+  }
+
+  /**
+   * Send a raw post-handshake payload to this client.
+   * This bypasses marshal encoding but still uses the normal length-prefix and
+   * session encryption path, which is what native BlueNet TiDi frames need.
+   */
+  sendRawPayload(payload, options = {}) {
+    if (!this.socket || this.socket.destroyed) {
+      log.warn(`[Session] Cannot send raw payload to ${this.address}: socket closed`);
+      return;
+    }
+
+    if (!Buffer.isBuffer(payload)) {
+      throw new TypeError("sendRawPayload expects a Buffer payload");
+    }
+
+    this.lastActivity = Date.now();
+
+    const label = options.label || "raw";
+    log.debug(`[Session] Sending raw payload (${payload.length} bytes) [${label}]`);
+    log.debug(
+      `[Session] Outgoing raw hex: ${payload.toString("hex").substring(0, 160)}...`,
+    );
+
+    this._writePayload(payload);
+  }
+
+  _writePayload(payload) {
     if (this.encrypted && this._encryptFn) {
       // Encrypt, then frame
-      const encrypted = this._encryptFn(marshaled);
+      const encrypted = this._encryptFn(payload);
       const header = Buffer.alloc(4);
       header.writeUInt32LE(encrypted.length, 0);
       this.socket.write(Buffer.concat([header, encrypted]));
     } else {
       // Frame without encryption
       const header = Buffer.alloc(4);
-      header.writeUInt32LE(marshaled.length, 0);
-      this.socket.write(Buffer.concat([header, marshaled]));
+      header.writeUInt32LE(payload.length, 0);
+      this.socket.write(Buffer.concat([header, payload]));
     }
   }
 
@@ -246,8 +329,9 @@ class ClientSession {
       args: responseTuple,
     };
 
-    log.info(
-      `[Session] Sending SessionChangeNotification with ${changeEntries.length} changes`,
+    log.pktOut(
+      "SessionChange",
+      `${changeEntries.length} changes → ${changeEntries.map(([k]) => k).join(", ")}`,
     );
     this.sendPacket(packet);
   }
@@ -302,7 +386,10 @@ class ClientSession {
       args: responseTuple,
     };
 
-    log.debug(`[Session] Sending Notification ${notifyType} (${idType})`);
+    log.pktOut(
+      notifyType || "Notification",
+      buildNotificationLogMessage(notifyType, idType, payloadTuple),
+    );
     this.sendPacket(packet);
   }
 
@@ -354,9 +441,7 @@ class ClientSession {
       args: responseTuple,
     };
 
-    log.debug(
-      `[Session] Sending Service Notification ${serviceName}::${methodName}`,
-    );
+    log.pktOut(serviceName || "Notification", `${methodName}()`);
     this.sendPacket(packet);
   }
 

@@ -1,0 +1,192 @@
+{
+  "spawnPools": [
+    {
+      "spawnPoolID": "npc_laser_hostiles",
+      "name": "Laser Hostiles",
+      "description": "Default weighted hostile /npc pool while NPC combat is still laser-only.",
+      "aliases": [
+        "npc",
+        "default",
+        "hostile"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "generic_hostile",
+          "weight": 5
+        },
+        {
+          "profileID": "blood_raider_prophecy",
+          "weight": 3
+        },
+        {
+          "profileID": "blood_raider_apocalypse",
+          "weight": 2
+        },
+        {
+          "profileID": "blood_raider_paladin",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "blood_raiders",
+      "name": "Blood Raiders",
+      "description": "Weighted Blood Raiders pool for manual /npc blood... spawns.",
+      "aliases": [
+        "blood",
+        "blood raider",
+        "blood raiders"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "generic_hostile",
+          "weight": 5
+        },
+        {
+          "profileID": "blood_raider_prophecy",
+          "weight": 3
+        },
+        {
+          "profileID": "blood_raider_apocalypse",
+          "weight": 2
+        },
+        {
+          "profileID": "blood_raider_paladin",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "concord_response_fleet",
+      "name": "CONCORD Response Fleet",
+      "description": "Default weighted /concord pool across supported police, SWAT, army, and special-ops laser hulls.",
+      "aliases": [
+        "concord",
+        "response",
+        "fleet"
+      ],
+      "entityType": "concord",
+      "entries": [
+        {
+          "profileID": "concord_response",
+          "weight": 5
+        },
+        {
+          "profileID": "concord_police_cruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "concord_police_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "concord_special_ops_frigate",
+          "weight": 3
+        },
+        {
+          "profileID": "concord_special_ops_battleship",
+          "weight": 1
+        },
+        {
+          "profileID": "concord_swat_frigate",
+          "weight": 3
+        },
+        {
+          "profileID": "concord_swat_battleship",
+          "weight": 1
+        },
+        {
+          "profileID": "concord_army_frigate",
+          "weight": 2
+        },
+        {
+          "profileID": "concord_army_battleship",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "concord_police",
+      "name": "CONCORD Police",
+      "description": "Police-only CONCORD pool for manual /concord police... spawns.",
+      "aliases": [
+        "police"
+      ],
+      "entityType": "concord",
+      "entries": [
+        {
+          "profileID": "concord_response",
+          "weight": 4
+        },
+        {
+          "profileID": "concord_police_cruiser",
+          "weight": 2
+        },
+        {
+          "profileID": "concord_police_battleship",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "concord_special_ops",
+      "name": "CONCORD Special Ops",
+      "description": "Special-ops-only CONCORD pool for manual /concord special... spawns.",
+      "aliases": [
+        "special",
+        "special ops"
+      ],
+      "entityType": "concord",
+      "entries": [
+        {
+          "profileID": "concord_special_ops_frigate",
+          "weight": 3
+        },
+        {
+          "profileID": "concord_special_ops_battleship",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "concord_swat",
+      "name": "CONCORD SWAT",
+      "description": "SWAT-only CONCORD pool for manual /concord swat... spawns.",
+      "aliases": [
+        "swat"
+      ],
+      "entityType": "concord",
+      "entries": [
+        {
+          "profileID": "concord_swat_frigate",
+          "weight": 3
+        },
+        {
+          "profileID": "concord_swat_battleship",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "concord_army",
+      "name": "CONCORD Army",
+      "description": "Army-only CONCORD pool for manual /concord army... spawns.",
+      "aliases": [
+        "army"
+      ],
+      "entityType": "concord",
+      "entries": [
+        {
+          "profileID": "concord_army_frigate",
+          "weight": 3
+        },
+        {
+          "profileID": "concord_army_battleship",
+          "weight": 1
+        }
+      ]
+    }
+  ]
+}

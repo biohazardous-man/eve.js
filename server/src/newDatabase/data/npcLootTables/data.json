@@ -1,0 +1,12 @@
+{
+  "lootTables": [
+    {
+      "lootTableID": "generic_random_any",
+      "name": "Generic Random Any Item",
+      "minEntries": 1,
+      "maxEntries": 3,
+      "stackableMinQuantity": 1,
+      "stackableMaxQuantity": 25
+    }
+  ]
+}

@@ -87,7 +87,12 @@ class LSCService extends BaseService {
       return null;
     }
 
-    const commandResult = executeChatCommand(session, message, chatHub);
+    const commandResult = executeChatCommand(session, message, chatHub, {
+      serviceManager: this.serviceManager,
+    });
+    if (commandResult.refreshChatRolePresence) {
+      chatHub.refreshSessionChatRolePresence(session);
+    }
     if (!commandResult.handled) {
       chatHub.broadcastLocalMessage(session, message);
     }

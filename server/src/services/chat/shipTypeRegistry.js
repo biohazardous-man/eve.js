@@ -39,6 +39,10 @@ function normalizeEntry(entry) {
     name: String(entry.name || "").trim(),
     groupID: Number(entry.groupID),
     categoryID: Number(entry.categoryID || SHIP_CATEGORY_ID),
+    published:
+      Object.prototype.hasOwnProperty.call(entry || {}, "published")
+        ? Boolean(entry.published)
+        : true,
     mass: Number.isFinite(Number(entry.mass)) ? Number(entry.mass) : null,
     volume: Number.isFinite(Number(entry.volume)) ? Number(entry.volume) : null,
     capacity: Number.isFinite(Number(entry.capacity)) ? Number(entry.capacity) : null,
@@ -96,7 +100,7 @@ function loadDbRegistry() {
     return registry.byTypeID.size > 0 ? registry : null;
   } catch (error) {
     log.warn(
-      `[ShipRegistry] Failed to load ship reference data from database: ${error.message}`,
+      `[ShipRegistry] Failed to load ship reference data from newDatabase: ${error.message}`,
     );
     return null;
   }
@@ -153,6 +157,13 @@ function resolveShipByName(query) {
   }
 
   const registry = loadRegistry();
+  if (/^\d+$/.test(normalizedQuery)) {
+    const exactTypeMatch = registry.byTypeID.get(Number(normalizedQuery)) || null;
+    if (exactTypeMatch) {
+      return { success: true, match: exactTypeMatch, suggestions: [] };
+    }
+  }
+
   const exactMatches = dedupeEntries(registry.byName.get(normalizedQuery) || []);
   if (exactMatches.length === 1) {
     return { success: true, match: exactMatches[0], suggestions: [] };
@@ -161,7 +172,12 @@ function resolveShipByName(query) {
     return {
       success: false,
       errorMsg: "AMBIGUOUS_SHIP_NAME",
-      suggestions: exactMatches.slice(0, 5).map((entry) => entry.name),
+      suggestions: exactMatches
+        .slice(0, 5)
+        .map(
+          (entry) =>
+            `${entry.name} (${entry.typeID}${entry.published === false ? ", unpublished" : ""})`,
+        ),
     };
   }
 
@@ -181,11 +197,24 @@ function resolveShipByName(query) {
   return {
     success: false,
     errorMsg: deduped.length > 1 ? "AMBIGUOUS_SHIP_NAME" : "SHIP_NOT_FOUND",
-    suggestions: deduped.slice(0, 5).map((entry) => entry.name),
+    suggestions: deduped
+      .slice(0, 5)
+      .map(
+        (entry) =>
+          `${entry.name} (${entry.typeID}${entry.published === false ? ", unpublished" : ""})`,
+      ),
   };
 }
 
+function getUnpublishedShipTypes() {
+  return [...loadRegistry().byTypeID.values()]
+    .filter((entry) => entry && entry.published === false)
+    .sort((left, right) => left.name.localeCompare(right.name) || left.typeID - right.typeID)
+    .map((entry) => ({ ...entry }));
+}
+
 module.exports = {
+  getUnpublishedShipTypes,
   resolveShipByName,
   resolveShipByTypeID,
 };

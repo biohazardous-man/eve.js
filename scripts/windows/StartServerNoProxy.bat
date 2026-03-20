@@ -3,8 +3,6 @@ setlocal
 
 call "%~dp0EvEJSConfig.bat"
 
-rem Force server-only behavior even if local config enables autoLaunch.
-set "EVEJS_AUTO_LAUNCH=0"
 rem Leave the client proxy redirect to a separate StartClientProxyOnly.bat terminal.
 set "EVEJS_EXPRESS_PROXY_ENABLED=0"
 set "EVEJS_PROXY_LOCAL_INTERCEPT=1"

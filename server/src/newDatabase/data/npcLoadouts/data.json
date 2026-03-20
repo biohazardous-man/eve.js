@@ -1,0 +1,174 @@
+{
+  "loadouts": [
+    {
+      "loadoutID": "small_pulse_laser_frigate",
+      "name": "Small Pulse Laser Frigate",
+      "modules": [
+        {
+          "typeID": 451,
+          "quantity": 4
+        }
+      ],
+      "charges": [
+        {
+          "typeID": 246,
+          "quantityPerModule": 1,
+          "singleton": true
+        }
+      ]
+    },
+    {
+      "loadoutID": "blood_raider_small_pulse_destroyer",
+      "name": "Blood Raiders Small Pulse Destroyer",
+      "modules": [
+        {
+          "typeID": 453,
+          "quantity": 6
+        }
+      ],
+      "charges": [
+        {
+          "typeID": 246,
+          "quantityPerModule": 1,
+          "singleton": true
+        }
+      ]
+    },
+    {
+      "loadoutID": "blood_raider_medium_pulse_battlecruiser",
+      "name": "Blood Raiders Medium Pulse Battlecruiser",
+      "modules": [
+        {
+          "typeID": 456,
+          "quantity": 5
+        }
+      ],
+      "charges": [
+        {
+          "typeID": 254,
+          "quantityPerModule": 1,
+          "singleton": true
+        }
+      ]
+    },
+    {
+      "loadoutID": "blood_raider_large_pulse_battleship",
+      "name": "Blood Raiders Large Pulse Battleship",
+      "modules": [
+        {
+          "typeID": 462,
+          "quantity": 6
+        }
+      ],
+      "charges": [
+        {
+          "typeID": 262,
+          "quantityPerModule": 1,
+          "singleton": true
+        }
+      ]
+    },
+    {
+      "loadoutID": "blood_raider_large_pulse_marauder",
+      "name": "Blood Raiders Large Pulse Marauder",
+      "modules": [
+        {
+          "typeID": 462,
+          "quantity": 4
+        }
+      ],
+      "charges": [
+        {
+          "typeID": 262,
+          "quantityPerModule": 1,
+          "singleton": true
+        }
+      ]
+    },
+    {
+      "loadoutID": "concord_small_beam_laser_frigate",
+      "name": "CONCORD Small Beam Laser Frigate",
+      "modules": [
+        {
+          "typeID": 454,
+          "quantity": 3
+        }
+      ],
+      "charges": [
+        {
+          "typeID": 246,
+          "quantityPerModule": 1,
+          "singleton": true
+        }
+      ]
+    },
+    {
+      "loadoutID": "concord_small_pulse_laser_frigate",
+      "name": "CONCORD Small Pulse Laser Frigate",
+      "modules": [
+        {
+          "typeID": 453,
+          "quantity": 3
+        }
+      ],
+      "charges": [
+        {
+          "typeID": 246,
+          "quantityPerModule": 1,
+          "singleton": true
+        }
+      ]
+    },
+    {
+      "loadoutID": "concord_medium_beam_laser_cruiser",
+      "name": "CONCORD Medium Beam Laser Cruiser",
+      "modules": [
+        {
+          "typeID": 457,
+          "quantity": 4
+        }
+      ],
+      "charges": [
+        {
+          "typeID": 254,
+          "quantityPerModule": 1,
+          "singleton": true
+        }
+      ]
+    },
+    {
+      "loadoutID": "concord_large_beam_laser_battleship",
+      "name": "CONCORD Large Beam Laser Battleship",
+      "modules": [
+        {
+          "typeID": 463,
+          "quantity": 6
+        }
+      ],
+      "charges": [
+        {
+          "typeID": 262,
+          "quantityPerModule": 1,
+          "singleton": true
+        }
+      ]
+    },
+    {
+      "loadoutID": "concord_large_pulse_laser_battleship",
+      "name": "CONCORD Large Pulse Laser Battleship",
+      "modules": [
+        {
+          "typeID": 462,
+          "quantity": 6
+        }
+      ],
+      "charges": [
+        {
+          "typeID": 262,
+          "quantityPerModule": 1,
+          "singleton": true
+        }
+      ]
+    }
+  ]
+}

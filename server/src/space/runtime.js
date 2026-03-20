@@ -1,18 +1,73 @@
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
+const config = require(path.join(__dirname, "../config"));
 const log = require(path.join(__dirname, "../utils/logger"));
 const {
   updateShipItem,
+  updateInventoryItem,
+  removeInventoryItem,
+  listContainerItems,
+  listSystemSpaceItems,
+  findItemById,
+  findShipItemById,
+  getShipConditionState,
+  normalizeShipConditionState,
+  getItemMetadata,
+  pruneExpiredSpaceItems,
 } = require(path.join(__dirname, "../services/inventory/itemStore"));
+const {
+  resolveRuntimeWreckRadius,
+} = require(path.join(__dirname, "../services/inventory/wreckRadius"));
+const {
+  getCharacterRecord,
+  getActiveShipRecord,
+} = require(path.join(__dirname, "../services/character/characterState"));
 const {
   getAppliedSkinMaterialSetID,
 } = require(path.join(__dirname, "../services/ship/shipCosmeticsState"));
 const {
+  buildSlimModuleTuples,
+  buildCharacterTargetingState,
+  buildChargeTupleItemID,
+  buildShipResourceState,
+  getAttributeIDByNames,
+  getEffectIDByNames,
+  getTypeDogmaAttributes,
+  getTypeDogmaEffects,
+  getTypeAttributeValue,
+  getEffectTypeRecord,
+  getLoadedChargeByFlag,
+  isModuleOnline,
+} = require(path.join(__dirname, "../services/fitting/liveFittingState"));
+const {
+  getCharacterSkillMap,
+} = require(path.join(__dirname, "../services/skills/skillState"));
+const {
   currentFileTime,
+  buildMarshalReal,
 } = require(path.join(__dirname, "../services/_shared/serviceHelpers"));
 const worldData = require(path.join(__dirname, "./worldData"));
 const destiny = require(path.join(__dirname, "./destiny"));
+const {
+  applyDamageToEntity,
+  buildLiveDamageState,
+  hasDamageableHealth,
+  getEntityCurrentHealthLayers,
+  getEntityMaxHealthLayers,
+} = require(path.join(__dirname, "./combat/damage"));
+const {
+  buildWeaponModuleSnapshot,
+  resolveWeaponFamily,
+} = require(path.join(__dirname, "./combat/weaponDogma"));
+const {
+  resolveLaserTurretShot,
+} = require(path.join(__dirname, "./combat/laserTurrets"));
+//testing: import TiDi notification helpers for system entry/leave
+const {
+  sendTimeDilationNotificationToSession,
+} = require(path.join(__dirname, "../utils/synchronizedTimeDilation"));
 
 const ONE_AU_IN_METERS = 149597870700;
 const MIN_WARP_DISTANCE_METERS = 150000;
@@ -26,6 +81,13 @@ const STARGATE_ACTIVATION_STATE = Object.freeze({
   ACTIVATING: 2,
 });
 const STARGATE_ACTIVATION_TRANSITION_MS = 3000;
+const NEW_EDEN_SYSTEM_LOADING = Object.freeze({
+  LAZY: 1,
+  HIGHSEC: 2,
+  ALL: 3,
+});
+// Mode 1 intentionally preserves the current startup behavior so a fresh boot
+// still only opens the known Jita <-> New Caldari path by default.
 const STARTUP_PRELOADED_SYSTEM_IDS = Object.freeze([30000142, 30000145]);
 const DEFAULT_STARGATE_INTERACTION_RADIUS = 1;
 const DEFAULT_STATION_INTERACTION_RADIUS = 1000;
@@ -40,6 +102,12 @@ const DESTINY_DEBUG_PATH = path.join(__dirname, "../../logs/space-destiny-debug.
 const WARP_DEBUG_PATH = path.join(__dirname, "../../logs/space-warp-debug.log");
 const BALL_DEBUG_PATH = path.join(__dirname, "../../logs/space-ball-debug.log");
 const BUBBLE_DEBUG_PATH = path.join(__dirname, "../../logs/space-bubble-debug.log");
+const JUMP_TIMING_TRACE_PATH = path.join(__dirname, "../../logs/space-jump-timing-trace.log");
+const SHIP_FITTING_FLAG_RANGES = Object.freeze([
+  Object.freeze([11, 34]),
+  Object.freeze([92, 99]),
+  Object.freeze([125, 132]),
+]);
 const WATCHER_CORRECTION_INTERVAL_MS = 500;
 const WATCHER_POSITION_CORRECTION_INTERVAL_MS = 1000;
 const ACTIVE_SUBWARP_WATCHER_CORRECTION_INTERVAL_MS = 250;
@@ -56,23 +124,61 @@ const WARP_POSITION_CORRECTION_INTERVAL_MS = 250;
 const BUBBLE_RADIUS_METERS = 250_000;
 const BUBBLE_HYSTERESIS_METERS = 5_000;
 const BUBBLE_RADIUS_SQUARED = BUBBLE_RADIUS_METERS * BUBBLE_RADIUS_METERS;
+const BUBBLE_CENTER_MIN_DISTANCE_METERS = BUBBLE_RADIUS_METERS * 2;
+const BUBBLE_CENTER_MIN_DISTANCE_SQUARED =
+  BUBBLE_CENTER_MIN_DISTANCE_METERS * BUBBLE_CENTER_MIN_DISTANCE_METERS;
 const BUBBLE_RETENTION_RADIUS_METERS =
   BUBBLE_RADIUS_METERS + BUBBLE_HYSTERESIS_METERS;
 const BUBBLE_RETENTION_RADIUS_SQUARED =
   BUBBLE_RETENTION_RADIUS_METERS * BUBBLE_RETENTION_RADIUS_METERS;
-// Remote observers should keep a departing warp ship only long enough for the
-// local warp-out effect to own the departure transition. After that, the ship
-// should leave the departure scene entirely instead of lingering until pure
-// range culling removes it.
-const OBSERVER_WARP_DEPARTURE_VISIBLE_MS = 2000;
+// CCP expanded the player-facing grid from 250km to 8000km on
+// December 8, 2015, and CCP Nullarbor clarified the underlying grid-box size
+// as 7,864,320m. Keep 250km bubbles as the INTERNAL ownership unit, but drive
+// player-facing dynamic visibility from these larger public-grid boxes.
+const PUBLIC_GRID_BOX_METERS = 7_864_320;
+const PUBLIC_GRID_HALF_BOX_METERS = PUBLIC_GRID_BOX_METERS / 2;
 const MOVEMENT_TRACE_WINDOW_MS = 5000;
 const MAX_SUBWARP_SPEED_FRACTION = 1.0;
 const DESTINY_STAMP_INTERVAL_MS = 1000;
 const DESTINY_STAMP_MAX_LEAD = 1;
 const DESTINY_ACCEL_LOG_DENOMINATOR = Math.log(10000);
 const DESTINY_ALIGN_LOG_DENOMINATOR = Math.log(4);
+// The published passive recharge curve is asymptotic near full. Settle the
+// final client-visible capacitor unit so ships do not linger at 6749/6750.
+const PASSIVE_RECHARGE_FULL_SNAP_UNITS = 1;
 const TURN_ALIGNMENT_RADIANS = 4 * (Math.PI / 180);
 const WARP_ALIGNMENT_RADIANS = 6 * (Math.PI / 180);
+const FILETIME_TICKS_PER_MS = 10000n;
+const FILETIME_EPOCH_OFFSET = 116444736000000000n;
+const MIN_TIME_DILATION = 0.1;
+const MAX_TIME_DILATION = 1.0;
+const SIM_CLOCK_REBASE_INTERVAL_MS = 250;
+const PROPULSION_EFFECT_AFTERBURNER = "moduleBonusAfterburner";
+const PROPULSION_EFFECT_MICROWARPDRIVE = "moduleBonusMicrowarpdrive";
+const PROPULSION_GUID_BY_EFFECT = Object.freeze({
+  [PROPULSION_EFFECT_AFTERBURNER]: "effects.Afterburner",
+  [PROPULSION_EFFECT_MICROWARPDRIVE]: "effects.MicroWarpDrive",
+});
+const EFFECT_ID_AFTERBURNER = getEffectIDByNames(PROPULSION_EFFECT_AFTERBURNER) || 6731;
+const EFFECT_ID_MICROWARPDRIVE = getEffectIDByNames(PROPULSION_EFFECT_MICROWARPDRIVE) || 6730;
+const SESSION_JUMP_TRACE_WINDOW_MS = 120000;
+let nextSessionJumpTraceID = 1;
+const PROPULSION_SKILL_AFTERBURNER = 3450;
+const PROPULSION_SKILL_FUEL_CONSERVATION = 3451;
+const PROPULSION_SKILL_ACCELERATION_CONTROL = 3452;
+const PROPULSION_SKILL_HIGH_SPEED_MANEUVERING = 3454;
+const MODULE_ATTRIBUTE_CAPACITOR_NEED = 6;
+const MODULE_ATTRIBUTE_SPEED_FACTOR = 20;
+const MODULE_ATTRIBUTE_SPEED = 51;
+const MODULE_ATTRIBUTE_DURATION = 73;
+const MODULE_ATTRIBUTE_CAPACITOR_CAPACITY_MULTIPLIER = 147;
+const MODULE_ATTRIBUTE_SIGNATURE_RADIUS_BONUS = 554;
+const MODULE_ATTRIBUTE_SPEED_BOOST_FACTOR = 567;
+const MODULE_ATTRIBUTE_MAX_GROUP_ACTIVE = 763;
+const MODULE_ATTRIBUTE_MASS_ADDITION = 796;
+const MODULE_ATTRIBUTE_MAX_VELOCITY_ACTIVATION_LIMIT = 1028;
+const MODULE_ATTRIBUTE_REACTIVATION_DELAY = 669;
+const SPECIAL_FX_REPEAT_WINDOW_MS = 12 * 60 * 60 * 1000;
 const WARP_ENTRY_SPEED_FRACTION = 0.749;
 const WARP_NATIVE_ACTIVATION_SPEED_FRACTION = 0.75;
 const WARP_NATIVE_ACTIVATION_SPEED_MARGIN_MS = 1;
@@ -132,8 +238,9 @@ const ENABLE_PILOT_WARP_ACTIVE_CORRECTIONS = false;
 const PILOT_WARP_SPEED_RAMP_FRACTIONS = Object.freeze([0.2, 0.45, 0.7, 1.0]);
 const PILOT_WARP_SPEED_RAMP_SCALES = Object.freeze([0.6, 0.75, 0.9, 0.95]);
 
-let nextStamp = 0;
 let nextMovementTraceID = 1;
+let nextRuntimeEntityID = 900_000_000_000;
+let nextFallbackStamp = 0;
 
 function getCurrentDestinyStamp(now = Date.now()) {
   const numericNow = Number(now);
@@ -150,16 +257,16 @@ function getMovementStamp(now = Date.now()) {
 function getNextStamp(now = Date.now()) {
   const currentStamp = getCurrentDestinyStamp(now);
   const maxAllowedStamp = (currentStamp + DESTINY_STAMP_MAX_LEAD) >>> 0;
-  if (nextStamp < currentStamp) {
-    nextStamp = currentStamp;
-    return nextStamp;
+  if (nextFallbackStamp < currentStamp) {
+    nextFallbackStamp = currentStamp;
+    return nextFallbackStamp;
   }
-  if (nextStamp >= maxAllowedStamp) {
-    nextStamp = maxAllowedStamp;
-    return nextStamp;
+  if (nextFallbackStamp >= maxAllowedStamp) {
+    nextFallbackStamp = maxAllowedStamp;
+    return nextFallbackStamp;
   }
-  nextStamp = (nextStamp + 1) >>> 0;
-  return nextStamp;
+  nextFallbackStamp = (nextFallbackStamp + 1) >>> 0;
+  return nextFallbackStamp;
 }
 
 function clamp(value, min, max) {
@@ -180,11 +287,91 @@ function roundNumber(value, decimals = 1) {
   return Math.round(toFiniteNumber(value, 0) * factor) / factor;
 }
 
+function advancePassiveRechargeRatio(currentRatio, deltaSeconds, rechargeSeconds) {
+  const clampedRatio = clamp(toFiniteNumber(currentRatio, 0), 0, 1);
+  const elapsedSeconds = Math.max(0, toFiniteNumber(deltaSeconds, 0));
+  const totalRechargeSeconds = Math.max(0, toFiniteNumber(rechargeSeconds, 0));
+  if (
+    clampedRatio <= 0 ||
+    clampedRatio >= 1 ||
+    elapsedSeconds <= 0 ||
+    totalRechargeSeconds <= 0
+  ) {
+    return clampedRatio;
+  }
+
+  // Closed-form progression of CCP's published capacitor curve:
+  //   C1/Cmax = (1 + (sqrt(C0/Cmax) - 1) * e^(-5 * dt / T))^2
+  const nextRoot =
+    1 + ((Math.sqrt(clampedRatio) - 1) * Math.exp((-5 * elapsedSeconds) / totalRechargeSeconds));
+  return clamp(nextRoot * nextRoot, 0, 1);
+}
+
+function settlePassiveRechargeRatio(nextRatio, capacity) {
+  const clampedRatio = clamp(toFiniteNumber(nextRatio, 0), 0, 1);
+  const maxCapacity = Math.max(0, toFiniteNumber(capacity, 0));
+  if (clampedRatio >= 1 || maxCapacity <= 0) {
+    return clampedRatio >= 1 ? 1 : clampedRatio;
+  }
+
+  const remainingUnits = maxCapacity * (1 - clampedRatio);
+  return remainingUnits <= PASSIVE_RECHARGE_FULL_SNAP_UNITS ? 1 : clampedRatio;
+}
+
+function toFileTimeFromMs(value, fallback = currentFileTime()) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return fallback;
+  }
+  return BigInt(Math.trunc(numericValue)) * FILETIME_TICKS_PER_MS + FILETIME_EPOCH_OFFSET;
+}
+
+function fileTimeToMs(value, fallback = Date.now()) {
+  try {
+    const numericValue =
+      typeof value === "bigint"
+        ? value
+        : BigInt(value && value.type === "long" ? value.value : value);
+    if (numericValue <= FILETIME_EPOCH_OFFSET) {
+      return fallback;
+    }
+    return Number((numericValue - FILETIME_EPOCH_OFFSET) / FILETIME_TICKS_PER_MS);
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function clampTimeDilationFactor(value, fallback = 1) {
+  return clamp(
+    toFiniteNumber(value, fallback),
+    MIN_TIME_DILATION,
+    MAX_TIME_DILATION,
+  );
+}
+
 function unwrapMarshalNumber(value, fallback = 0) {
   if (value && typeof value === "object" && value.type === "real") {
     return toFiniteNumber(value.value, fallback);
   }
   return toFiniteNumber(value, fallback);
+}
+
+function marshalModuleDurationWireValue(value) {
+  if (value === undefined || value === null) {
+    return value;
+  }
+  if (value && typeof value === "object" && value.type === "real") {
+    return value;
+  }
+
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return value;
+  }
+  if (numericValue < 0) {
+    return Math.trunc(numericValue);
+  }
+  return buildMarshalReal(numericValue, 0);
 }
 
 function cloneVector(source = null, fallback = { x: 0, y: 0, z: 0 }) {
@@ -265,6 +452,56 @@ function distanceSquared(left, right) {
   const dy = toFiniteNumber(left && left.y, 0) - toFiniteNumber(right && right.y, 0);
   const dz = toFiniteNumber(left && left.z, 0) - toFiniteNumber(right && right.z, 0);
   return (dx ** 2) + (dy ** 2) + (dz ** 2);
+}
+
+function getPublicGridAxisIndex(value) {
+  return Math.floor(toFiniteNumber(value, 0) / PUBLIC_GRID_BOX_METERS);
+}
+
+function buildPublicGridKeyFromIndices(xIndex, yIndex, zIndex) {
+  return `${toInt(xIndex, 0)}:${toInt(yIndex, 0)}:${toInt(zIndex, 0)}`;
+}
+
+function buildPublicGridKey(position) {
+  const resolvedPosition = cloneVector(position);
+  return buildPublicGridKeyFromIndices(
+    getPublicGridAxisIndex(resolvedPosition.x),
+    getPublicGridAxisIndex(resolvedPosition.y),
+    getPublicGridAxisIndex(resolvedPosition.z),
+  );
+}
+
+function parsePublicGridKey(key) {
+  if (typeof key !== "string" || key.trim() === "") {
+    return {
+      key: buildPublicGridKeyFromIndices(0, 0, 0),
+      xIndex: 0,
+      yIndex: 0,
+      zIndex: 0,
+    };
+  }
+
+  const [rawX, rawY, rawZ] = key.split(":");
+  const xIndex = toInt(rawX, 0);
+  const yIndex = toInt(rawY, 0);
+  const zIndex = toInt(rawZ, 0);
+  return {
+    key: buildPublicGridKeyFromIndices(xIndex, yIndex, zIndex),
+    xIndex,
+    yIndex,
+    zIndex,
+  };
+}
+
+function summarizePublicGrid(position) {
+  const resolvedPosition = cloneVector(position);
+  return {
+    key: buildPublicGridKey(resolvedPosition),
+    xIndex: getPublicGridAxisIndex(resolvedPosition.x),
+    yIndex: getPublicGridAxisIndex(resolvedPosition.y),
+    zIndex: getPublicGridAxisIndex(resolvedPosition.z),
+    boxMeters: PUBLIC_GRID_BOX_METERS,
+  };
 }
 
 // Debug/test-only helper for slash-command FX previews. This is intentionally
@@ -410,6 +647,9 @@ function armMovementTrace(entity, reason, context = {}, now = Date.now()) {
 }
 
 function appendMovementDebug(entry) {
+  if (!log.isVerboseDebugEnabled()) {
+    return;
+  }
   try {
     fs.mkdirSync(path.dirname(MOVEMENT_DEBUG_PATH), { recursive: true });
     fs.appendFileSync(
@@ -423,6 +663,9 @@ function appendMovementDebug(entry) {
 }
 
 function appendDestinyDebug(entry) {
+  if (!log.isVerboseDebugEnabled()) {
+    return;
+  }
   try {
     fs.mkdirSync(path.dirname(DESTINY_DEBUG_PATH), { recursive: true });
     fs.appendFileSync(
@@ -436,6 +679,9 @@ function appendDestinyDebug(entry) {
 }
 
 function appendWarpDebug(entry) {
+  if (!log.isVerboseDebugEnabled()) {
+    return;
+  }
   try {
     fs.mkdirSync(path.dirname(WARP_DEBUG_PATH), { recursive: true });
     fs.appendFileSync(
@@ -449,6 +695,9 @@ function appendWarpDebug(entry) {
 }
 
 function appendBallDebug(entry) {
+  if (!log.isVerboseDebugEnabled()) {
+    return;
+  }
   try {
     fs.mkdirSync(path.dirname(BALL_DEBUG_PATH), { recursive: true });
     fs.appendFileSync(
@@ -462,6 +711,9 @@ function appendBallDebug(entry) {
 }
 
 function appendBubbleDebug(entry) {
+  if (!log.isVerboseDebugEnabled()) {
+    return;
+  }
   try {
     fs.mkdirSync(path.dirname(BUBBLE_DEBUG_PATH), { recursive: true });
     fs.appendFileSync(
@@ -472,6 +724,154 @@ function appendBubbleDebug(entry) {
   } catch (error) {
     log.warn(`[SpaceRuntime] Failed to append bubble debug log: ${error.message}`);
   }
+}
+
+function normalizeTraceValue(value, depth = 0) {
+  if (depth > 4) {
+    return "[depth-limit]";
+  }
+  if (value === null || value === undefined) {
+    return value;
+  }
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  if (
+    typeof value === "number" ||
+    typeof value === "string" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeTraceValue(entry, depth + 1));
+  }
+  if (value instanceof Set) {
+    return Array.from(value.values()).map((entry) =>
+      normalizeTraceValue(entry, depth + 1),
+    );
+  }
+  if (typeof value === "object") {
+    const normalized = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (typeof entry === "function") {
+        continue;
+      }
+      normalized[key] = normalizeTraceValue(entry, depth + 1);
+    }
+    return normalized;
+  }
+  return String(value);
+}
+
+function buildSessionJumpTraceSnapshot(session) {
+  if (!session) {
+    return null;
+  }
+  return normalizeTraceValue({
+    clientID: session.clientID || null,
+    characterID: session.characterID || null,
+    characterName: session.characterName || null,
+    transitionState: session._transitionState || null,
+    space: session._space
+      ? {
+          systemID: session._space.systemID,
+          shipID: session._space.shipID,
+          beyonceBound: session._space.beyonceBound === true,
+          initialStateSent: session._space.initialStateSent === true,
+          initialBallparkVisualsSent:
+            session._space.initialBallparkVisualsSent === true,
+          initialBallparkClockSynced:
+            session._space.initialBallparkClockSynced === true,
+          deferInitialBallparkClockUntilBind:
+            session._space.deferInitialBallparkClockUntilBind === true,
+          deferInitialBallparkStateUntilBind:
+            session._space.deferInitialBallparkStateUntilBind === true,
+          timeDilation: session._space.timeDilation,
+          simTimeMs: session._space.simTimeMs,
+          simFileTime: session._space.simFileTime,
+        }
+      : null,
+    nextInitialBallparkPreviousSimTimeMs:
+      session._nextInitialBallparkPreviousSimTimeMs ?? null,
+    nextInitialBallparkPreviousTimeDilation:
+      session._nextInitialBallparkPreviousTimeDilation ?? null,
+    nextInitialBallparkPreviousCapturedAtWallclockMs:
+      session._nextInitialBallparkPreviousCapturedAtWallclockMs ?? null,
+    skipNextInitialBallparkRebase:
+      session._skipNextInitialBallparkRebase === true,
+  });
+}
+
+function appendJumpTimingTrace(entry) {
+  if (!log.isVerboseDebugEnabled()) {
+    return;
+  }
+  try {
+    fs.mkdirSync(path.dirname(JUMP_TIMING_TRACE_PATH), { recursive: true });
+    fs.appendFileSync(
+      JUMP_TIMING_TRACE_PATH,
+      `${JSON.stringify(normalizeTraceValue({
+        loggedAt: new Date().toISOString(),
+        ...entry,
+      }))}\n`,
+      "utf8",
+    );
+  } catch (error) {
+    log.warn(`[SpaceRuntime] Failed to append jump timing trace log: ${error.message}`);
+  }
+}
+
+function getActiveSessionJumpTrace(session) {
+  if (!session || !session._jumpTimingTrace) {
+    return null;
+  }
+  const trace = session._jumpTimingTrace;
+  const now = Date.now();
+  if (Number(trace.untilMs || 0) > 0 && now > Number(trace.untilMs)) {
+    session._jumpTimingTrace = null;
+    return null;
+  }
+  return trace;
+}
+
+function beginSessionJumpTimingTrace(session, kind, details = {}) {
+  if (!session) {
+    return null;
+  }
+  const now = Date.now();
+  const trace = {
+    id: nextSessionJumpTraceID++,
+    kind,
+    startedAtMs: now,
+    untilMs: now + SESSION_JUMP_TRACE_WINDOW_MS,
+  };
+  session._jumpTimingTrace = trace;
+  appendJumpTimingTrace({
+    traceID: trace.id,
+    event: "trace-start",
+    kind,
+    atMs: now,
+    details,
+    session: buildSessionJumpTraceSnapshot(session),
+  });
+  return trace;
+}
+
+function recordSessionJumpTimingTrace(session, event, details = {}) {
+  const trace = getActiveSessionJumpTrace(session);
+  if (!trace) {
+    return false;
+  }
+  appendJumpTimingTrace({
+    traceID: trace.id,
+    event,
+    kind: trace.kind,
+    atMs: Date.now(),
+    details,
+    session: buildSessionJumpTraceSnapshot(session),
+  });
+  return true;
 }
 
 function logBubbleDebug(event, details = {}) {
@@ -506,6 +906,7 @@ function summarizeBubbleState(bubble) {
 
   return {
     id: toInt(bubble.id, 0),
+    uuid: String(bubble.uuid || ""),
     center: summarizeVector(bubble.center),
     entityCount: bubble.entityIDs instanceof Set ? bubble.entityIDs.size : 0,
     entityIDs:
@@ -527,6 +928,18 @@ function buildPerpendicular(vector) {
 
 function normalizeMode(value, fallback = "STOP") {
   return VALID_MODES.has(value) ? value : fallback;
+}
+
+function allocateRuntimeEntityID(preferredItemID = null) {
+  const numericPreferred = toInt(preferredItemID, 0);
+  if (numericPreferred > 0) {
+    nextRuntimeEntityID = Math.max(nextRuntimeEntityID, numericPreferred + 1);
+    return numericPreferred;
+  }
+
+  const allocated = nextRuntimeEntityID;
+  nextRuntimeEntityID += 1;
+  return allocated;
 }
 
 function deriveAgilitySeconds(alignTime, maxAccelerationTime, mass = 0, inertia = 0) {
@@ -877,6 +1290,80 @@ function getSecurityStatusIconKey(system) {
   return `SEC_${whole}_${tenths}`;
 }
 
+function getDisplayedSecurityForStartupLoading(system) {
+  return Math.round(getSolarSystemPseudoSecurity(system) * 10) / 10;
+}
+
+function getConfiguredStartupSystemLoadingMode() {
+  const configuredMode = toInt(
+    config.NewEdenSystemLoading,
+    NEW_EDEN_SYSTEM_LOADING.LAZY,
+  );
+  if (
+    configuredMode === NEW_EDEN_SYSTEM_LOADING.HIGHSEC ||
+    configuredMode === NEW_EDEN_SYSTEM_LOADING.ALL
+  ) {
+    return configuredMode;
+  }
+  return NEW_EDEN_SYSTEM_LOADING.LAZY;
+}
+
+function normalizeStartupSystemIDs(systemIDs) {
+  return [...new Set(
+    (Array.isArray(systemIDs) ? systemIDs : [])
+      .map((value) => toInt(value, 0))
+      .filter((value) => value > 0),
+  )].sort((left, right) => left - right);
+}
+
+function resolveStartupSolarSystemPreloadPlan() {
+  const mode = getConfiguredStartupSystemLoadingMode();
+
+  if (mode === NEW_EDEN_SYSTEM_LOADING.HIGHSEC) {
+    return {
+      mode,
+      modeName: "High-Sec Preload",
+      label:
+        "preloading every high-security system with displayed security 0.5+ from world data",
+      selectionRule: "Displayed security >= 0.5, resolved dynamically from world data",
+      targetSummary: "All high-security systems",
+      systemIDs: normalizeStartupSystemIDs(
+        worldData.getSolarSystems()
+          .filter(
+            (system) => getDisplayedSecurityForStartupLoading(system) >= 0.5,
+          )
+          .map((system) => system && system.solarSystemID),
+      ),
+    };
+  }
+
+  if (mode === NEW_EDEN_SYSTEM_LOADING.ALL) {
+    return {
+      mode,
+      modeName: "All Systems",
+      label: "preloading every solar system in New Eden",
+      selectionRule: "Every solar system row is queued during startup",
+      targetSummary: "All solar systems",
+      systemIDs: normalizeStartupSystemIDs(
+        worldData.getSolarSystems().map((system) => system && system.solarSystemID),
+      ),
+    };
+  }
+
+  return {
+    mode: NEW_EDEN_SYSTEM_LOADING.LAZY,
+    modeName: "Lazy Default",
+    label: "preloading only the default startup systems (Jita and New Caldari)",
+    selectionRule: "Preserves the current startup behavior",
+    targetSummary: "Jita and New Caldari",
+    systemIDs: [...STARTUP_PRELOADED_SYSTEM_IDS],
+  };
+}
+
+function resolveStartupPreloadedSystemIDs() {
+  return resolveStartupSolarSystemPreloadPlan().systemIDs;
+}
+
 function isHazardousSecurityTransition(sourceSystem, destinationSystem) {
   const sourceSecurityClass = getSystemSecurityClass(sourceSystem);
   const destinationSecurityClass = getSystemSecurityClass(destinationSystem);
@@ -1014,6 +1501,297 @@ function resolveShipSkinMaterialSetID(shipItem) {
   }
 
   return getAppliedSkinMaterialSetID(shipItem.itemID);
+}
+
+function isShipFittingFlag(flagID) {
+  const numericFlagID = toInt(flagID, 0);
+  return SHIP_FITTING_FLAG_RANGES.some(
+    ([minimum, maximum]) =>
+      numericFlagID >= minimum && numericFlagID <= maximum,
+  );
+}
+
+function normalizeSlimShipModules(modules) {
+  if (!Array.isArray(modules)) {
+    return [];
+  }
+
+  return modules
+    .map((entry) => {
+      if (Array.isArray(entry)) {
+        return [
+          toInt(entry[0], 0),
+          toInt(entry[1], 0),
+          toInt(entry[2], 0),
+        ];
+      }
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+      return [
+        toInt(entry.itemID, 0),
+        toInt(entry.typeID, 0),
+        toInt(entry.flagID, 0),
+      ];
+    })
+    .filter(
+      (entry) =>
+        Array.isArray(entry) &&
+        entry.length === 3 &&
+        entry.every((value) => Number.isInteger(value) && value > 0),
+    )
+    .sort((left, right) => {
+      if (left[2] !== right[2]) {
+        return left[2] - right[2];
+      }
+      return left[0] - right[0];
+    });
+}
+
+function getShipEntityInventoryCharacterID(entity, fallback = 0) {
+  return toInt(
+    entity && (
+      entity.pilotCharacterID ??
+      entity.characterID
+    ),
+    fallback,
+  );
+}
+
+function getShipEntityVisibleCharacterID(entity, fallback = 0) {
+  return toInt(entity && entity.characterID, fallback);
+}
+
+function getShipEntityDebugCharacterID(entity, fallback = 0) {
+  const inventoryCharacterID = getShipEntityInventoryCharacterID(entity, 0);
+  if (inventoryCharacterID > 0) {
+    return inventoryCharacterID;
+  }
+  return getShipEntityVisibleCharacterID(entity, fallback);
+}
+
+function getCharacterBackedShipPresentation(entity) {
+  const characterID = getShipEntityInventoryCharacterID(entity, 0);
+  if (characterID <= 0) {
+    return null;
+  }
+
+  return getCharacterRecord(characterID) || null;
+}
+
+function resolveShipSlimModules(entity) {
+  if (!entity || entity.kind !== "ship") {
+    return [];
+  }
+
+  const characterID = getShipEntityInventoryCharacterID(entity, 0);
+  if (characterID > 0) {
+    return normalizeSlimShipModules(
+      buildSlimModuleTuples(characterID, entity.itemID),
+    );
+  }
+
+  return normalizeSlimShipModules(entity.modules);
+}
+
+function refreshShipConditionFields(entity) {
+  if (!entity || entity.kind !== "ship") {
+    return entity;
+  }
+
+  const shipItem = findShipItemById(entity.itemID) || null;
+  const conditionState = shipItem
+    ? getShipConditionState(shipItem)
+    : normalizeShipConditionState(entity.conditionState);
+  entity.conditionState = conditionState;
+  entity.capacitorChargeRatio = clamp(
+    toFiniteNumber(
+      conditionState && conditionState.charge,
+      toFiniteNumber(entity.capacitorChargeRatio, 1),
+    ),
+    0,
+    1,
+  );
+  return entity;
+}
+
+function refreshShipPresentationFields(entity) {
+  if (!entity || entity.kind !== "ship") {
+    return entity;
+  }
+
+  const characterData = getCharacterBackedShipPresentation(entity);
+  const resolvedSkinMaterialSetID = getAppliedSkinMaterialSetID(entity.itemID);
+  refreshShipConditionFields(entity);
+  entity.skinMaterialSetID =
+    resolvedSkinMaterialSetID !== null &&
+    resolvedSkinMaterialSetID !== undefined
+      ? resolvedSkinMaterialSetID
+      : entity.skinMaterialSetID ?? null;
+  entity.modules = resolveShipSlimModules(entity);
+  entity.securityStatus = toFiniteNumber(
+    characterData && (characterData.securityStatus ?? characterData.securityRating),
+    toFiniteNumber(entity.securityStatus, 0),
+  );
+  entity.bounty = toFiniteNumber(
+    characterData && characterData.bounty,
+    toFiniteNumber(entity.bounty, 0),
+  );
+  return entity;
+}
+
+function isEntityUsingAlternateSlimCategory(entity) {
+  if (!entity || entity.kind !== "ship") {
+    return false;
+  }
+
+  const categoryID = toInt(entity.categoryID, 0);
+  const slimCategoryID = toInt(
+    entity.slimCategoryID,
+    categoryID,
+  );
+  return categoryID > 0 && slimCategoryID > 0 && slimCategoryID !== categoryID;
+}
+
+function resolveSpecialFxOptionsForEntity(shipID, options = {}, visibilityEntity = null) {
+  if (!visibilityEntity || !isEntityUsingAlternateSlimCategory(visibilityEntity)) {
+    return options;
+  }
+
+  const moduleID = toInt(options && options.moduleID, 0);
+  if (moduleID <= 0) {
+    return options;
+  }
+
+  return {
+    ...options,
+    // Local CCP client EntityShip hardpoints are keyed by shipID for NPC/entity
+    // presentation, not by the underlying fitted module itemID.
+    moduleID: toInt(shipID, toInt(visibilityEntity.itemID, moduleID)),
+  };
+}
+
+function isInventoryBackedDynamicEntity(entity) {
+  return Boolean(
+    entity &&
+    (entity.kind === "container" || entity.kind === "wreck"),
+  );
+}
+
+function refreshInventoryBackedEntityPresentationFields(entity) {
+  if (!isInventoryBackedDynamicEntity(entity)) {
+    return entity;
+  }
+
+  const itemRecord = findItemById(entity.itemID) || null;
+  if (!itemRecord) {
+    return entity;
+  }
+
+  const metadata = getItemMetadata(itemRecord.typeID, itemRecord.itemName);
+  const resolvedRadius = resolveRuntimeInventoryEntityRadius(
+    entity.kind,
+    itemRecord,
+    metadata,
+    toFiniteNumber(entity.radius, 1),
+  );
+  entity.ownerID = toInt(itemRecord.ownerID, toInt(entity.ownerID, 0));
+  entity.itemName = String(itemRecord.itemName || metadata.name || entity.itemName || "Container");
+  entity.typeID = toInt(itemRecord.typeID, entity.typeID);
+  entity.groupID = toInt(itemRecord.groupID, entity.groupID);
+  entity.categoryID = toInt(itemRecord.categoryID, entity.categoryID);
+  entity.radius = resolvedRadius;
+  entity.signatureRadius = resolveRuntimeInventoryEntitySignatureRadius(
+    itemRecord,
+    metadata,
+    resolvedRadius,
+  );
+  entity.spaceState = itemRecord.spaceState || entity.spaceState || null;
+  entity.conditionState = normalizeShipConditionState(itemRecord.conditionState);
+  entity.createdAtMs = toFiniteNumber(itemRecord.createdAtMs, 0) || null;
+  entity.expiresAtMs = toFiniteNumber(itemRecord.expiresAtMs, 0) || null;
+  entity.isEmpty = listContainerItems(null, entity.itemID).length === 0;
+  return entity;
+}
+
+function applySessionStateToShipEntity(entity, session, shipItem = null) {
+  if (!entity || entity.kind !== "ship") {
+    return entity;
+  }
+
+  const characterID = toInt(session && session.characterID, 0);
+  const characterData =
+    characterID > 0 ? getCharacterRecord(characterID) || null : null;
+
+  entity.session = session || null;
+  entity.persistSpaceState = true;
+  entity.ownerID = toInt(
+    shipItem && shipItem.ownerID,
+    toInt(entity.ownerID, characterID),
+  );
+  entity.characterID = characterID;
+  entity.pilotCharacterID = characterID;
+  entity.corporationID = toInt(session && session.corporationID, 0);
+  entity.allianceID = toInt(session && session.allianceID, 0);
+  entity.warFactionID = toInt(session && session.warFactionID, 0);
+  entity.itemName = String(
+    (shipItem && shipItem.itemName) ||
+      (session && session.shipName) ||
+      entity.itemName ||
+      "Ship",
+  );
+  entity.conditionState = normalizeShipConditionState(
+    (shipItem && shipItem.conditionState) || entity.conditionState,
+  );
+
+  const resolvedSkinMaterialSetID = resolveShipSkinMaterialSetID(shipItem);
+  entity.skinMaterialSetID =
+    resolvedSkinMaterialSetID !== null &&
+    resolvedSkinMaterialSetID !== undefined
+      ? resolvedSkinMaterialSetID
+      : entity.skinMaterialSetID ?? null;
+  entity.modules = normalizeSlimShipModules(
+    buildSlimModuleTuples(characterID, entity.itemID),
+  );
+  entity.securityStatus = toFiniteNumber(
+    characterData && (characterData.securityStatus ?? characterData.securityRating),
+    0,
+  );
+  entity.bounty = toFiniteNumber(characterData && characterData.bounty, 0);
+  return entity;
+}
+
+function clearSessionStateFromShipEntity(entity) {
+  if (!entity || entity.kind !== "ship") {
+    return entity;
+  }
+
+  entity.session = null;
+  entity.characterID = 0;
+  entity.pilotCharacterID = 0;
+  entity.corporationID = 0;
+  entity.allianceID = 0;
+  entity.warFactionID = 0;
+  entity.securityStatus = 0;
+  entity.bounty = 0;
+  return entity;
+}
+
+function refreshEntitiesForSlimPayload(entities) {
+  if (!Array.isArray(entities)) {
+    return [];
+  }
+
+  for (const entity of entities) {
+    refreshShipPresentationFields(entity);
+    refreshInventoryBackedEntityPresentationFields(entity);
+  }
+
+  return entities;
+}
+
+function isBubbleScopedStaticEntity(entity) {
+  return entity && entity.staticVisibilityScope === "bubble";
 }
 
 function getStationInteractionRadius(station) {
@@ -1492,7 +2270,7 @@ function logWarpDebug(event, entity, extra = {}) {
     event,
     atMs: now,
     destinyStamp: getCurrentDestinyStamp(now),
-    charID: entity.characterID || 0,
+    charID: getShipEntityDebugCharacterID(entity, 0),
     shipID: entity.itemID || 0,
     systemID: entity.systemID || 0,
     mode: entity.mode || "UNKNOWN",
@@ -1514,7 +2292,7 @@ function logBallDebug(event, entity, extra = {}) {
     event,
     atMs: Date.now(),
     destinyStamp: getCurrentDestinyStamp(),
-    charID: entity.characterID || 0,
+    charID: getShipEntityDebugCharacterID(entity, 0),
     shipID: entity.itemID || 0,
     systemID: entity.systemID || 0,
     mode: entity.mode || "UNKNOWN",
@@ -1696,25 +2474,40 @@ function buildPilotPreWarpRebaselineUpdates(entity, pendingWarp, stamp) {
   ];
 }
 
-function buildPilotWarpEgoStateRefreshUpdates(system, entity, stamp) {
+function buildPilotWarpEgoStateRefreshUpdates(
+  system,
+  entity,
+  stamp,
+  simFileTime = currentFileTime(),
+) {
   const egoEntities = [entity];
   return [
     {
       stamp,
-      payload: destiny.buildAddBalls2Payload(stamp, egoEntities),
+      payload: destiny.buildAddBalls2Payload(stamp, egoEntities, simFileTime),
     },
     {
       stamp,
-      payload: destiny.buildSetStatePayload(stamp, system, entity.itemID, egoEntities),
+      payload: destiny.buildSetStatePayload(
+        stamp,
+        system,
+        entity.itemID,
+        egoEntities,
+        simFileTime,
+      ),
     },
   ];
 }
 
-function buildPilotWarpActivationStateRefreshUpdates(entity, stamp) {
+function buildPilotWarpActivationStateRefreshUpdates(
+  entity,
+  stamp,
+  simFileTime = currentFileTime(),
+) {
   return [
     {
       stamp,
-      payload: destiny.buildAddBalls2Payload(stamp, [entity]),
+      payload: destiny.buildAddBalls2Payload(stamp, [entity], simFileTime),
     },
   ];
 }
@@ -2159,7 +2952,7 @@ function buildPilotWarpCompletionUpdates(entity, stamp) {
   ];
 }
 
-function buildWarpStartUpdates(entity, warpState, stampOverride = null) {
+function buildWarpStartUpdates(entity, warpState, stampOverride = null, options = {}) {
   const stamp =
     stampOverride === null ? getNextStamp() : toInt(stampOverride, getNextStamp());
   const updates = [
@@ -2170,6 +2963,9 @@ function buildWarpStartUpdates(entity, warpState, stampOverride = null) {
       payload: destiny.buildSetBallMassivePayload(entity.itemID, false),
     },
   ];
+  if (options.includeEntityWarpIn !== false) {
+    updates.splice(1, 0, buildEntityWarpInUpdate(entity, stamp, warpState));
+  }
   if (magnitude(entity.velocity) > 0.5) {
     updates.push({
       stamp,
@@ -2177,6 +2973,19 @@ function buildWarpStartUpdates(entity, warpState, stampOverride = null) {
     });
   }
   return updates;
+}
+
+function buildWarpInFlightAcquireUpdates(entity, warpState, stampOverride = null) {
+  const stamp =
+    stampOverride === null ? getNextStamp() : toInt(stampOverride, getNextStamp());
+  // Observers who first acquire a ship that is already in active warp need the
+  // mid-warp acquisition contract, not the original departure contract. Replaying
+  // WarpTo here leaves the retail client with a malformed/invisible ball for
+  // sessionless Crimewatch responders even though the server-side ship exists.
+  return [
+    buildEntityWarpInUpdate(entity, stamp, warpState),
+    buildWarpStartEffectUpdate(entity, stamp),
+  ];
 }
 
 function summarizeDestinyArgs(name, args) {
@@ -2258,6 +3067,7 @@ function getPayloadPrimaryEntityID(payload) {
     case "Orbit":
     case "Stop":
     case "WarpTo":
+    case "EntityWarpIn":
     case "OnSpecialFX":
     case "SetBallMassive":
     case "SetMaxSpeed":
@@ -2298,6 +3108,19 @@ function logDestinyDispatch(session, payloads, waitForBubble) {
   }, (_key, value) => (typeof value === "bigint" ? value.toString() : value)));
 }
 
+function sessionMatchesIdentity(left, right) {
+  if (!left || !right) {
+    return false;
+  }
+  if (left === right) {
+    return true;
+  }
+
+  const leftClientID = Number(left.clientID ?? left.clientId ?? 0);
+  const rightClientID = Number(right.clientID ?? right.clientId ?? 0);
+  return leftClientID > 0 && rightClientID > 0 && leftClientID === rightClientID;
+}
+
 function clearPendingDock(entity) {
   if (entity) {
     entity.pendingDock = null;
@@ -2314,7 +3137,7 @@ function logMovementDebug(event, entity, extra = {}) {
     event,
     atMs: now,
     destinyStamp: getCurrentDestinyStamp(now),
-    charID: entity.characterID || 0,
+    charID: getShipEntityDebugCharacterID(entity, 0),
     shipID: entity.itemID || 0,
     systemID: entity.systemID || 0,
     mode: entity.mode || "UNKNOWN",
@@ -2521,10 +3344,2325 @@ function buildWarpState(rawWarpState, position, warpSpeedAU) {
   };
 }
 
-function buildShipEntity(session, shipItem, systemID) {
+function buildShipSpaceState(source = {}) {
+  if (source && typeof source.spaceState === "object" && source.spaceState !== null) {
+    return source.spaceState;
+  }
+
+  return {
+    position: cloneVector(source.position),
+    velocity: cloneVector(source.velocity),
+    direction: cloneVector(source.direction, DEFAULT_RIGHT),
+    targetPoint: source.targetPoint ? cloneVector(source.targetPoint) : undefined,
+    speedFraction: source.speedFraction,
+    mode: source.mode,
+    targetEntityID: source.targetEntityID,
+    followRange: source.followRange,
+    orbitDistance: source.orbitDistance,
+    orbitNormal: source.orbitNormal ? cloneVector(source.orbitNormal) : undefined,
+    orbitSign: source.orbitSign,
+    pendingWarp: source.pendingWarp,
+    warpState: source.warpState,
+  };
+}
+
+function calculateAlignTimeSecondsFromMassInertia(mass, inertia, fallback = 0) {
+  const numericMass = toFiniteNumber(mass, 0);
+  const numericInertia = toFiniteNumber(inertia, 0);
+  if (numericMass > 0 && numericInertia > 0) {
+    return (DESTINY_ALIGN_LOG_DENOMINATOR * numericMass * numericInertia) / 1_000_000;
+  }
+  return toFiniteNumber(fallback, 0);
+}
+
+function buildPassiveShipResourceState(characterID, shipItem, options = {}) {
+  if (!shipItem || !shipItem.typeID) {
+    return null;
+  }
+
+  const numericCharacterID = toInt(characterID, 0);
+  if (numericCharacterID <= 0) {
+    // Sessionless runtime ships such as `/fire` dummies still need a real
+    // dogma-derived health envelope so targeting, damage, death, and damage
+    // state updates all follow the same authoritative combat path.
+    return buildShipResourceState(0, shipItem, {
+      fittedItems: Array.isArray(options.fittedItems) ? options.fittedItems : [],
+      skillMap: options.skillMap instanceof Map ? options.skillMap : new Map(),
+    });
+  }
+
+  if (!shipItem.itemID) {
+    return null;
+  }
+
+  return buildShipResourceState(numericCharacterID, shipItem, options);
+}
+
+function getSkillLevel(skillMap, skillTypeID) {
+  const skill = skillMap instanceof Map ? skillMap.get(skillTypeID) : null;
+  if (!skill) {
+    return 0;
+  }
+
+  return Math.max(
+    0,
+    toInt(
+      skill.effectiveSkillLevel ??
+        skill.trainedSkillLevel ??
+        skill.skillLevel,
+      0,
+    ),
+  );
+}
+
+function getPropulsionModuleRuntimeAttributes(characterID, moduleItem) {
+  if (!moduleItem || !moduleItem.typeID) {
+    return null;
+  }
+
+  const skillMap = getCharacterSkillMap(toInt(characterID, 0));
+  const groupID = toInt(moduleItem.groupID, 0);
+  const speedFactorBase = toFiniteNumber(
+    getTypeAttributeValue(moduleItem.typeID, "speedFactor"),
+    0,
+  );
+  const capNeedBase = toFiniteNumber(
+    getTypeDogmaAttributeValueByID(moduleItem.typeID, MODULE_ATTRIBUTE_CAPACITOR_NEED),
+    0,
+  );
+  const durationMs = Math.max(
+    1,
+    toFiniteNumber(getTypeDogmaAttributeValueByID(moduleItem.typeID, MODULE_ATTRIBUTE_DURATION), 10000),
+  );
+  const accelerationControlLevel = getSkillLevel(
+    skillMap,
+    PROPULSION_SKILL_ACCELERATION_CONTROL,
+  );
+  let speedFactor = speedFactorBase * (1 + ((5 * accelerationControlLevel) / 100));
+  let capNeed = capNeedBase;
+
+  if (groupID === 46) {
+    const fuelConservationLevel = getSkillLevel(
+      skillMap,
+      PROPULSION_SKILL_FUEL_CONSERVATION,
+    );
+    capNeed *= 1 + ((-10 * fuelConservationLevel) / 100);
+  } else if (groupID === 475) {
+    const highSpeedLevel = getSkillLevel(
+      skillMap,
+      PROPULSION_SKILL_HIGH_SPEED_MANEUVERING,
+    );
+    capNeed *= 1 + ((-5 * highSpeedLevel) / 100);
+  }
+
+  return {
+    capNeed: Math.max(0, roundNumber(capNeed, 6)),
+    durationMs: Math.max(1, roundNumber(durationMs, 3)),
+    speedFactor: roundNumber(speedFactor, 6),
+    speedBoostFactor: toFiniteNumber(
+      getTypeDogmaAttributeValueByID(moduleItem.typeID, MODULE_ATTRIBUTE_SPEED_BOOST_FACTOR),
+      0,
+    ),
+    massAddition: toFiniteNumber(
+      getTypeDogmaAttributeValueByID(moduleItem.typeID, MODULE_ATTRIBUTE_MASS_ADDITION),
+      0,
+    ),
+    signatureRadiusBonus: toFiniteNumber(
+      getTypeDogmaAttributeValueByID(moduleItem.typeID, MODULE_ATTRIBUTE_SIGNATURE_RADIUS_BONUS),
+      0,
+    ),
+    maxGroupActive: toInt(
+      getTypeDogmaAttributeValueByID(moduleItem.typeID, MODULE_ATTRIBUTE_MAX_GROUP_ACTIVE),
+      0,
+    ),
+    maxVelocityActivationLimit: toFiniteNumber(
+      getTypeDogmaAttributeValueByID(moduleItem.typeID, MODULE_ATTRIBUTE_MAX_VELOCITY_ACTIVATION_LIMIT),
+      0,
+    ),
+    reactivationDelayMs: Math.max(
+      0,
+      toFiniteNumber(
+        getTypeDogmaAttributeValueByID(moduleItem.typeID, MODULE_ATTRIBUTE_REACTIVATION_DELAY),
+        0,
+      ),
+    ),
+  };
+}
+
+function getTypeDogmaAttributeValueByID(typeID, attributeID, fallback = null) {
+  const attributeValue = getTypeAttributeValue(typeID, getAttributeNameByID(attributeID));
+  if (attributeValue !== null && attributeValue !== undefined) {
+    return attributeValue;
+  }
+  const attributes = getTypeDogmaAttributes(typeID);
+  const rawValue = attributes && attributes[String(attributeID)];
+  const numericValue = Number(rawValue);
+  return Number.isFinite(numericValue) ? numericValue : fallback;
+}
+
+function getAttributeNameByID(attributeID) {
+  switch (toInt(attributeID, 0)) {
+    case MODULE_ATTRIBUTE_SPEED_FACTOR:
+      return "speedFactor";
+    case MODULE_ATTRIBUTE_DURATION:
+      return "duration";
+    case MODULE_ATTRIBUTE_SIGNATURE_RADIUS_BONUS:
+      return "signatureRadiusBonus";
+    case MODULE_ATTRIBUTE_SPEED_BOOST_FACTOR:
+      return "speedBoostFactor";
+    case MODULE_ATTRIBUTE_MAX_GROUP_ACTIVE:
+      return "maxGroupActive";
+    case MODULE_ATTRIBUTE_MASS_ADDITION:
+      return "massAddition";
+    case MODULE_ATTRIBUTE_REACTIVATION_DELAY:
+      return "moduleReactivationDelay";
+    case MODULE_ATTRIBUTE_MAX_VELOCITY_ACTIVATION_LIMIT:
+      return "maxVelocityActivationLimit";
+    default:
+      return "";
+  }
+}
+
+function applyPassiveResourceStateToEntity(entity, resourceState, options = {}) {
+  if (!entity || !resourceState) {
+    return entity;
+  }
+
   const movement =
-    worldData.getMovementAttributesForType(shipItem.typeID) || null;
-  const spaceState = shipItem.spaceState || {};
+    worldData.getMovementAttributesForType(entity.typeID) || null;
+  const nextMass =
+    toFiniteNumber(resourceState.mass, 0) > 0
+      ? toFiniteNumber(resourceState.mass, 0)
+      : toFiniteNumber(entity.mass, 0);
+  const nextInertia =
+    toFiniteNumber(resourceState.agility, 0) > 0
+      ? toFiniteNumber(resourceState.agility, 0)
+      : toFiniteNumber(entity.inertia, 0);
+  const fallbackAlignTime =
+    toFiniteNumber(movement && movement.alignTime, 0) > 0
+      ? toFiniteNumber(movement.alignTime, 0)
+      : toFiniteNumber(entity.alignTime, 0);
+
+  entity.passiveDerivedState = resourceState;
+  entity.mass = nextMass > 0 ? nextMass : entity.mass;
+  entity.inertia = nextInertia > 0 ? nextInertia : entity.inertia;
+  entity.maxVelocity =
+    toFiniteNumber(resourceState.maxVelocity, 0) > 0
+      ? toFiniteNumber(resourceState.maxVelocity, 0)
+      : entity.maxVelocity;
+  entity.maxTargetRange = toFiniteNumber(
+    resourceState.maxTargetRange,
+    toFiniteNumber(entity.maxTargetRange, 0),
+  );
+  entity.maxLockedTargets = toFiniteNumber(
+    resourceState.maxLockedTargets,
+    toFiniteNumber(entity.maxLockedTargets, 0),
+  );
+  entity.signatureRadius = toFiniteNumber(
+    resourceState.signatureRadius,
+    toFiniteNumber(entity.signatureRadius, 0),
+  );
+  entity.cloakingTargetingDelay = toFiniteNumber(
+    resourceState.cloakingTargetingDelay,
+    toFiniteNumber(entity.cloakingTargetingDelay, 0),
+  );
+  entity.scanResolution = toFiniteNumber(
+    resourceState.scanResolution,
+    toFiniteNumber(entity.scanResolution, 0),
+  );
+  entity.capacitorCapacity = toFiniteNumber(
+    resourceState.capacitorCapacity,
+    toFiniteNumber(entity.capacitorCapacity, 0),
+  );
+  entity.capacitorRechargeRate = toFiniteNumber(
+    resourceState.capacitorRechargeRate,
+    toFiniteNumber(entity.capacitorRechargeRate, 0),
+  );
+  entity.shieldCapacity = toFiniteNumber(
+    resourceState.shieldCapacity,
+    toFiniteNumber(entity.shieldCapacity, 0),
+  );
+  entity.shieldRechargeRate = toFiniteNumber(
+    resourceState.shieldRechargeRate,
+    toFiniteNumber(entity.shieldRechargeRate, 0),
+  );
+  entity.armorHP = toFiniteNumber(
+    resourceState.armorHP,
+    toFiniteNumber(entity.armorHP, 0),
+  );
+  entity.structureHP = toFiniteNumber(
+    resourceState.structureHP,
+    toFiniteNumber(entity.structureHP, 0),
+  );
+  entity.alignTime = calculateAlignTimeSecondsFromMassInertia(
+    entity.mass,
+    entity.inertia,
+    fallbackAlignTime,
+  );
+  entity.agilitySeconds = deriveAgilitySeconds(
+    entity.alignTime,
+    entity.maxAccelerationTime,
+    entity.mass,
+    entity.inertia,
+  );
+  if (options.recalculateSpeedFraction === true) {
+    entity.speedFraction = getActualSpeedFraction(entity);
+  }
+  return entity;
+}
+
+function ensureEntityTargetingState(entity) {
+  if (!entity || typeof entity !== "object") {
+    return null;
+  }
+  if (!(entity.lockedTargets instanceof Map)) {
+    entity.lockedTargets = new Map();
+  }
+  if (!(entity.pendingTargetLocks instanceof Map)) {
+    entity.pendingTargetLocks = new Map();
+  }
+  if (!(entity.targetedBy instanceof Set)) {
+    entity.targetedBy = new Set();
+  }
+  return entity;
+}
+
+function getEntityTargetingRadius(entity) {
+  return Math.max(0, toFiniteNumber(entity && entity.radius, 0));
+}
+
+function getEntityLockSignatureRadius(entity) {
+  const signatureRadius = toFiniteNumber(entity && entity.signatureRadius, NaN);
+  if (Number.isFinite(signatureRadius) && signatureRadius > 0) {
+    return signatureRadius;
+  }
+
+  const fallbackRadius = getEntityTargetingRadius(entity);
+  return fallbackRadius > 0 ? fallbackRadius : 1;
+}
+
+function getEntitySurfaceDistance(sourceEntity, targetEntity) {
+  if (!sourceEntity || !targetEntity) {
+    return Infinity;
+  }
+
+  return Math.max(
+    0,
+    distance(sourceEntity.position, targetEntity.position) -
+      getEntityTargetingRadius(sourceEntity) -
+      getEntityTargetingRadius(targetEntity),
+  );
+}
+
+function clampTargetLockDurationMs(value) {
+  const numericValue = toFiniteNumber(value, TARGETING_CLIENT_FALLBACK_LOCK_MS);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return TARGETING_CLIENT_FALLBACK_LOCK_MS;
+  }
+
+  return Math.min(Math.max(numericValue, 1), TARGETING_MAX_LOCK_MS);
+}
+
+function computeTargetLockDurationMs(sourceEntity, targetEntity) {
+  const scanResolution = Math.max(
+    toFiniteNumber(sourceEntity && sourceEntity.scanResolution, 0),
+    0,
+  );
+  const signatureRadius = Math.max(getEntityLockSignatureRadius(targetEntity), 1);
+  if (scanResolution <= 0) {
+    return TARGETING_CLIENT_FALLBACK_LOCK_MS;
+  }
+
+  const logTerm = Math.log(
+    signatureRadius + Math.sqrt(signatureRadius * signatureRadius + 1),
+  );
+  if (!Number.isFinite(logTerm) || logTerm <= 0) {
+    return TARGETING_CLIENT_FALLBACK_LOCK_MS;
+  }
+
+  return clampTargetLockDurationMs(
+    (40000000.0 / scanResolution) / (logTerm ** 2),
+  );
+}
+
+function buildEntityTargetingAttributeSnapshot(entity) {
+  return {
+    maxTargetRange: roundNumber(toFiniteNumber(entity && entity.maxTargetRange, 0), 6),
+    maxLockedTargets: roundNumber(toFiniteNumber(entity && entity.maxLockedTargets, 0), 6),
+    signatureRadius: roundNumber(toFiniteNumber(entity && entity.signatureRadius, 0), 6),
+    cloakingTargetingDelay: roundNumber(
+      toFiniteNumber(entity && entity.cloakingTargetingDelay, 0),
+      6,
+    ),
+    scanResolution: roundNumber(toFiniteNumber(entity && entity.scanResolution, 0), 6),
+  };
+}
+
+function getEntityCapacitorRatio(entity) {
+  return clamp(toFiniteNumber(entity && entity.capacitorChargeRatio, 1), 0, 1);
+}
+
+function setEntityCapacitorRatio(entity, nextRatio) {
+  if (!entity) {
+    return 0;
+  }
+  entity.capacitorChargeRatio = clamp(toFiniteNumber(nextRatio, 0), 0, 1);
+  if (entity.kind === "ship") {
+    entity.conditionState = normalizeShipConditionState({
+      ...(entity.conditionState || {}),
+      charge: entity.capacitorChargeRatio,
+    });
+  }
+  return entity.capacitorChargeRatio;
+}
+
+function getEntityCapacitorAmount(entity) {
+  return (
+    toFiniteNumber(entity && entity.capacitorCapacity, 0) *
+    getEntityCapacitorRatio(entity)
+  );
+}
+
+function persistEntityCapacitorRatio(entity) {
+  if (!entity || entity.kind !== "ship" || entity.persistSpaceState !== true) {
+    return false;
+  }
+
+  const nextRatio = getEntityCapacitorRatio(entity);
+  const result = updateShipItem(entity.itemID, (currentItem) => ({
+    ...currentItem,
+    conditionState: {
+      ...(currentItem.conditionState || {}),
+      charge: nextRatio,
+    },
+  }));
+  return Boolean(result && result.success);
+}
+
+function consumeEntityCapacitor(entity, amount) {
+  const requestedAmount = Math.max(0, toFiniteNumber(amount, 0));
+  const capacitorCapacity = Math.max(
+    toFiniteNumber(entity && entity.capacitorCapacity, 0),
+    0,
+  );
+  if (!entity || capacitorCapacity <= 0) {
+    return requestedAmount <= 0;
+  }
+
+  const currentAmount = getEntityCapacitorAmount(entity);
+  if (requestedAmount > currentAmount + 1e-6) {
+    return false;
+  }
+
+  setEntityCapacitorRatio(entity, (currentAmount - requestedAmount) / capacitorCapacity);
+  persistEntityCapacitorRatio(entity);
+  return true;
+}
+
+function hasActivePropulsionEffect(entity, effectName, excludeModuleID = 0) {
+  if (!entity || !(entity.activeModuleEffects instanceof Map)) {
+    return false;
+  }
+
+  for (const effectState of entity.activeModuleEffects.values()) {
+    if (!effectState || effectState.effectName !== effectName) {
+      continue;
+    }
+    if (
+      excludeModuleID > 0 &&
+      toInt(effectState.moduleID, 0) === toInt(excludeModuleID, 0)
+    ) {
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+function applyPropulsionEffectStateToEntity(entity, effectState) {
+  if (!entity || !effectState) {
+    return entity;
+  }
+
+  const passiveState = entity.passiveDerivedState || null;
+  const passiveMass =
+    toFiniteNumber(passiveState && passiveState.mass, toFiniteNumber(entity.mass, 0));
+  const passiveMaxVelocity =
+    toFiniteNumber(
+      passiveState && passiveState.maxVelocity,
+      toFiniteNumber(entity.maxVelocity, 0),
+    );
+  const passiveSignatureRadius =
+    toFiniteNumber(
+      passiveState && passiveState.signatureRadius,
+      toFiniteNumber(entity.signatureRadius, 0),
+    );
+  const massAfterAddition = passiveMass + toFiniteNumber(effectState.massAddition, 0);
+  const speedMultiplier =
+    1 +
+    (0.01 *
+      toFiniteNumber(effectState.speedFactor, 0) *
+      toFiniteNumber(effectState.speedBoostFactor, 0) /
+      Math.max(massAfterAddition, 1));
+
+  entity.mass = roundNumber(massAfterAddition, 6);
+  entity.maxVelocity = roundNumber(
+    passiveMaxVelocity * Math.max(speedMultiplier, 0),
+    6,
+  );
+  if (effectState.effectName === PROPULSION_EFFECT_MICROWARPDRIVE) {
+    entity.signatureRadius = roundNumber(
+      passiveSignatureRadius *
+        (1 + (toFiniteNumber(effectState.signatureRadiusBonus, 0) / 100)),
+      6,
+    );
+  }
+  entity.alignTime = calculateAlignTimeSecondsFromMassInertia(
+    entity.mass,
+    entity.inertia,
+    entity.alignTime,
+  );
+  entity.agilitySeconds = deriveAgilitySeconds(
+    entity.alignTime,
+    entity.maxAccelerationTime,
+    entity.mass,
+    entity.inertia,
+  );
+  return entity;
+}
+
+function getPropulsionEffectID(effectName) {
+  if (effectName === PROPULSION_EFFECT_AFTERBURNER) {
+    return EFFECT_ID_AFTERBURNER;
+  }
+  if (effectName === PROPULSION_EFFECT_MICROWARPDRIVE) {
+    return EFFECT_ID_MICROWARPDRIVE;
+  }
+  return 0;
+}
+
+function resolveSessionNotificationFileTime(session, whenMs = null) {
+  const scene =
+    runtimeExports &&
+    typeof runtimeExports.getSceneForSession === "function"
+      ? runtimeExports.getSceneForSession(session)
+      : null;
+  if (whenMs != null) {
+    if (scene) {
+      return scene.getCurrentSessionFileTime(session, whenMs);
+    }
+    return toFileTimeFromMs(whenMs);
+  }
+  if (scene) {
+    return scene.getCurrentSessionFileTime(session);
+  }
+  if (session && session._space && session._space.simFileTime) {
+    return session._space.simFileTime;
+  }
+  return currentFileTime();
+}
+
+function resolveModuleEffectChargeContext(session, entity, effectState) {
+  const shipID = toInt(entity && entity.itemID, 0);
+  const moduleFlagID = toInt(effectState && effectState.moduleFlagID, 0);
+  let chargeTypeID = toInt(effectState && effectState.chargeTypeID, 0);
+
+  if (
+    chargeTypeID <= 0 &&
+    shipID > 0 &&
+    moduleFlagID > 0
+  ) {
+    const characterID = Math.max(
+      toInt(session && session.characterID, 0),
+      getShipEntityInventoryCharacterID(entity, 0),
+    );
+    if (characterID > 0) {
+      const loadedCharge = getLoadedChargeByFlag(
+        characterID,
+        shipID,
+        moduleFlagID,
+      );
+      chargeTypeID = toInt(loadedCharge && loadedCharge.typeID, 0);
+    }
+  }
+
+  return {
+    moduleFlagID,
+    chargeTypeID,
+    subLocation:
+      shipID > 0 && moduleFlagID > 0 && chargeTypeID > 0
+        ? buildChargeTupleItemID(shipID, moduleFlagID, chargeTypeID)
+        : null,
+  };
+}
+
+function buildModuleEffectEnvironment(session, entity, effectState, effectID) {
+  const chargeContext = resolveModuleEffectChargeContext(
+    session,
+    entity,
+    effectState,
+  );
+  return {
+    environment: [
+      toInt(effectState && effectState.moduleID, 0),
+      toInt(entity && entity.ownerID, 0),
+      toInt(entity && entity.itemID, 0),
+      toInt(effectState && effectState.targetID, 0) > 0
+        ? toInt(effectState && effectState.targetID, 0)
+        : null,
+      chargeContext.subLocation,
+      [],
+      effectID,
+    ],
+    chargeContext,
+  };
+}
+
+function logModuleEffectNotification(kind, active, effectState, effectID, chargeContext, environment) {
+  const normalizedSubLocation = Array.isArray(chargeContext.subLocation)
+    ? `(${chargeContext.subLocation.join(",")})`
+    : "null";
+  log.debug(
+    [
+      `[module-fx:${kind}]`,
+      `active=${active ? 1 : 0}`,
+      `moduleID=${toInt(effectState && effectState.moduleID, 0)}`,
+      `moduleFlagID=${toInt(chargeContext && chargeContext.moduleFlagID, 0)}`,
+      `chargeTypeID=${toInt(chargeContext && chargeContext.chargeTypeID, 0)}`,
+      `targetID=${toInt(effectState && effectState.targetID, 0)}`,
+      `effectID=${toInt(effectID, 0)}`,
+      `subLoc=${normalizedSubLocation}`,
+      `environment=${JSON.stringify(environment)}`,
+    ].join(" "),
+  );
+}
+
+function notifyModuleEffectState(
+  session,
+  entity,
+  effectState,
+  active,
+  options = {},
+) {
+  if (
+    !session ||
+    typeof session.sendNotification !== "function" ||
+    !entity ||
+    !effectState
+  ) {
+    return false;
+  }
+
+  const effectID = getPropulsionEffectID(effectState.effectName);
+  if (effectID <= 0) {
+    return false;
+  }
+
+  let when;
+  if (options.whenMs != null) {
+    when = resolveSessionNotificationFileTime(session, options.whenMs);
+  } else if (session && session._space && session._space.simFileTime) {
+    when = resolveSessionNotificationFileTime(session);
+  } else {
+    log.warn("notifyModuleEffectState: no sim time source, using wallclock fallback");
+    when = currentFileTime();
+  }
+  const resolvedStartedAt = resolveSessionNotificationFileTime(
+    session,
+    options.startTimeMs === undefined || options.startTimeMs === null
+      ? effectState.startedAtMs
+      : options.startTimeMs,
+  );
+  const durationMs = Number.isFinite(Number(effectState.durationMs))
+    ? Math.max(Number(effectState.durationMs), -1)
+    : -1;
+  const duration = marshalModuleDurationWireValue(durationMs);
+  const repeat = normalizeEffectRepeatCount(effectState.repeat, -1);
+  const { environment, chargeContext } = buildModuleEffectEnvironment(
+    session,
+    entity,
+    effectState,
+    effectID,
+  );
+  session.sendNotification("OnGodmaShipEffect", "clientID", [
+    toInt(effectState.moduleID, 0),
+    effectID,
+    when,
+    active ? 1 : 0,
+    active ? 1 : 0,
+    environment,
+    resolvedStartedAt,
+    duration,
+    repeat,
+    null,
+    options.actualStopTimeMs === undefined || options.actualStopTimeMs === null
+      ? null
+      : resolveSessionNotificationFileTime(session, options.actualStopTimeMs),
+  ]);
+  logModuleEffectNotification(
+    "propulsion",
+    active,
+    effectState,
+    effectID,
+    chargeContext,
+    environment,
+  );
+  recordSessionJumpTimingTrace(session, "module-effect-state", {
+    moduleID: toInt(effectState.moduleID, 0),
+    moduleFlagID: toInt(chargeContext.moduleFlagID, 0),
+    chargeTypeID: toInt(chargeContext.chargeTypeID, 0),
+    chargeSubLocation: chargeContext.subLocation,
+    effectName: effectState.effectName || null,
+    effectID,
+    active: active === true,
+    when,
+    startedAt: resolvedStartedAt,
+    durationMs,
+    repeat,
+    sessionSimTimeMs: session && session._space ? session._space.simTimeMs : null,
+    sessionTimeDilation:
+      session && session._space ? session._space.timeDilation : null,
+  });
+  return true;
+}
+
+// -----------------------------------------------------------------------
+// Generic module activation — supports any module with an activatable
+// effect (effectCategoryID 1=activation, 2=targeted, 3=area).  This gives
+// all modules proper cycle timing so the HUD radial ring works.
+// -----------------------------------------------------------------------
+
+const ACTIVATABLE_EFFECT_CATEGORIES = new Set([1, 2, 3]);
+const PASSIVE_SLOT_EFFECTS = new Set(["online", "hipower", "medpower", "lopower",
+  "rigslot", "subsystem", "turretfitted", "launcherfitted"]);
+
+function resolveDefaultActivationEffect(typeID) {
+  const numericTypeID = toInt(typeID, 0);
+  if (numericTypeID <= 0) {
+    return null;
+  }
+
+  const effectIDs = getTypeDogmaEffects(numericTypeID);
+  for (const effectID of effectIDs) {
+    const record = getEffectTypeRecord(effectID);
+    if (
+      !record ||
+      !ACTIVATABLE_EFFECT_CATEGORIES.has(record.effectCategoryID)
+    ) {
+      continue;
+    }
+    const normalizedName = String(record.name || "").toLowerCase();
+    if (PASSIVE_SLOT_EFFECTS.has(normalizedName)) {
+      continue;
+    }
+    return record;
+  }
+  return null;
+}
+
+function resolveEffectByName(typeID, effectName) {
+  const numericTypeID = toInt(typeID, 0);
+  if (numericTypeID <= 0 || !effectName) {
+    return null;
+  }
+
+  const normalized = String(effectName).toLowerCase()
+    .replace(/^effects\./, "").replace(/^dogmaxp\./, "");
+  const effectIDs = getTypeDogmaEffects(numericTypeID);
+  for (const effectID of effectIDs) {
+    const record = getEffectTypeRecord(effectID);
+    if (!record) {
+      continue;
+    }
+    const recordName = String(record.name || "").toLowerCase();
+    if (recordName === normalized) {
+      return record;
+    }
+    const guidSuffix = String(record.guid || "").toLowerCase()
+      .replace(/^effects\./, "");
+    if (guidSuffix && guidSuffix === normalized) {
+      return record;
+    }
+  }
+  return null;
+}
+
+function getBaseGenericModuleRuntimeAttributes(moduleItem) {
+  if (!moduleItem || !moduleItem.typeID) {
+    return null;
+  }
+  if (!resolveDefaultActivationEffect(moduleItem.typeID)) {
+    return null;
+  }
+
+  const capNeed = toFiniteNumber(
+    getTypeDogmaAttributeValueByID(moduleItem.typeID, MODULE_ATTRIBUTE_CAPACITOR_NEED),
+    0,
+  );
+  // CCP parity: repairers/boosters use "duration" (73), weapons use "speed" (51)
+  const rawDuration = getTypeDogmaAttributeValueByID(moduleItem.typeID, MODULE_ATTRIBUTE_DURATION);
+  const rawSpeed = getTypeDogmaAttributeValueByID(moduleItem.typeID, MODULE_ATTRIBUTE_SPEED);
+  const durationAttributeID =
+    toFiniteNumber(rawDuration, 0) > 0
+      ? MODULE_ATTRIBUTE_DURATION
+      : MODULE_ATTRIBUTE_SPEED;
+  const durationMs = Math.max(
+    1,
+    toFiniteNumber(rawDuration, 0) > 0
+      ? toFiniteNumber(rawDuration, 10000)
+      : toFiniteNumber(rawSpeed, 10000),
+  );
+  const reactivationDelayMs = Math.max(
+    0,
+    toFiniteNumber(
+      getTypeDogmaAttributeValueByID(moduleItem.typeID, MODULE_ATTRIBUTE_REACTIVATION_DELAY),
+      0,
+    ),
+  );
+  const maxGroupActive = toInt(
+    getTypeDogmaAttributeValueByID(moduleItem.typeID, MODULE_ATTRIBUTE_MAX_GROUP_ACTIVE),
+    0,
+  );
+
+  return {
+    capNeed: Math.max(0, roundNumber(capNeed, 6)),
+    durationMs: Math.max(1, roundNumber(durationMs, 3)),
+    durationAttributeID,
+    reactivationDelayMs,
+    maxGroupActive,
+  };
+}
+
+function getGenericModuleRuntimeAttributes(
+  characterID,
+  shipItem,
+  moduleItem,
+  chargeItem = null,
+  weaponSnapshot = null,
+) {
+  const baseRuntimeAttributes = getBaseGenericModuleRuntimeAttributes(moduleItem);
+  if (!baseRuntimeAttributes) {
+    return null;
+  }
+
+  const weaponFamily = resolveWeaponFamily(moduleItem, chargeItem);
+  if (weaponFamily !== "laserTurret") {
+    return {
+      ...baseRuntimeAttributes,
+      weaponFamily: weaponFamily || null,
+      weaponSnapshot: null,
+    };
+  }
+
+  const resolvedWeaponSnapshot =
+    weaponSnapshot ||
+    (
+      shipItem &&
+      chargeItem
+        ? buildWeaponModuleSnapshot({
+          characterID,
+          shipItem,
+          moduleItem,
+          chargeItem,
+        })
+        : null
+    );
+  if (!resolvedWeaponSnapshot) {
+    return {
+      ...baseRuntimeAttributes,
+      durationAttributeID: MODULE_ATTRIBUTE_SPEED,
+      weaponFamily,
+      weaponSnapshot: null,
+    };
+  }
+
+  return {
+    ...baseRuntimeAttributes,
+    capNeed: resolvedWeaponSnapshot.capNeed,
+    durationMs: resolvedWeaponSnapshot.durationMs,
+    durationAttributeID: MODULE_ATTRIBUTE_SPEED,
+    weaponFamily,
+    weaponSnapshot: resolvedWeaponSnapshot,
+  };
+}
+
+function notifyGenericModuleEffectState(
+  session,
+  entity,
+  effectState,
+  active,
+  options = {},
+) {
+  if (
+    !session ||
+    typeof session.sendNotification !== "function" ||
+    !entity ||
+    !effectState
+  ) {
+    return false;
+  }
+
+  const effectID = toInt(effectState.effectID, 0);
+  if (effectID <= 0) {
+    return false;
+  }
+
+  let when;
+  if (options.whenMs != null) {
+    when = resolveSessionNotificationFileTime(session, options.whenMs);
+  } else if (session && session._space && session._space.simFileTime) {
+    when = resolveSessionNotificationFileTime(session);
+  } else {
+    log.warn("notifyGenericModuleEffectState: no sim time source, using wallclock fallback");
+    when = currentFileTime();
+  }
+  const startedAt = resolveSessionNotificationFileTime(
+    session,
+    options.startTimeMs === undefined || options.startTimeMs === null
+      ? effectState.startedAtMs
+      : options.startTimeMs,
+  );
+  const durationMs = Number.isFinite(Number(effectState.durationMs))
+    ? Math.max(Number(effectState.durationMs), -1)
+    : -1;
+  const duration = marshalModuleDurationWireValue(durationMs);
+  const repeat = normalizeEffectRepeatCount(effectState.repeat, -1);
+  const { environment, chargeContext } = buildModuleEffectEnvironment(
+    session,
+    entity,
+    effectState,
+    effectID,
+  );
+  session.sendNotification("OnGodmaShipEffect", "clientID", [
+    toInt(effectState.moduleID, 0),
+    effectID,
+    when,
+    active ? 1 : 0,
+    active ? 1 : 0,
+    environment,
+    startedAt,
+    duration,
+    repeat,
+    null,
+    options.actualStopTimeMs === undefined || options.actualStopTimeMs === null
+      ? null
+      : resolveSessionNotificationFileTime(session, options.actualStopTimeMs),
+  ]);
+  logModuleEffectNotification(
+    "generic",
+    active,
+    effectState,
+    effectID,
+    chargeContext,
+    environment,
+  );
+  recordSessionJumpTimingTrace(session, "generic-module-effect-state", {
+    moduleID: toInt(effectState.moduleID, 0),
+    moduleFlagID: toInt(chargeContext.moduleFlagID, 0),
+    chargeTypeID: toInt(chargeContext.chargeTypeID, 0),
+    chargeSubLocation: chargeContext.subLocation,
+    effectName: effectState.effectName || null,
+    effectID,
+    active: active === true,
+    when,
+    startedAt,
+    durationMs,
+    repeat,
+    sessionSimTimeMs: session && session._space ? session._space.simTimeMs : null,
+    sessionTimeDilation:
+      session && session._space ? session._space.timeDilation : null,
+  });
+  return true;
+}
+
+function getEffectCycleBoundaryMs(effectState, fallbackNow = Date.now()) {
+  if (!effectState) {
+    return Math.max(toFiniteNumber(fallbackNow, Date.now()), 0);
+  }
+
+  const durationMs = Math.max(1, toFiniteNumber(effectState.durationMs, 1000));
+  const nextCycleAtMs = toFiniteNumber(effectState.nextCycleAtMs, 0);
+  if (nextCycleAtMs > 0) {
+    return nextCycleAtMs;
+  }
+
+  const startedAtMs = toFiniteNumber(effectState.startedAtMs, 0);
+  if (startedAtMs > 0) {
+    return startedAtMs + durationMs;
+  }
+
+  return Math.max(toFiniteNumber(fallbackNow, Date.now()), 0);
+}
+
+function normalizeEffectRepeatCount(rawRepeat, fallbackRepeat = null) {
+  if (
+    rawRepeat === undefined ||
+    rawRepeat === null ||
+    rawRepeat === true ||
+    rawRepeat === false
+  ) {
+    return fallbackRepeat;
+  }
+
+  const normalizedRepeat = Math.trunc(Number(rawRepeat));
+  if (!Number.isFinite(normalizedRepeat) || normalizedRepeat <= 0) {
+    return fallbackRepeat;
+  }
+
+  return normalizedRepeat;
+}
+
+function resolveSpecialFxRepeatCount(effectState, fallbackRepeat = null) {
+  const explicitRepeat = normalizeEffectRepeatCount(
+    effectState && effectState.repeat,
+    null,
+  );
+  if (explicitRepeat !== null) {
+    return explicitRepeat;
+  }
+
+  if (!effectState || effectState.weaponFamily !== "laserTurret") {
+    return fallbackRepeat;
+  }
+
+  const durationMs = Math.max(1, toFiniteNumber(effectState.durationMs, 1000));
+  return Math.max(1, Math.ceil(SPECIAL_FX_REPEAT_WINDOW_MS / durationMs));
+}
+
+function resolvePreservedSimTimeMs(
+  preservedPreviousSimTimeMs,
+  previousTimeDilation,
+  capturedAtWallclockMs,
+  fallbackMs = null,
+) {
+  const normalizedPreservedPreviousSimTimeMs =
+    preservedPreviousSimTimeMs === undefined || preservedPreviousSimTimeMs === null
+      ? null
+      : toFiniteNumber(preservedPreviousSimTimeMs, fallbackMs);
+  if (normalizedPreservedPreviousSimTimeMs === null) {
+    return fallbackMs;
+  }
+
+  const normalizedCapturedAtWallclockMs =
+    capturedAtWallclockMs === undefined || capturedAtWallclockMs === null
+      ? null
+      : toFiniteNumber(capturedAtWallclockMs, null);
+  const normalizedPreviousTimeDilation =
+    previousTimeDilation === undefined || previousTimeDilation === null
+      ? null
+      : clampTimeDilationFactor(previousTimeDilation);
+  if (
+    normalizedCapturedAtWallclockMs === null ||
+    normalizedPreviousTimeDilation === null
+  ) {
+    return normalizedPreservedPreviousSimTimeMs;
+  }
+
+  const elapsedWallclockMs = Math.max(
+    0,
+    toFiniteNumber(Date.now(), normalizedCapturedAtWallclockMs) -
+      normalizedCapturedAtWallclockMs,
+  );
+  return roundNumber(
+    normalizedPreservedPreviousSimTimeMs +
+      (elapsedWallclockMs * normalizedPreviousTimeDilation),
+    3,
+  );
+}
+
+function resolveBootstrapPreviousSimTimeMs(session, fallbackMs = null) {
+  if (!session) {
+    return fallbackMs;
+  }
+
+  return resolvePreservedSimTimeMs(
+    session._nextInitialBallparkPreviousSimTimeMs,
+    session._nextInitialBallparkPreviousTimeDilation,
+    session._nextInitialBallparkPreviousCapturedAtWallclockMs,
+    fallbackMs,
+  );
+}
+
+// CCP parity: After consuming capacitor, notify the owning session so the
+// client's HUD gauge updates in real-time.  Attribute 18 ("charge") is the
+// current capacitor energy in GJ.
+const ATTRIBUTE_CHARGE = 18;
+const ATTRIBUTE_ITEM_DAMAGE = 3;
+const ATTRIBUTE_SHIP_DAMAGE = getAttributeIDByNames("damage") || 3;
+const ATTRIBUTE_SHIP_SHIELD_CHARGE =
+  getAttributeIDByNames("shieldCharge") || 264;
+const ATTRIBUTE_SHIP_ARMOR_DAMAGE =
+  getAttributeIDByNames("armorDamage") || 266;
+const ATTRIBUTE_QUANTITY = getAttributeIDByNames("quantity") || 805;
+const ATTRIBUTE_CRYSTAL_VOLATILITY_CHANCE =
+  getAttributeIDByNames("crystalVolatilityChance") || 783;
+const ATTRIBUTE_CRYSTAL_VOLATILITY_DAMAGE =
+  getAttributeIDByNames("crystalVolatilityDamage") || 784;
+const ATTRIBUTE_EM_DAMAGE = getAttributeIDByNames("emDamage") || 114;
+const ATTRIBUTE_EXPLOSIVE_DAMAGE =
+  getAttributeIDByNames("explosiveDamage") || 116;
+const ATTRIBUTE_KINETIC_DAMAGE = getAttributeIDByNames("kineticDamage") || 117;
+const ATTRIBUTE_THERMAL_DAMAGE = getAttributeIDByNames("thermalDamage") || 118;
+const ATTRIBUTE_MASS = getAttributeIDByNames("mass") || 4;
+const ATTRIBUTE_MAX_VELOCITY = getAttributeIDByNames("maxVelocity") || 37;
+const ATTRIBUTE_MAX_TARGET_RANGE = getAttributeIDByNames("maxTargetRange") || 76;
+const ATTRIBUTE_MAX_LOCKED_TARGETS =
+  getAttributeIDByNames("maxLockedTargets") || 192;
+const ATTRIBUTE_CLOAKING_TARGETING_DELAY =
+  getAttributeIDByNames("cloakingTargetingDelay") || 560;
+const ATTRIBUTE_SCAN_RESOLUTION = getAttributeIDByNames("scanResolution") || 564;
+const ATTRIBUTE_SIGNATURE_RADIUS =
+  getAttributeIDByNames("signatureRadius") || 552;
+const TARGETING_MAX_LOCK_MS = 180000;
+const TARGETING_CLIENT_FALLBACK_LOCK_MS = 2000;
+const TARGET_LOSS_REASON_ATTEMPT_CANCELLED = "TargetingAttemptCancelled";
+const TARGET_LOSS_REASON_EXPLODING = "Exploding";
+const DESTRUCTION_EFFECT_EXPLOSION = 3;
+
+function notifyAttributeChanges(session, changes = []) {
+  if (
+    !session ||
+    typeof session.sendNotification !== "function" ||
+    !Array.isArray(changes) ||
+    changes.length === 0
+  ) {
+    return false;
+  }
+
+  session.sendNotification("OnModuleAttributeChanges", "clientID", [{
+    type: "list",
+    items: changes,
+  }]);
+  return true;
+}
+
+function isModuleTimingAttribute(attributeID) {
+  const normalizedAttributeID = toInt(attributeID, 0);
+  return (
+    normalizedAttributeID === MODULE_ATTRIBUTE_DURATION ||
+    normalizedAttributeID === MODULE_ATTRIBUTE_SPEED
+  );
+}
+
+function buildAttributeChange(
+  session,
+  itemID,
+  attributeID,
+  newValue,
+  oldValue = null,
+  when = null,
+) {
+  let resolvedWhen;
+  if (when != null) {
+    resolvedWhen = when;
+  } else if (session && session._space && session._space.simFileTime) {
+    resolvedWhen = session._space.simFileTime;
+  } else {
+    log.warn("buildAttributeChange: no sim time source, using wallclock fallback");
+    resolvedWhen = currentFileTime();
+  }
+  const normalizedAttributeID = toInt(attributeID, 0);
+  return [
+    "OnModuleAttributeChanges",
+    toInt(session && session.characterID, 0),
+    itemID,
+    normalizedAttributeID,
+    resolvedWhen,
+    isModuleTimingAttribute(normalizedAttributeID)
+      ? marshalModuleDurationWireValue(newValue)
+      : Number.isFinite(Number(newValue))
+        ? Number(newValue)
+        : newValue,
+    isModuleTimingAttribute(normalizedAttributeID)
+      ? marshalModuleDurationWireValue(oldValue)
+      : oldValue,
+    null,
+  ];
+}
+
+function notifyCapacitorChangeToSession(
+  session,
+  entity,
+  whenMs = null,
+  previousChargeAmount = null,
+) {
+  if (
+    !session ||
+    typeof session.sendNotification !== "function" ||
+    !entity
+  ) {
+    return;
+  }
+
+  const capacitorCapacity = Math.max(
+    toFiniteNumber(entity.capacitorCapacity, 0),
+    0,
+  );
+  const chargeAmount = Number(
+    (capacitorCapacity * getEntityCapacitorRatio(entity)).toFixed(6),
+  );
+  const shipID = toInt(entity.itemID, 0);
+  let when;
+  if (whenMs != null) {
+    when = resolveSessionNotificationFileTime(session, whenMs);
+  } else if (session && session._space && session._space.simFileTime) {
+    when = resolveSessionNotificationFileTime(session);
+  } else {
+    log.warn("notifyCapacitorChangeToSession: no sim time source, using wallclock fallback");
+    when = currentFileTime();
+  }
+  const hasExplicitPreviousChargeAmount =
+    previousChargeAmount !== null &&
+    previousChargeAmount !== undefined &&
+    Number.isFinite(Number(previousChargeAmount));
+  const normalizedPreviousChargeAmount = hasExplicitPreviousChargeAmount
+    ? Number(Number(previousChargeAmount).toFixed(6))
+    : Number.isFinite(Number(entity._lastCapNotifiedAmount))
+      ? Number(Number(entity._lastCapNotifiedAmount).toFixed(6))
+      : chargeAmount;
+
+  notifyAttributeChanges(session, [buildAttributeChange(
+    session,
+    shipID,
+    ATTRIBUTE_CHARGE,
+    chargeAmount,
+    normalizedPreviousChargeAmount,
+    when,
+  )]);
+  entity._lastCapNotifiedAmount = chargeAmount;
+}
+
+function isEntityLockedTarget(entity, targetID) {
+  const normalizedTargetID = toInt(targetID, 0);
+  if (!entity || normalizedTargetID <= 0) {
+    return false;
+  }
+
+  return ensureEntityTargetingState(entity).lockedTargets.has(normalizedTargetID);
+}
+
+function notifyChargeDamageChangeToSession(
+  session,
+  shipID,
+  moduleFlagID,
+  chargeTypeID,
+  nextDamage,
+  previousDamage,
+  when = null,
+) {
+  const numericShipID = toInt(shipID, 0);
+  const numericFlagID = toInt(moduleFlagID, 0);
+  const numericChargeTypeID = toInt(chargeTypeID, 0);
+  if (
+    !session ||
+    numericShipID <= 0 ||
+    numericFlagID <= 0 ||
+    numericChargeTypeID <= 0
+  ) {
+    return false;
+  }
+
+  return notifyAttributeChanges(session, [buildAttributeChange(
+    session,
+    buildChargeTupleItemID(numericShipID, numericFlagID, numericChargeTypeID),
+    ATTRIBUTE_ITEM_DAMAGE,
+    roundNumber(toFiniteNumber(nextDamage, 0), 6),
+    roundNumber(toFiniteNumber(previousDamage, 0), 6),
+    when,
+  )]);
+}
+
+function notifyChargeQuantityChangeToSession(
+  session,
+  shipID,
+  moduleFlagID,
+  chargeTypeID,
+  nextQuantity,
+  previousQuantity,
+  when = null,
+) {
+  const numericShipID = toInt(shipID, 0);
+  const numericFlagID = toInt(moduleFlagID, 0);
+  const numericChargeTypeID = toInt(chargeTypeID, 0);
+  if (
+    !session ||
+    numericShipID <= 0 ||
+    numericFlagID <= 0 ||
+    numericChargeTypeID <= 0
+  ) {
+    return false;
+  }
+
+  return notifyAttributeChanges(session, [buildAttributeChange(
+    session,
+    buildChargeTupleItemID(numericShipID, numericFlagID, numericChargeTypeID),
+    ATTRIBUTE_QUANTITY,
+    Math.max(0, toInt(nextQuantity, 0)),
+    Math.max(0, toInt(previousQuantity, 0)),
+    when,
+  )]);
+}
+
+function buildShipHealthAttributeSnapshotFromDamageResult(damageResult) {
+  const damageData =
+    damageResult && damageResult.success === true && damageResult.data
+      ? damageResult.data
+      : null;
+  if (!damageData) {
+    return null;
+  }
+
+  const maxLayers = damageData.maxLayers || {};
+  const beforeLayers = damageData.beforeLayers || {};
+  const afterLayers = damageData.afterLayers || {};
+  return {
+    shieldCharge: {
+      previous: roundNumber(toFiniteNumber(beforeLayers.shield, 0), 6),
+      next: roundNumber(toFiniteNumber(afterLayers.shield, 0), 6),
+    },
+    armorDamage: {
+      previous: roundNumber(
+        Math.max(
+          0,
+          toFiniteNumber(maxLayers.armor, 0) - toFiniteNumber(beforeLayers.armor, 0),
+        ),
+        6,
+      ),
+      next: roundNumber(
+        Math.max(
+          0,
+          toFiniteNumber(maxLayers.armor, 0) - toFiniteNumber(afterLayers.armor, 0),
+        ),
+        6,
+      ),
+    },
+    structureDamage: {
+      previous: roundNumber(
+        Math.max(
+          0,
+          toFiniteNumber(maxLayers.structure, 0) - toFiniteNumber(beforeLayers.structure, 0),
+        ),
+        6,
+      ),
+      next: roundNumber(
+        Math.max(
+          0,
+          toFiniteNumber(maxLayers.structure, 0) - toFiniteNumber(afterLayers.structure, 0),
+        ),
+        6,
+      ),
+    },
+  };
+}
+
+function buildShipHealthTransitionResult(entity, previousConditionState = null) {
+  if (!entity) {
+    return null;
+  }
+
+  const normalizedPreviousConditionState = normalizeShipConditionState(
+    previousConditionState === null || previousConditionState === undefined
+      ? entity.conditionState
+      : previousConditionState,
+  );
+  const maxLayers = getEntityMaxHealthLayers(entity);
+  const beforeLayers = getEntityCurrentHealthLayers(
+    {
+      ...entity,
+      conditionState: normalizedPreviousConditionState,
+    },
+    maxLayers,
+  );
+  const afterLayers = getEntityCurrentHealthLayers(entity, maxLayers);
+
+  return {
+    success: true,
+    data: {
+      maxLayers: {
+        shield: roundNumber(toFiniteNumber(maxLayers.shield, 0), 6),
+        armor: roundNumber(toFiniteNumber(maxLayers.armor, 0), 6),
+        structure: roundNumber(toFiniteNumber(maxLayers.structure, 0), 6),
+      },
+      beforeLayers: {
+        shield: roundNumber(toFiniteNumber(beforeLayers.shield, 0), 6),
+        armor: roundNumber(toFiniteNumber(beforeLayers.armor, 0), 6),
+        structure: roundNumber(toFiniteNumber(beforeLayers.structure, 0), 6),
+      },
+      afterLayers: {
+        shield: roundNumber(toFiniteNumber(afterLayers.shield, 0), 6),
+        armor: roundNumber(toFiniteNumber(afterLayers.armor, 0), 6),
+        structure: roundNumber(toFiniteNumber(afterLayers.structure, 0), 6),
+      },
+      beforeConditionState: {
+        ...normalizedPreviousConditionState,
+      },
+      afterConditionState: {
+        ...normalizeShipConditionState(entity.conditionState),
+      },
+      destroyed: false,
+    },
+  };
+}
+
+function notifyShipHealthAttributesToSession(
+  session,
+  entity,
+  damageResult,
+  whenMs = null,
+) {
+  if (!session || !entity) {
+    return false;
+  }
+
+  const shipID = toInt(entity.itemID, 0);
+  const snapshot = buildShipHealthAttributeSnapshotFromDamageResult(damageResult);
+  if (shipID <= 0 || !snapshot) {
+    return false;
+  }
+
+  let timestamp;
+  if (whenMs != null) {
+    timestamp = resolveSessionNotificationFileTime(session, whenMs);
+  } else if (session && session._space && session._space.simFileTime) {
+    timestamp = resolveSessionNotificationFileTime(session);
+  } else {
+    log.warn("notifyShipHealthAttributesToSession: no sim time source, using wallclock fallback");
+    timestamp = currentFileTime();
+  }
+
+  const changes = [];
+  const candidates = [
+    [
+      ATTRIBUTE_SHIP_SHIELD_CHARGE,
+      snapshot.shieldCharge.next,
+      snapshot.shieldCharge.previous,
+    ],
+    [
+      ATTRIBUTE_SHIP_ARMOR_DAMAGE,
+      snapshot.armorDamage.next,
+      snapshot.armorDamage.previous,
+    ],
+    [
+      ATTRIBUTE_SHIP_DAMAGE,
+      snapshot.structureDamage.next,
+      snapshot.structureDamage.previous,
+    ],
+  ];
+
+  for (const [attributeID, nextValue, previousValue] of candidates) {
+    if (attributeID <= 0 || Number(nextValue) === Number(previousValue)) {
+      continue;
+    }
+    changes.push(
+      buildAttributeChange(
+        session,
+        shipID,
+        attributeID,
+        nextValue,
+        previousValue,
+        timestamp,
+      ),
+    );
+  }
+
+  return notifyAttributeChanges(session, changes);
+}
+
+function sendAddBallsRefreshToSession(scene, session, entity, whenMs = null) {
+  if (!scene || !session || !entity || !isReadyForDestiny(session)) {
+    return false;
+  }
+
+  refreshShipPresentationFields(entity);
+  const refreshedEntities = refreshEntitiesForSlimPayload([entity]).filter(Boolean);
+  if (refreshedEntities.length === 0) {
+    return false;
+  }
+
+  const rawSimTimeMs =
+    whenMs === null || whenMs === undefined
+      ? scene.getCurrentSimTimeMs()
+      : toFiniteNumber(whenMs, scene.getCurrentSimTimeMs());
+  const rawStamp = ((scene.getCurrentDestinyStamp(rawSimTimeMs) + 1) >>> 0);
+  scene.nextStamp = Math.max(toInt(scene.nextStamp, 0), rawStamp);
+  const stamp = scene.translateDestinyStampForSession(session, rawStamp);
+  const simFileTime = scene.getCurrentSessionFileTime(session, rawSimTimeMs);
+  scene.sendDestinyUpdates(session, [
+    {
+      stamp,
+      payload: destiny.buildAddBalls2Payload(stamp, refreshedEntities, simFileTime),
+    },
+  ], false, { translateStamps: false });
+  return true;
+}
+
+function healShipResourcesForSession(session, scene, entity, options = {}) {
+  if (!entity || entity.kind !== "ship") {
+    return {
+      success: false,
+      errorMsg: "SHIP_NOT_FOUND",
+    };
+  }
+
+  const ownerSession = session || entity.session || null;
+  const previousConditionState = normalizeShipConditionState(entity.conditionState);
+  const previousChargeAmount = getEntityCapacitorAmount(entity);
+  const healedConditionState = normalizeShipConditionState({
+    ...previousConditionState,
+    damage: 0,
+    charge: 1,
+    armorDamage: 0,
+    shieldCharge: 1,
+  });
+
+  entity.conditionState = healedConditionState;
+  setEntityCapacitorRatio(entity, healedConditionState.charge);
+  persistDynamicEntity(entity);
+
+  const nextConditionState = normalizeShipConditionState(entity.conditionState);
+  const healthTransitionResult = buildShipHealthTransitionResult(
+    entity,
+    previousConditionState,
+  );
+  const healthChanged =
+    Math.abs(
+      toFiniteNumber(previousConditionState.shieldCharge, 0) -
+        toFiniteNumber(nextConditionState.shieldCharge, 0),
+    ) > 1e-6 ||
+    Math.abs(
+      toFiniteNumber(previousConditionState.armorDamage, 0) -
+        toFiniteNumber(nextConditionState.armorDamage, 0),
+    ) > 1e-6 ||
+    Math.abs(
+      toFiniteNumber(previousConditionState.damage, 0) -
+        toFiniteNumber(nextConditionState.damage, 0),
+    ) > 1e-6;
+  const resolvedWhenMs =
+    options.whenMs !== undefined && options.whenMs !== null
+      ? toFiniteNumber(options.whenMs, Date.now())
+      : scene
+        ? scene.getCurrentSimTimeMs()
+        : Date.now();
+
+  if (ownerSession) {
+    notifyShipHealthAttributesToSession(
+      ownerSession,
+      entity,
+      healthTransitionResult,
+      resolvedWhenMs,
+    );
+    notifyCapacitorChangeToSession(
+      ownerSession,
+      entity,
+      resolvedWhenMs,
+      previousChargeAmount,
+    );
+  }
+
+  const deliveredCount =
+    scene && healthChanged
+      ? broadcastDamageStateChange(scene, entity, resolvedWhenMs)
+      : 0;
+
+  const canRefreshOwnerDamagePresentation =
+    scene &&
+    healthChanged &&
+    ownerSession &&
+    isReadyForDestiny(ownerSession) &&
+    (
+      !entity.session ||
+      sessionMatchesIdentity(ownerSession, entity.session)
+    );
+  const shouldRefreshOwnerDamagePresentation =
+    options.refreshOwnerDamagePresentation !== false &&
+    canRefreshOwnerDamagePresentation;
+  if (shouldRefreshOwnerDamagePresentation) {
+    // Pilot HUD health already rides dogma attribute updates, but the ego ship's
+    // in-space impact visuals can still need a fresh SetState re-read of the
+    // authoritative damage-state map. Keep this owner-only because observers
+    // already update from OnDamageStateChange. Callers can disable it for
+    // live operator/debug actions like /heal where a full SetState rebase is
+    // riskier than leaving stale impact visuals until the next normal refresh.
+    const refreshStamp = ((scene.getCurrentDestinyStamp(resolvedWhenMs) + 1) >>> 0);
+    scene.sendStateRefresh(ownerSession, entity, refreshStamp);
+  } else if (
+    options.refreshOwnerDamagePresentation === false &&
+    canRefreshOwnerDamagePresentation &&
+    entity.mode !== "WARP"
+  ) {
+    // /heal still needs the pilot's own ship model to re-read the healed
+    // damage state, but a full SetState rebase rebuilds the local ballpark and
+    // can desync fittings. A pilot-only AddBalls2 refresh is enough to redraw
+    // the ego ball without tearing down the whole session bootstrap. Skip warp:
+    // pilot DoDestinyUpdate during warp bootstrap is intentionally kept quiet.
+    sendAddBallsRefreshToSession(scene, ownerSession, entity, resolvedWhenMs);
+  }
+
+  return {
+    success: true,
+    data: {
+      entity,
+      whenMs: resolvedWhenMs,
+      previousChargeAmount: roundNumber(previousChargeAmount, 6),
+      currentChargeAmount: roundNumber(getEntityCapacitorAmount(entity), 6),
+      previousConditionState,
+      currentConditionState: nextConditionState,
+      healthChanged,
+      deliveredCount,
+    },
+  };
+}
+
+function broadcastDamageStateChange(scene, entity, whenMs = null) {
+  if (!scene || !entity) {
+    return 0;
+  }
+
+  const resolvedFileTime =
+    whenMs === null || whenMs === undefined
+      ? scene.getCurrentFileTime()
+      : scene.toFileTimeFromSimMs(whenMs, scene.getCurrentFileTime());
+  const damageState = buildLiveDamageState(entity, resolvedFileTime);
+  const rawBaseStamp =
+    whenMs === null || whenMs === undefined
+      ? scene.getCurrentDestinyStamp()
+      : scene.getCurrentDestinyStamp(whenMs);
+  let deliveredCount = 0;
+  const recipientSessions = new Set();
+
+  for (const session of scene.sessions.values()) {
+    if (!isReadyForDestiny(session)) {
+      continue;
+    }
+    if (
+      entity.kind !== "station" &&
+      !scene.canSessionSeeDynamicEntity(session, entity)
+    ) {
+      continue;
+    }
+    recipientSessions.add(session);
+  }
+
+  if (entity.session && isReadyForDestiny(entity.session)) {
+    recipientSessions.add(entity.session);
+  }
+
+  const targetingState = ensureEntityTargetingState(entity);
+  if (targetingState && targetingState.targetedBy instanceof Set) {
+    for (const sourceID of targetingState.targetedBy) {
+      const sourceEntity = scene.getEntityByID(sourceID);
+      if (
+        !sourceEntity ||
+        !sourceEntity.session ||
+        !isReadyForDestiny(sourceEntity.session)
+      ) {
+        continue;
+      }
+      recipientSessions.add(sourceEntity.session);
+    }
+  }
+
+  for (const session of recipientSessions) {
+    const stamp = scene.getImmediateDestinyStampForSession(
+      session,
+      rawBaseStamp,
+    );
+    scene.sendDestinyUpdates(session, [{
+      stamp,
+      payload: destiny.buildOnDamageStateChangePayload(
+        entity.itemID,
+        damageState,
+      ),
+    }], false, {
+      translateStamps: false,
+    });
+    deliveredCount += 1;
+  }
+
+  return deliveredCount;
+}
+
+function getCombatMessageHitQuality(shotResult) {
+  if (!shotResult || shotResult.hit !== true) {
+    return 0;
+  }
+
+  const quality = toFiniteNumber(shotResult.quality, 0);
+  if (quality >= 3) {
+    return 6;
+  }
+  if (quality >= 1.2) {
+    return 5;
+  }
+  if (quality >= 1.0) {
+    return 4;
+  }
+  if (quality >= 0.85) {
+    return 3;
+  }
+  if (quality >= 0.65) {
+    return 2;
+  }
+  return 1;
+}
+
+function getAppliedDamageAmount(damageResult) {
+  if (!damageResult || damageResult.success !== true || !damageResult.data) {
+    return 0;
+  }
+
+  const perLayer = Array.isArray(damageResult.data.perLayer)
+    ? damageResult.data.perLayer
+    : [];
+  return roundNumber(
+    perLayer.reduce(
+      (sum, layerEntry) => sum + toFiniteNumber(layerEntry && layerEntry.appliedEffective, 0),
+      0,
+    ),
+    6,
+  );
+}
+
+function buildMarshalDict(entries = []) {
+  return {
+    type: "dict",
+    entries,
+  };
+}
+
+function buildCombatMessageDamageDict(damageVector = {}) {
+  return buildMarshalDict([
+    [
+      ATTRIBUTE_EM_DAMAGE,
+      roundNumber(toFiniteNumber(damageVector && damageVector.em, 0), 6),
+    ],
+    [
+      ATTRIBUTE_THERMAL_DAMAGE,
+      roundNumber(toFiniteNumber(damageVector && damageVector.thermal, 0), 6),
+    ],
+    [
+      ATTRIBUTE_KINETIC_DAMAGE,
+      roundNumber(toFiniteNumber(damageVector && damageVector.kinetic, 0), 6),
+    ],
+    [
+      ATTRIBUTE_EXPLOSIVE_DAMAGE,
+      roundNumber(toFiniteNumber(damageVector && damageVector.explosive, 0), 6),
+    ],
+  ]);
+}
+
+function getCombatNotificationSession(entity) {
+  return entity && entity.session && typeof entity.session.sendNotification === "function"
+    ? entity.session
+    : null;
+}
+
+function buildLaserDamageMessagePayload({
+  attackType = "me",
+  attackerEntity = null,
+  targetEntity = null,
+  moduleItem = null,
+  shotDamage = null,
+  totalDamage = 0,
+  hitQuality = 0,
+  includeAttackerID = false,
+} = {}) {
+  const resolvedShotDamage =
+    shotDamage && typeof shotDamage === "object"
+      ? shotDamage
+      : {};
+  const attackerID = toInt(attackerEntity && attackerEntity.itemID, 0);
+  const targetID = toInt(targetEntity && targetEntity.itemID, 0);
+  const entries = [
+    ["attackType", String(attackType || "me")],
+    ["source", attackerID],
+    ["target", targetID],
+    ["weapon", toInt(moduleItem && moduleItem.typeID, 0)],
+    ["damage", roundNumber(toFiniteNumber(totalDamage, 0), 6)],
+    ["damageAttributes", buildCombatMessageDamageDict(resolvedShotDamage)],
+    ["damageTypes", buildMarshalDict([
+      ["em", roundNumber(toFiniteNumber(resolvedShotDamage.em, 0), 6)],
+      ["thermal", roundNumber(toFiniteNumber(resolvedShotDamage.thermal, 0), 6)],
+      ["kinetic", roundNumber(toFiniteNumber(resolvedShotDamage.kinetic, 0), 6)],
+      ["explosive", roundNumber(toFiniteNumber(resolvedShotDamage.explosive, 0), 6)],
+    ])],
+    ["hitQuality", toInt(hitQuality, 0)],
+    ["isBanked", false],
+  ];
+
+  if (includeAttackerID && attackerID > 0) {
+    entries.push(["attackerID", attackerID]);
+  }
+
+  return buildMarshalDict(entries);
+}
+
+function notifyLaserDamageMessages(
+  attackerEntity,
+  targetEntity,
+  moduleItem,
+  shotResult,
+  damageResult,
+) {
+  if (!targetEntity || !moduleItem || !shotResult) {
+    return false;
+  }
+
+  const totalDamage = getAppliedDamageAmount(damageResult);
+  const shotDamage =
+    shotResult && shotResult.shotDamage && typeof shotResult.shotDamage === "object"
+      ? shotResult.shotDamage
+      : {};
+  const hitQuality = getCombatMessageHitQuality(shotResult);
+  let notified = false;
+
+  const attackerSession = getCombatNotificationSession(attackerEntity);
+  if (attackerSession) {
+    attackerSession.sendNotification("OnDamageMessage", "clientID", [
+      buildLaserDamageMessagePayload({
+        attackType: "me",
+        attackerEntity,
+        targetEntity,
+        moduleItem,
+        shotDamage,
+        totalDamage,
+        hitQuality,
+      }),
+    ]);
+    notified = true;
+  }
+
+  const targetSession = getCombatNotificationSession(targetEntity);
+  if (targetSession && targetSession !== attackerSession) {
+    targetSession.sendNotification("OnDamageMessage", "clientID", [
+      buildLaserDamageMessagePayload({
+        attackType: "otherPlayerWeapons",
+        attackerEntity,
+        targetEntity,
+        moduleItem,
+        shotDamage,
+        totalDamage,
+        hitQuality,
+        includeAttackerID: true,
+      }),
+    ]);
+    notified = true;
+  }
+
+  return notified;
+}
+
+function applyCrystalVolatilityDamage(
+  scene,
+  attackerEntity,
+  moduleItem,
+  chargeItem,
+  whenMs = null,
+) {
+  if (!scene || !attackerEntity || !moduleItem || !chargeItem) {
+    return {
+      success: false,
+      errorMsg: "CRYSTAL_NOT_FOUND",
+    };
+  }
+
+  const chargeAttributes = getTypeDogmaAttributes(chargeItem.typeID);
+  const volatilityChance = clamp(
+    toFiniteNumber(
+      chargeAttributes && chargeAttributes[String(ATTRIBUTE_CRYSTAL_VOLATILITY_CHANCE)],
+      0,
+    ),
+    0,
+    1,
+  );
+  const volatilityDamage = Math.max(
+    0,
+    toFiniteNumber(
+      chargeAttributes && chargeAttributes[String(ATTRIBUTE_CRYSTAL_VOLATILITY_DAMAGE)],
+      0,
+    ),
+  );
+  if (volatilityChance <= 0 || volatilityDamage <= 0) {
+    return {
+      success: true,
+      data: {
+        chargeItem,
+        damaged: false,
+        burnedOut: false,
+      },
+    };
+  }
+  if (Math.random() > volatilityChance) {
+    return {
+      success: true,
+      data: {
+        chargeItem,
+        damaged: false,
+        burnedOut: false,
+      },
+    };
+  }
+
+  const previousDamage = clamp(
+    toFiniteNumber(
+      chargeItem && chargeItem.moduleState && chargeItem.moduleState.damage,
+      0,
+    ),
+    0,
+    1,
+  );
+  const nextDamage = clamp(previousDamage + volatilityDamage, 0, 1);
+  const when = resolveSessionNotificationFileTime(attackerEntity.session, whenMs);
+
+  const updateResult = updateInventoryItem(chargeItem.itemID, (currentItem) => ({
+    ...currentItem,
+    moduleState: {
+      ...(currentItem && currentItem.moduleState ? currentItem.moduleState : {}),
+      damage: nextDamage,
+    },
+  }));
+  if (!updateResult.success) {
+    return updateResult;
+  }
+
+  const updatedChargeItem = findItemById(chargeItem.itemID) || chargeItem;
+  if (attackerEntity.session) {
+    notifyChargeDamageChangeToSession(
+      attackerEntity.session,
+      attackerEntity.itemID,
+      moduleItem.flagID,
+      chargeItem.typeID,
+      nextDamage,
+      previousDamage,
+      when,
+    );
+  }
+
+  if (nextDamage < 1 - 1e-9) {
+    return {
+      success: true,
+      data: {
+        chargeItem: updatedChargeItem,
+        damaged: true,
+        burnedOut: false,
+        previousDamage,
+        nextDamage,
+      },
+    };
+  }
+
+  const removeResult = removeInventoryItem(chargeItem.itemID);
+  if (removeResult.success && attackerEntity.session) {
+    notifyChargeQuantityChangeToSession(
+      attackerEntity.session,
+      attackerEntity.itemID,
+      moduleItem.flagID,
+      chargeItem.typeID,
+      0,
+      1,
+      when,
+    );
+  }
+
+  return {
+    success: removeResult.success,
+    errorMsg: removeResult.success ? null : removeResult.errorMsg,
+    data: {
+      chargeItem: removeResult.success ? null : updatedChargeItem,
+      damaged: true,
+      burnedOut: removeResult.success,
+      previousDamage,
+      nextDamage,
+    },
+  };
+}
+
+function destroyCombatEntity(scene, entity) {
+  if (!scene || !entity) {
+    return {
+      success: false,
+      errorMsg: "ENTITY_NOT_FOUND",
+    };
+  }
+
+  if (entity.kind === "ship") {
+    const {
+      destroySessionShip,
+      destroyShipEntityWithWreck,
+    } = require(path.join(__dirname, "./shipDestruction"));
+    if (entity.session) {
+      return destroySessionShip(entity.session, {
+        sessionChangeReason: "combat",
+      });
+    }
+    return destroyShipEntityWithWreck(scene.systemID, entity, {
+      ownerCharacterID: toInt(
+        getShipEntityInventoryCharacterID(entity, 0) || entity.ownerID,
+        0,
+      ),
+      shipRecord: findShipItemById(entity.itemID) || null,
+    });
+  }
+
+  if (isInventoryBackedDynamicEntity(entity)) {
+    return scene.destroyInventoryBackedDynamicEntity(entity.itemID, {
+      terminalDestructionEffectID: DESTRUCTION_EFFECT_EXPLOSION,
+    });
+  }
+
+  return {
+    success: false,
+    errorMsg: "ENTITY_NOT_DAMAGEABLE",
+  };
+}
+
+function executeLaserTurretCycle(scene, attackerEntity, effectState, cycleBoundaryMs) {
+  const session = attackerEntity && attackerEntity.session ? attackerEntity.session : null;
+  const attackerCharacterID = getShipEntityInventoryCharacterID(attackerEntity, 0);
+  const moduleItem = findItemById(effectState && effectState.moduleID);
+  if (!attackerEntity || !effectState || !moduleItem) {
+    return {
+      success: false,
+      errorMsg: "MODULE_NOT_FOUND",
+      stopReason: "module",
+    };
+  }
+
+  const chargeItem =
+    attackerCharacterID > 0
+      ? getLoadedChargeByFlag(
+        attackerCharacterID,
+        attackerEntity.itemID,
+        moduleItem.flagID,
+      )
+      : null;
+  const family = resolveWeaponFamily(moduleItem, chargeItem);
+  if (family !== "laserTurret" || !chargeItem) {
+    return {
+      success: false,
+      errorMsg: "NO_AMMO",
+      stopReason: "ammo",
+    };
+  }
+
+  const targetEntity = scene.getEntityByID(effectState.targetID);
+  if (
+    !targetEntity ||
+    !hasDamageableHealth(targetEntity) ||
+    !isEntityLockedTarget(attackerEntity, effectState.targetID)
+  ) {
+    return {
+      success: false,
+      errorMsg: "TARGET_NOT_FOUND",
+      stopReason: "target",
+    };
+  }
+
+  const shipRecord =
+    attackerCharacterID > 0
+      ? getActiveShipRecord(attackerCharacterID) || findShipItemById(attackerEntity.itemID)
+      : findShipItemById(attackerEntity.itemID);
+  if (!shipRecord) {
+    return {
+      success: false,
+      errorMsg: "SHIP_NOT_FOUND",
+      stopReason: "ship",
+    };
+  }
+
+  const weaponSnapshot = buildWeaponModuleSnapshot({
+    characterID: attackerCharacterID,
+    shipItem: shipRecord,
+    moduleItem,
+    chargeItem,
+  });
+  if (!weaponSnapshot) {
+    return {
+      success: false,
+      errorMsg: "UNSUPPORTED_WEAPON",
+      stopReason: "weapon",
+    };
+  }
+
+  const shotResult = resolveLaserTurretShot({
+    attackerEntity,
+    targetEntity,
+    weaponSnapshot,
+  });
+  let damageResult = null;
+  let destroyResult = null;
+
+  if (shotResult.hit && hasDamageableHealth(targetEntity)) {
+    damageResult = applyDamageToEntity(targetEntity, shotResult.shotDamage);
+    if (damageResult.success) {
+      try {
+        const npcService = require(path.join(__dirname, "./npc"));
+        if (npcService && typeof npcService.noteNpcIncomingAggression === "function") {
+          npcService.noteNpcIncomingAggression(
+            targetEntity,
+            attackerEntity,
+            cycleBoundaryMs,
+          );
+        }
+      } catch (error) {
+        log.warn(`[SpaceRuntime] NPC aggression note failed: ${error.message}`);
+      }
+      persistDynamicEntity(targetEntity);
+      if (targetEntity.session) {
+        notifyShipHealthAttributesToSession(
+          targetEntity.session,
+          targetEntity,
+          damageResult,
+          cycleBoundaryMs,
+        );
+      }
+      broadcastDamageStateChange(scene, targetEntity, cycleBoundaryMs);
+      if (damageResult.data && damageResult.data.destroyed) {
+        destroyResult = destroyCombatEntity(scene, targetEntity);
+      }
+    }
+  }
+
+  notifyLaserDamageMessages(
+    attackerEntity,
+    targetEntity,
+    moduleItem,
+    shotResult,
+    damageResult,
+  );
+
+  const crystalResult = applyCrystalVolatilityDamage(
+    scene,
+    attackerEntity,
+    moduleItem,
+    chargeItem,
+    cycleBoundaryMs,
+  );
+
+  return {
+    success: true,
+    data: {
+      moduleItem,
+      chargeItem,
+      targetEntity,
+      weaponSnapshot,
+      shotResult,
+      damageResult,
+      destroyResult,
+      crystalResult,
+      stopReason:
+        !crystalResult.success
+          ? "ammo"
+          : crystalResult.data && crystalResult.data.burnedOut
+            ? "ammo"
+            : null,
+    },
+  };
+}
+
+function notifyPropulsionDerivedAttributesToSession(
+  session,
+  entity,
+  effectState,
+  whenMs = null,
+) {
+  if (
+    !session ||
+    !entity ||
+    !effectState
+  ) {
+    return false;
+  }
+
+  const changes = [];
+  let timestamp;
+  if (whenMs != null) {
+    timestamp = resolveSessionNotificationFileTime(session, whenMs);
+  } else if (session && session._space && session._space.simFileTime) {
+    timestamp = resolveSessionNotificationFileTime(session);
+  } else {
+    log.warn("notifyPropulsionDerivedAttributesToSession: no sim time source, using wallclock fallback");
+    timestamp = currentFileTime();
+  }
+  const moduleID = toInt(effectState.moduleID, 0);
+  const shipID = toInt(entity.itemID, 0);
+
+  if (moduleID > 0) {
+    changes.push(
+      buildAttributeChange(
+        session,
+        moduleID,
+        MODULE_ATTRIBUTE_SPEED_FACTOR,
+        roundNumber(toFiniteNumber(effectState.speedFactor, 0), 6),
+        null,
+        timestamp,
+      ),
+      buildAttributeChange(
+        session,
+        moduleID,
+        MODULE_ATTRIBUTE_CAPACITOR_NEED,
+        roundNumber(toFiniteNumber(effectState.capNeed, 0), 6),
+        null,
+        timestamp,
+      ),
+      buildAttributeChange(
+        session,
+        moduleID,
+        MODULE_ATTRIBUTE_DURATION,
+        roundNumber(toFiniteNumber(effectState.durationMs, 0), 3),
+        null,
+        timestamp,
+      ),
+    );
+  }
+
+  if (shipID > 0) {
+    changes.push(
+      buildAttributeChange(
+        session,
+        shipID,
+        ATTRIBUTE_MASS,
+        roundNumber(toFiniteNumber(entity.mass, 0), 6),
+        null,
+        timestamp,
+      ),
+      buildAttributeChange(
+        session,
+        shipID,
+        ATTRIBUTE_MAX_VELOCITY,
+        roundNumber(toFiniteNumber(entity.maxVelocity, 0), 6),
+        null,
+        timestamp,
+      ),
+      buildAttributeChange(
+        session,
+        shipID,
+        ATTRIBUTE_SIGNATURE_RADIUS,
+        roundNumber(toFiniteNumber(entity.signatureRadius, 0), 6),
+        null,
+        timestamp,
+      ),
+    );
+  }
+
+  return notifyAttributeChanges(session, changes);
+}
+
+function notifyGenericDerivedAttributesToSession(
+  session,
+  effectState,
+  whenMs = null,
+) {
+  if (!session || !effectState) {
+    return false;
+  }
+
+  const moduleID = toInt(effectState.moduleID, 0);
+  const durationAttributeID = toInt(
+    effectState.durationAttributeID,
+    MODULE_ATTRIBUTE_DURATION,
+  );
+  if (moduleID <= 0) {
+    return false;
+  }
+
+  let timestamp;
+  if (whenMs != null) {
+    timestamp = resolveSessionNotificationFileTime(session, whenMs);
+  } else if (session && session._space && session._space.simFileTime) {
+    timestamp = resolveSessionNotificationFileTime(session);
+  } else {
+    log.warn("notifyGenericDerivedAttributesToSession: no sim time source, using wallclock fallback");
+    timestamp = currentFileTime();
+  }
+
+  const changes = [
+    buildAttributeChange(
+      session,
+      moduleID,
+      MODULE_ATTRIBUTE_CAPACITOR_NEED,
+      roundNumber(toFiniteNumber(effectState.capNeed, 0), 6),
+      null,
+      timestamp,
+    ),
+  ];
+
+  if (durationAttributeID > 0) {
+    changes.push(
+      buildAttributeChange(
+        session,
+        moduleID,
+        durationAttributeID,
+        roundNumber(toFiniteNumber(effectState.durationMs, 0), 3),
+        null,
+        timestamp,
+      ),
+    );
+  }
+
+  return notifyAttributeChanges(session, changes);
+}
+
+function notifyTargetingDerivedAttributesToSession(
+  session,
+  entity,
+  previousSnapshot,
+  whenMs = null,
+) {
+  if (!session || !entity || !previousSnapshot) {
+    return false;
+  }
+
+  let timestamp;
+  if (whenMs != null) {
+    timestamp = resolveSessionNotificationFileTime(session, whenMs);
+  } else if (session && session._space && session._space.simFileTime) {
+    timestamp = resolveSessionNotificationFileTime(session);
+  } else {
+    log.warn("notifyTargetingDerivedAttributesToSession: no sim time source, using wallclock fallback");
+    timestamp = currentFileTime();
+  }
+
+  const shipID = toInt(entity.itemID, 0);
+  if (shipID <= 0) {
+    return false;
+  }
+
+  const currentSnapshot = buildEntityTargetingAttributeSnapshot(entity);
+  const attributeChanges = [];
+  const candidates = [
+    [ATTRIBUTE_MAX_TARGET_RANGE, currentSnapshot.maxTargetRange, previousSnapshot.maxTargetRange],
+    [ATTRIBUTE_MAX_LOCKED_TARGETS, currentSnapshot.maxLockedTargets, previousSnapshot.maxLockedTargets],
+    [ATTRIBUTE_SIGNATURE_RADIUS, currentSnapshot.signatureRadius, previousSnapshot.signatureRadius],
+    [ATTRIBUTE_CLOAKING_TARGETING_DELAY, currentSnapshot.cloakingTargetingDelay, previousSnapshot.cloakingTargetingDelay],
+    [ATTRIBUTE_SCAN_RESOLUTION, currentSnapshot.scanResolution, previousSnapshot.scanResolution],
+  ];
+
+  for (const [attributeID, nextValue, previousValue] of candidates) {
+    if (Number(nextValue) === Number(previousValue)) {
+      continue;
+    }
+
+    attributeChanges.push(
+      buildAttributeChange(
+        session,
+        shipID,
+        attributeID,
+        nextValue,
+        previousValue,
+        timestamp,
+      ),
+    );
+  }
+
+  return notifyAttributeChanges(session, attributeChanges);
+}
+
+function buildShipEntityCore(source, systemID, options = {}) {
+  const movement =
+    worldData.getMovementAttributesForType(source.typeID) || null;
+  const passiveResourceState = source.passiveResourceState || null;
+  const spaceState = buildShipSpaceState(source);
   const position = cloneVector(spaceState.position);
   const direction = normalizeVector(
     cloneVector(spaceState.direction, DEFAULT_RIGHT),
@@ -2536,17 +5674,34 @@ function buildShipEntity(session, shipItem, systemID) {
     addVectors(position, scaleVector(direction, 1.0e16)),
   );
   const maxVelocity =
-    toFiniteNumber(movement && movement.maxVelocity, 0) > 0
-      ? toFiniteNumber(movement.maxVelocity, 0)
-      : 200;
+    toFiniteNumber(passiveResourceState && passiveResourceState.maxVelocity, 0) > 0
+      ? toFiniteNumber(passiveResourceState.maxVelocity, 0)
+      : toFiniteNumber(movement && movement.maxVelocity, 0) > 0
+        ? toFiniteNumber(movement.maxVelocity, 0)
+        : 200;
   const warpSpeedAU =
     toFiniteNumber(movement && movement.warpSpeedMultiplier, 0) > 0
       ? toFiniteNumber(movement.warpSpeedMultiplier, 0)
       : 3;
-  const alignTime =
+  const resolvedMass =
+    toFiniteNumber(passiveResourceState && passiveResourceState.mass, 0) > 0
+      ? toFiniteNumber(passiveResourceState.mass, 0)
+      : toFiniteNumber(movement && movement.mass, 0) > 0
+        ? toFiniteNumber(movement.mass, 0)
+        : 1_000_000;
+  const resolvedInertia =
+    toFiniteNumber(passiveResourceState && passiveResourceState.agility, 0) > 0
+      ? toFiniteNumber(passiveResourceState.agility, 0)
+      : toFiniteNumber(movement && movement.inertia, 0) > 0
+        ? toFiniteNumber(movement.inertia, 0)
+        : 1;
+  const alignTime = calculateAlignTimeSecondsFromMassInertia(
+    resolvedMass,
+    resolvedInertia,
     toFiniteNumber(movement && movement.alignTime, 0) > 0
       ? toFiniteNumber(movement.alignTime, 0)
-      : 3;
+      : 3,
+  );
   const maxAccelerationTime =
     toFiniteNumber(movement && movement.maxAccelerationTime, 0) > 0
       ? toFiniteNumber(movement.maxAccelerationTime, 0)
@@ -2565,38 +5720,59 @@ function buildShipEntity(session, shipItem, systemID) {
     buildPerpendicular(direction),
   );
   const pendingWarp = buildPendingWarp(spaceState.pendingWarp, position);
+  const pilotCharacterID = toInt(
+    source.pilotCharacterID,
+    toInt(source.characterID, 0),
+  );
 
   const entity = {
     kind: "ship",
     systemID,
-    itemID: shipItem.itemID,
-    typeID: shipItem.typeID,
-    groupID: shipItem.groupID,
-    categoryID: shipItem.categoryID,
-    itemName: shipItem.itemName || session.shipName || "Ship",
-    ownerID: shipItem.ownerID || session.characterID,
-    characterID: session.characterID || 0,
-    corporationID: session.corporationID || 0,
-    allianceID: session.allianceID || 0,
-    warFactionID: session.warFactionID || 0,
-    skinMaterialSetID: resolveShipSkinMaterialSetID(shipItem),
+    itemID: allocateRuntimeEntityID(source.itemID),
+    typeID: source.typeID,
+    groupID: toInt(source.groupID, 25),
+    categoryID: toInt(source.categoryID, 6),
+    itemName: String(source.itemName || source.name || "Ship"),
+    ownerID: toInt(
+      source.ownerID,
+      toInt(source.characterID, toInt(source.corporationID, 0)),
+    ),
+    slimTypeID: toInt(source.slimTypeID, toInt(source.typeID, 0)),
+    slimGroupID: toInt(source.slimGroupID, toInt(source.groupID, 25)),
+    slimCategoryID: toInt(source.slimCategoryID, toInt(source.categoryID, 6)),
+    slimName: String(
+      source.slimName ||
+        source.itemName ||
+        source.name ||
+        "Ship",
+    ),
+    characterID: toInt(source.characterID, 0),
+    pilotCharacterID,
+    npcEntityType: source.npcEntityType || null,
+    corporationID: toInt(source.corporationID, 0),
+    allianceID: toInt(source.allianceID, 0),
+    warFactionID: toInt(source.warFactionID, 0),
+    skinMaterialSetID:
+      options.skinMaterialSetID !== undefined
+        ? options.skinMaterialSetID
+        : source.skinMaterialSetID ?? null,
+    modules: normalizeSlimShipModules(source.modules),
+    securityStatus: toFiniteNumber(
+      source.securityStatus ?? source.securityRating,
+      0,
+    ),
+    bounty: toFiniteNumber(source.bounty, 0),
     position,
     velocity,
     direction,
     targetPoint,
     mode,
     speedFraction,
-    mass:
-      toFiniteNumber(movement && movement.mass, 0) > 0
-        ? toFiniteNumber(movement.mass, 0)
-        : 1_000_000,
-    inertia:
-      toFiniteNumber(movement && movement.inertia, 0) > 0
-        ? toFiniteNumber(movement.inertia, 0)
-        : 1,
+    mass: resolvedMass,
+    inertia: resolvedInertia,
     radius:
-      toFiniteNumber(shipItem && shipItem.radius, 0) > 0
-        ? toFiniteNumber(shipItem.radius, 0)
+      toFiniteNumber(source && source.radius, 0) > 0
+        ? toFiniteNumber(source.radius, 0)
         : toFiniteNumber(movement && movement.radius, 0) > 0
           ? toFiniteNumber(movement.radius, 0)
         : 50,
@@ -2606,8 +5782,56 @@ function buildShipEntity(session, shipItem, systemID) {
     agilitySeconds: deriveAgilitySeconds(
       alignTime,
       maxAccelerationTime,
-      toFiniteNumber(movement && movement.mass, 0),
-      toFiniteNumber(movement && movement.inertia, 0),
+      resolvedMass,
+      resolvedInertia,
+    ),
+    passiveDerivedState: passiveResourceState,
+    maxTargetRange: toFiniteNumber(
+      passiveResourceState && passiveResourceState.maxTargetRange,
+      0,
+    ),
+    maxLockedTargets: toFiniteNumber(
+      passiveResourceState && passiveResourceState.maxLockedTargets,
+      0,
+    ),
+    signatureRadius: toFiniteNumber(
+      passiveResourceState && passiveResourceState.signatureRadius,
+      0,
+    ),
+    cloakingTargetingDelay: toFiniteNumber(
+      passiveResourceState && passiveResourceState.cloakingTargetingDelay,
+      0,
+    ),
+    scanResolution: toFiniteNumber(
+      passiveResourceState && passiveResourceState.scanResolution,
+      0,
+    ),
+    capacitorCapacity: toFiniteNumber(
+      passiveResourceState && passiveResourceState.capacitorCapacity,
+      0,
+    ),
+    capacitorRechargeRate: toFiniteNumber(
+      passiveResourceState && passiveResourceState.capacitorRechargeRate,
+      0,
+    ),
+    shieldCapacity: toFiniteNumber(
+      passiveResourceState && passiveResourceState.shieldCapacity,
+      0,
+    ),
+    shieldRechargeRate: toFiniteNumber(
+      passiveResourceState && passiveResourceState.shieldRechargeRate,
+      0,
+    ),
+    armorHP: toFiniteNumber(passiveResourceState && passiveResourceState.armorHP, 0),
+    structureHP: toFiniteNumber(
+      passiveResourceState && passiveResourceState.structureHP,
+      0,
+    ),
+    conditionState: normalizeShipConditionState(source && source.conditionState),
+    capacitorChargeRatio: clamp(
+      toFiniteNumber(source && source.conditionState && source.conditionState.charge, 1),
+      0,
+      1,
     ),
     warpSpeedAU,
     targetEntityID: toInt(spaceState.targetEntityID, 0) || null,
@@ -2616,15 +5840,18 @@ function buildShipEntity(session, shipItem, systemID) {
     orbitNormal,
     orbitSign: toFiniteNumber(spaceState.orbitSign, 1) < 0 ? -1 : 1,
     bubbleID: null,
+    publicGridKey: null,
     departureBubbleID: null,
     departureBubbleVisibleUntilMs: 0,
     warpState: null,
     pendingWarp,
     dockingTargetID: null,
     pendingDock: null,
-    session,
+    session: options.session || null,
+    persistSpaceState: options.persistSpaceState === true,
     lastPersistAt: 0,
     lastObserverCorrectionBroadcastAt: 0,
+    lastObserverCorrectionBroadcastStamp: -1,
     lastObserverPositionBroadcastAt: 0,
     lastObserverPositionBroadcastStamp: -1,
     lastWarpCorrectionBroadcastAt: 0,
@@ -2638,6 +5865,11 @@ function buildShipEntity(session, shipItem, systemID) {
     lastMovementDebugAt: 0,
     lastMotionDebug: null,
     movementTrace: null,
+    lockedTargets: new Map(),
+    pendingTargetLocks: new Map(),
+    targetedBy: new Set(),
+    activeModuleEffects: new Map(),
+    moduleReactivationLocks: new Map(),
   };
 
   if (mode === "WARP") {
@@ -2649,12 +5881,329 @@ function buildShipEntity(session, shipItem, systemID) {
   return entity;
 }
 
+function buildShipEntity(session, shipItem, systemID) {
+  const characterData = getCharacterRecord(session && session.characterID) || {};
+  const passiveResourceState = buildPassiveShipResourceState(
+    session && session.characterID,
+    shipItem,
+  );
+  const initialModules = resolveShipSlimModules({
+    kind: "ship",
+    itemID: shipItem && shipItem.itemID,
+    characterID: session && session.characterID,
+    pilotCharacterID: session && session.characterID,
+    modules: shipItem && shipItem.modules,
+  });
+  return buildShipEntityCore({
+    itemID: shipItem.itemID,
+    typeID: shipItem.typeID,
+    groupID: shipItem.groupID,
+    categoryID: shipItem.categoryID,
+    itemName: shipItem.itemName || session.shipName || "Ship",
+    ownerID: shipItem.ownerID || session.characterID,
+    characterID: session.characterID || 0,
+    pilotCharacterID: session.characterID || 0,
+    corporationID: session.corporationID || 0,
+    allianceID: session.allianceID || 0,
+    warFactionID: session.warFactionID || 0,
+    radius: shipItem.radius,
+    conditionState: shipItem.conditionState || {},
+    passiveResourceState,
+    spaceState: shipItem.spaceState || {},
+    modules: initialModules,
+    securityStatus:
+      characterData.securityStatus ?? characterData.securityRating ?? 0,
+    bounty: characterData.bounty ?? 0,
+  }, systemID, {
+    session,
+    persistSpaceState: true,
+    skinMaterialSetID: resolveShipSkinMaterialSetID(shipItem),
+  });
+}
+
+function buildRuntimeShipEntity(shipSpec, systemID, options = {}) {
+  const source = shipSpec || {};
+  const passiveResourceState =
+    source.passiveResourceState ||
+    buildPassiveShipResourceState(
+      source.pilotCharacterID ?? source.characterID,
+      {
+        itemID: source.itemID,
+        typeID: source.typeID,
+        groupID: source.groupID,
+        categoryID: source.categoryID,
+        itemName: source.itemName,
+        radius: source.radius,
+      },
+      {
+        fittedItems: Array.isArray(source.fittedItems) ? source.fittedItems : [],
+        skillMap: source.skillMap instanceof Map ? source.skillMap : undefined,
+      },
+    );
+
+  return buildShipEntityCore({
+    ...source,
+    passiveResourceState,
+  }, systemID, {
+    session: options.session || null,
+    persistSpaceState: options.persistSpaceState === true,
+  });
+}
+
+function isPlayerOwnedActiveSpaceShipRecord(shipItem, characterData) {
+  if (!shipItem || toInt(shipItem.categoryID, 0) !== 6 || !shipItem.spaceState) {
+    return false;
+  }
+  if (!characterData) {
+    return false;
+  }
+
+  const accountID = toInt(characterData.accountId ?? characterData.accountID, 0);
+  if (accountID <= 0) {
+    return false;
+  }
+
+  return toInt(characterData.shipID, 0) === toInt(shipItem.itemID, 0);
+}
+
+function isPlayerOwnedPersistedSpaceShipRecord(shipItem, characterData) {
+  if (!shipItem || toInt(shipItem.categoryID, 0) !== 6 || !shipItem.spaceState) {
+    return false;
+  }
+  if (!characterData) {
+    return false;
+  }
+
+  return toInt(characterData.accountId ?? characterData.accountID, 0) > 0;
+}
+
+function buildRuntimePersistedSpaceShipEntity(shipItem, systemID, options = {}) {
+  if (!shipItem || toInt(shipItem.categoryID, 0) !== 6 || !shipItem.spaceState) {
+    return null;
+  }
+
+  const inventoryCharacterID = toInt(shipItem.ownerID, 0);
+  const resolveCharacterRecord =
+    typeof options.resolveCharacterRecord === "function"
+      ? options.resolveCharacterRecord
+      : getCharacterRecord;
+  const characterData =
+    inventoryCharacterID > 0
+      ? resolveCharacterRecord(inventoryCharacterID, shipItem) || null
+      : null;
+  if (
+    options.includeOfflinePlayerShips === false &&
+    isPlayerOwnedPersistedSpaceShipRecord(shipItem, characterData)
+  ) {
+    return null;
+  }
+  const entity = buildRuntimeShipEntity({
+    itemID: shipItem.itemID,
+    typeID: shipItem.typeID,
+    groupID: shipItem.groupID,
+    categoryID: shipItem.categoryID,
+    itemName: shipItem.itemName,
+    ownerID: shipItem.ownerID,
+    characterID: 0,
+    pilotCharacterID: inventoryCharacterID,
+    corporationID: toInt(characterData && characterData.corporationID, 0),
+    allianceID: toInt(characterData && characterData.allianceID, 0),
+    warFactionID: toInt(
+      characterData && (characterData.factionID ?? characterData.warFactionID),
+      0,
+    ),
+    conditionState: shipItem.conditionState || {},
+    spaceState: shipItem.spaceState || {},
+    securityStatus:
+      characterData && (characterData.securityStatus ?? characterData.securityRating),
+    bounty: characterData && characterData.bounty,
+  }, systemID, {
+    persistSpaceState: true,
+  });
+
+  return refreshShipPresentationFields(entity);
+}
+
+function getRuntimeInventoryEntityKind(item) {
+  if (!item) {
+    return null;
+  }
+
+  const metadata = getItemMetadata(item.typeID, item.itemName);
+  const groupName = String(metadata && metadata.groupName || "").trim().toLowerCase();
+  if (groupName === "wreck") {
+    return "wreck";
+  }
+  if (
+    groupName.includes("container") ||
+    groupName === "spawn container"
+  ) {
+    return "container";
+  }
+  return null;
+}
+
+function resolveRuntimeInventoryEntityRadius(kind, item, metadata, fallback = 40) {
+  const staticRadius =
+    toFiniteNumber(item && item.radius, 0) > 0
+      ? toFiniteNumber(item && item.radius, 0)
+      : toFiniteNumber(metadata && metadata.radius, 0);
+  const explicitSpaceRadius = toFiniteNumber(item && item.spaceRadius, 0);
+  if (explicitSpaceRadius > 0) {
+    return explicitSpaceRadius;
+  }
+  if (kind === "wreck") {
+    return resolveRuntimeWreckRadius(
+      {
+        ...metadata,
+        itemName: item && item.itemName,
+        name: String(item && item.itemName || metadata && metadata.name || "Wreck"),
+        radius: staticRadius,
+      },
+      staticRadius,
+    );
+  }
+  return staticRadius > 0 ? staticRadius : fallback;
+}
+
+function resolveRuntimeInventoryEntitySignatureRadius(item, metadata, ballRadius = 0) {
+  const typeID = toInt(
+    item && item.typeID,
+    toInt(metadata && metadata.typeID, 0),
+  );
+  const typeSignatureRadius = getTypeAttributeValue(typeID, "signatureRadius");
+  if (typeSignatureRadius !== null && typeSignatureRadius !== undefined) {
+    const resolvedTypeSignatureRadius = toFiniteNumber(typeSignatureRadius, 0);
+    if (resolvedTypeSignatureRadius > 0) {
+      return resolvedTypeSignatureRadius;
+    }
+  }
+
+  const runtimeBallRadius = toFiniteNumber(ballRadius, 0);
+  if (runtimeBallRadius > 0) {
+    return runtimeBallRadius;
+  }
+
+  const staticTypeRadius = toFiniteNumber(metadata && metadata.radius, 0);
+  if (staticTypeRadius > 0) {
+    return staticTypeRadius;
+  }
+
+  return 1;
+}
+
+function buildRuntimeInventoryEntity(item, systemID, nowMs) {
+  if (nowMs === undefined || nowMs === null) {
+    log.warn("buildRuntimeInventoryEntity: nowMs not provided, using wallclock fallback — caller should pass scene sim time");
+    nowMs = Date.now();
+  }
+  if (!item || !item.itemID) {
+    return null;
+  }
+  if (
+    Number.isFinite(Number(item.expiresAtMs)) &&
+    Number(item.expiresAtMs) > 0 &&
+    Number(item.expiresAtMs) <= nowMs
+  ) {
+    return null;
+  }
+
+  const kind = getRuntimeInventoryEntityKind(item);
+  if (!kind) {
+    return null;
+  }
+
+  const metadata = getItemMetadata(item.typeID, item.itemName);
+  const spaceState = item.spaceState || {};
+  const position = cloneVector(spaceState.position);
+  const direction = normalizeVector(
+    cloneVector(spaceState.direction, DEFAULT_RIGHT),
+    DEFAULT_RIGHT,
+  );
+  const resolvedRadius = resolveRuntimeInventoryEntityRadius(
+    kind,
+    item,
+    metadata,
+    40,
+  );
+  const resolvedSignatureRadius = resolveRuntimeInventoryEntitySignatureRadius(
+    item,
+    metadata,
+    resolvedRadius,
+  );
+
+  return {
+    kind,
+    systemID,
+    itemID: allocateRuntimeEntityID(item.itemID),
+    typeID: toInt(item.typeID, 0),
+    groupID: toInt(item.groupID, toInt(metadata.groupID, 0)),
+    categoryID: toInt(item.categoryID, toInt(metadata.categoryID, 0)),
+    itemName: String(item.itemName || metadata.name || "Container"),
+    ownerID: toInt(item.ownerID, 0),
+    position,
+    velocity: cloneVector(spaceState.velocity),
+    direction,
+    targetPoint: cloneVector(spaceState.targetPoint, position),
+    mode: normalizeMode(spaceState.mode, "STOP"),
+    speedFraction: clamp(toFiniteNumber(spaceState.speedFraction, 0), 0, 1),
+    radius: resolvedRadius,
+    // Retail lock timing prefers the type dogma signature radius and only
+    // falls back to the ball/static radius when that attribute is absent.
+    signatureRadius: resolvedSignatureRadius,
+    passiveDerivedState: {
+      attributes: getTypeDogmaAttributes(item.typeID),
+    },
+    shieldCapacity: Math.max(0, toFiniteNumber(
+      getTypeAttributeValue(item.typeID, "shieldCapacity"),
+      0,
+    )),
+    shieldRechargeRate: Math.max(0, toFiniteNumber(
+      getTypeAttributeValue(item.typeID, "shieldRechargeRate"),
+      0,
+    )),
+    armorHP: Math.max(0, toFiniteNumber(
+      getTypeAttributeValue(item.typeID, "armorHP"),
+      0,
+    )),
+    structureHP: Math.max(0, toFiniteNumber(
+      getTypeAttributeValue(item.typeID, "hp", "structureHP"),
+      0,
+    )),
+    bubbleID: null,
+    publicGridKey: null,
+    departureBubbleID: null,
+    departureBubbleVisibleUntilMs: 0,
+    persistSpaceState: true,
+    lastPersistAt: 0,
+    spaceState: item.spaceState || null,
+    conditionState: normalizeShipConditionState(item.conditionState),
+    createdAtMs: toFiniteNumber(item.createdAtMs, 0) || null,
+    expiresAtMs: toFiniteNumber(item.expiresAtMs, 0) || null,
+    isEmpty: listContainerItems(null, item.itemID).length === 0,
+    launcherID: toInt(item.launcherID, 0) || null,
+    dunRotation: coerceDunRotationTuple(item.dunRotation),
+  };
+}
+
+function buildRuntimeSpaceEntityFromItem(item, systemID, nowMs, options = {}) {
+  if (toInt(item && item.categoryID, 0) === 6 && item && item.spaceState) {
+    return buildRuntimePersistedSpaceShipEntity(item, systemID, options);
+  }
+  return buildRuntimeInventoryEntity(item, systemID, nowMs);
+}
+
 function persistShipEntity(entity) {
+  if (!entity || entity.kind !== "ship" || entity.persistSpaceState !== true) {
+    return;
+  }
+
   const result = updateShipItem(entity.itemID, (currentItem) => ({
     ...currentItem,
     locationID: entity.systemID,
     flagID: 0,
     spaceState: serializeSpaceState(entity),
+    conditionState: normalizeShipConditionState(entity.conditionState),
   }));
 
   if (!result.success) {
@@ -2664,6 +6213,44 @@ function persistShipEntity(entity) {
   }
 
   entity.lastPersistAt = Date.now();
+}
+
+function persistInventoryBackedEntity(entity) {
+  if (!isInventoryBackedDynamicEntity(entity) || entity.persistSpaceState !== true) {
+    return;
+  }
+
+  const result = updateInventoryItem(entity.itemID, (currentItem) => ({
+    ...currentItem,
+    locationID: entity.systemID,
+    flagID: 0,
+    spaceState: serializeSpaceState(entity),
+    conditionState: normalizeShipConditionState(entity.conditionState),
+    createdAtMs: toFiniteNumber(entity.createdAtMs, 0) || null,
+    expiresAtMs: toFiniteNumber(entity.expiresAtMs, 0) || null,
+    launcherID: toInt(entity.launcherID, 0) || null,
+    dunRotation: coerceDunRotationTuple(entity.dunRotation),
+  }));
+
+  if (!result.success) {
+    log.warn(
+      `[SpaceRuntime] Failed to persist ${entity.kind} ${entity.itemID}: ${result.errorMsg}`,
+    );
+    return;
+  }
+
+  entity.lastPersistAt = Date.now();
+}
+
+function persistDynamicEntity(entity) {
+  if (!entity) {
+    return;
+  }
+  if (entity.kind === "ship") {
+    persistShipEntity(entity);
+    return;
+  }
+  persistInventoryBackedEntity(entity);
 }
 
 function clearTrackingState(entity) {
@@ -3046,7 +6633,7 @@ function buildWarpProfile(entity, destination, options = {}) {
   }
 
   return {
-    startTimeMs: Date.now(),
+    startTimeMs: toFiniteNumber(options.nowMs, Date.now()),
     durationMs:
       accelTimeMs +
       cruiseTimeMs +
@@ -3078,7 +6665,7 @@ function buildWarpProfile(entity, destination, options = {}) {
       entity.velocity,
     ),
     cruiseBumpStamp: toInt(options.cruiseBumpStamp, 0),
-    effectStamp: toInt(options.effectStamp, getNextStamp()),
+    effectStamp: toInt(options.effectStamp, toInt(options.defaultEffectStamp, 0)),
     targetEntityID: toInt(options.targetEntityID, 0),
     // The live client expects opaque warp markers here, not echoed target ids
     // or stop distances.
@@ -3129,7 +6716,7 @@ function buildPendingWarpRequest(entity, destination, options = {}) {
       : entity.warpSpeedAU;
 
   return {
-    requestedAtMs: Date.now(),
+    requestedAtMs: toFiniteNumber(options.nowMs, Date.now()),
     preWarpSyncStamp: 0,
     stopDistance,
     totalDistance,
@@ -3164,16 +6751,21 @@ function buildDirectedMovementUpdates(
   return updates;
 }
 
-function buildPreparingWarpState(entity, pendingWarp) {
+function buildPreparingWarpState(entity, pendingWarp, options = {}) {
   const warpState = buildWarpProfile(entity, pendingWarp && pendingWarp.rawDestination, {
     stopDistance: pendingWarp && pendingWarp.stopDistance,
     targetEntityID: pendingWarp && pendingWarp.targetEntityID,
     warpSpeedAU: pendingWarp && pendingWarp.warpSpeedAU,
+    nowMs:
+      options.nowMs === undefined || options.nowMs === null
+        ? pendingWarp && pendingWarp.requestedAtMs
+        : options.nowMs,
     commandStamp: 0,
     startupGuidanceStamp: 0,
     startupGuidanceVelocity: entity && entity.velocity,
     cruiseBumpStamp: 0,
     effectStamp: -1,
+    defaultEffectStamp: toInt(options.defaultEffectStamp, 0),
   });
   if (!warpState) {
     return null;
@@ -3262,17 +6854,19 @@ function getPilotWarpActivationVelocity(entity, warpState) {
   return scaleVector(direction, activationSpeed);
 }
 
-function activatePendingWarp(entity, pendingWarp) {
+function activatePendingWarp(entity, pendingWarp, options = {}) {
   const startupGuidanceVelocity = cloneVector(entity.velocity);
   const warpState = buildWarpProfile(entity, pendingWarp.rawDestination, {
     stopDistance: pendingWarp.stopDistance,
     targetEntityID: pendingWarp.targetEntityID,
     warpSpeedAU: pendingWarp.warpSpeedAU,
+    nowMs: toFiniteNumber(options.nowMs, pendingWarp && pendingWarp.requestedAtMs),
     commandStamp: 0,
     startupGuidanceStamp: 0,
     startupGuidanceVelocity,
     cruiseBumpStamp: 0,
     effectStamp: 0,
+    defaultEffectStamp: toInt(options.defaultEffectStamp, 0),
   });
   if (!warpState) {
     return null;
@@ -3509,39 +7103,441 @@ class SolarSystemScene {
     this.system = worldData.getSolarSystemByID(this.systemID);
     this.sessions = new Map();
     this.dynamicEntities = new Map();
+    this.publicGridClustersByBoxKey = new Map();
+    this.publicGridOccupiedBoxes = new Map();
+    this.publicGridCompositionDirty = true;
     this.bubbles = new Map();
     this.nextBubbleID = 1;
-    this.lastTickAt = Date.now();
+    this.nextTargetSequence = 1;
+    this.lastWallclockTickAt = Date.now();
+    this.simTimeMs = this.lastWallclockTickAt;
+    this.timeDilation = 1;
+    this.nextStamp = getCurrentDestinyStamp(this.simTimeMs);
+    this.lastSimClockBroadcastWallclockAt = this.lastWallclockTickAt;
     this.staticEntities = [];
     this.staticEntitiesByID = new Map();
 
     for (const station of worldData.getStationsForSystem(this.systemID)) {
       const entity = buildStaticStationEntity(station);
-      this.staticEntities.push(entity);
-      this.staticEntitiesByID.set(entity.itemID, entity);
+      this.addStaticEntity(entity);
     }
     for (const celestial of worldData.getCelestialsForSystem(this.systemID)) {
       const entity = buildStaticCelestialEntity(celestial);
-      this.staticEntities.push(entity);
-      this.staticEntitiesByID.set(entity.itemID, entity);
+      this.addStaticEntity(entity);
     }
     if (INCLUDE_STARGATES_IN_SCENE) {
       for (const stargate of worldData.getStargatesForSystem(this.systemID)) {
         const entity = buildStaticStargateEntity(stargate);
-        this.staticEntities.push(entity);
-        this.staticEntitiesByID.set(entity.itemID, entity);
+        this.addStaticEntity(entity);
       }
     }
+
+    for (const item of listSystemSpaceItems(this.systemID)) {
+      const entity = buildRuntimeSpaceEntityFromItem(
+        item,
+        this.systemID,
+        this.getCurrentSimTimeMs(),
+        {
+          // Fresh scenes should not resurrect persisted player-owned ships for
+          // bystanders. The owning pilot is reattached explicitly on login,
+          // and other player hulls should not leak back into space on restart.
+          includeOfflinePlayerShips: false,
+        },
+      );
+      if (!entity) {
+        continue;
+      }
+      this.dynamicEntities.set(entity.itemID, entity);
+      this.reconcileEntityPublicGrid(entity);
+      this.reconcileEntityBubble(entity);
+    }
+    this.ensurePublicGridComposition();
+  }
+
+  addStaticEntity(entity) {
+    if (!entity || !entity.itemID) {
+      return false;
+    }
+
+    const normalizedItemID = Number(entity.itemID);
+    if (!Number.isInteger(normalizedItemID) || normalizedItemID <= 0) {
+      return false;
+    }
+
+    if (this.staticEntitiesByID.has(normalizedItemID)) {
+      return false;
+    }
+
+    this.staticEntities.push(entity);
+    this.staticEntitiesByID.set(normalizedItemID, entity);
+    this.reconcileEntityPublicGrid(entity);
+    if (isBubbleScopedStaticEntity(entity)) {
+      this.reconcileEntityBubble(entity);
+    }
+    this.publicGridCompositionDirty = true;
+    return true;
+  }
+
+  getCurrentWallclockMs() {
+    return Date.now();
+  }
+
+  getCurrentSimTimeMs() {
+    return this.peekSimTimeForWallclock();
+  }
+
+  peekSimTimeForWallclock(wallclockNow = this.getCurrentWallclockMs()) {
+    const normalizedWallclockNow = toFiniteNumber(
+      wallclockNow,
+      this.getCurrentWallclockMs(),
+    );
+    const lastWallclockTickAt = toFiniteNumber(
+      this.lastWallclockTickAt,
+      normalizedWallclockNow,
+    );
+    const wallclockDeltaMs = Math.max(0, normalizedWallclockNow - lastWallclockTickAt);
+    return Math.max(
+      0,
+      toFiniteNumber(this.simTimeMs, normalizedWallclockNow) +
+        (wallclockDeltaMs * clampTimeDilationFactor(this.timeDilation)),
+    );
+  }
+
+  advanceClock(wallclockNow = this.getCurrentWallclockMs()) {
+    const normalizedWallclockNow = toFiniteNumber(
+      wallclockNow,
+      this.getCurrentWallclockMs(),
+    );
+    const nextSimTimeMs = this.peekSimTimeForWallclock(normalizedWallclockNow);
+    const previousSimTimeMs = Math.max(0, toFiniteNumber(this.simTimeMs, normalizedWallclockNow));
+    const previousWallclockTickAt = toFiniteNumber(
+      this.lastWallclockTickAt,
+      normalizedWallclockNow,
+    );
+    this.lastWallclockTickAt = normalizedWallclockNow;
+    this.simTimeMs = nextSimTimeMs;
+    return {
+      wallclockNowMs: normalizedWallclockNow,
+      wallclockDeltaMs: Math.max(0, normalizedWallclockNow - previousWallclockTickAt),
+      simNowMs: nextSimTimeMs,
+      simDeltaMs: Math.max(0, nextSimTimeMs - previousSimTimeMs),
+    };
+  }
+
+  getCurrentFileTime() {
+    return toFileTimeFromMs(this.getCurrentSimTimeMs(), currentFileTime());
+  }
+
+  toFileTimeFromSimMs(value, fallback = this.getCurrentFileTime()) {
+    return toFileTimeFromMs(value, fallback);
+  }
+
+  getSessionClockOffsetMs(session) {
+    if (!session || !session._space) {
+      return 0;
+    }
+    return toFiniteNumber(session._space.clockOffsetMs, 0);
+  }
+
+  getLastSentDestinyStampForSession(
+    session,
+    fallbackStamp = this.getCurrentDestinyStamp(),
+  ) {
+    if (!session || !session._space) {
+      return toInt(fallbackStamp, 0) >>> 0;
+    }
+    const fallback = toInt(fallbackStamp, 0) >>> 0;
+    const lastSentStamp = toInt(session._space.lastSentDestinyStamp, fallback) >>> 0;
+    return lastSentStamp > fallback ? fallback : lastSentStamp;
+  }
+
+  getImmediateDestinyStampForSession(
+    session,
+    fallbackStamp = this.getCurrentDestinyStamp(),
+  ) {
+    const currentStamp = toInt(fallbackStamp, this.getCurrentDestinyStamp()) >>> 0;
+    const previousStamp = currentStamp > 0 ? ((currentStamp - 1) >>> 0) : currentStamp;
+    if (!session || !session._space) {
+      return previousStamp;
+    }
+    const lastVisibleStamp = toInt(
+      session._space.lastSentDestinyStamp,
+      previousStamp,
+    ) >>> 0;
+    return lastVisibleStamp > previousStamp
+      ? lastVisibleStamp
+      : previousStamp;
+  }
+
+  translateSimTimeForSession(session, rawSimTimeMs) {
+    const normalizedRawSimTimeMs = toFiniteNumber(
+      rawSimTimeMs,
+      this.getCurrentSimTimeMs(),
+    );
+    return roundNumber(
+      normalizedRawSimTimeMs + this.getSessionClockOffsetMs(session),
+      3,
+    );
+  }
+
+  getCurrentSessionSimTimeMs(session, rawSimTimeMs = this.getCurrentSimTimeMs()) {
+    return this.translateSimTimeForSession(session, rawSimTimeMs);
+  }
+
+  getCurrentSessionFileTime(session, rawSimTimeMs = this.getCurrentSimTimeMs()) {
+    const currentSessionSimTimeMs = this.getCurrentSessionSimTimeMs(
+      session,
+      rawSimTimeMs,
+    );
+    return toFileTimeFromMs(currentSessionSimTimeMs, this.getCurrentFileTime());
+  }
+
+  translateDestinyStampForSession(session, rawStamp) {
+    const normalizedRawStamp = toInt(rawStamp, 0) >>> 0;
+    const clockOffsetMs = this.getSessionClockOffsetMs(session);
+    if (Math.abs(clockOffsetMs) < 0.000001) {
+      return normalizedRawStamp;
+    }
+    return getCurrentDestinyStamp((normalizedRawStamp * 1000) + clockOffsetMs);
+  }
+
+  refreshSessionClockSnapshot(
+    session,
+    rawSimTimeMs = this.getCurrentSimTimeMs(),
+    options = {},
+  ) {
+    if (!session || !session._space) {
+      return null;
+    }
+
+    const currentSessionSimTimeMs =
+      options.currentSimTimeMs === undefined || options.currentSimTimeMs === null
+        ? this.getCurrentSessionSimTimeMs(session, rawSimTimeMs)
+        : toFiniteNumber(options.currentSimTimeMs, this.getCurrentSessionSimTimeMs(session, rawSimTimeMs));
+    const currentSessionSimFileTime = toFileTimeFromMs(
+      currentSessionSimTimeMs,
+      this.getCurrentFileTime(),
+    );
+    session._space.timeDilation = this.getTimeDilation();
+    session._space.simTimeMs = currentSessionSimTimeMs;
+    session._space.simFileTime = currentSessionSimFileTime;
+    return {
+      currentSimTimeMs: currentSessionSimTimeMs,
+      currentSimFileTime: currentSessionSimFileTime,
+      timeDilation: this.getTimeDilation(),
+    };
+  }
+
+  getCurrentDestinyStamp(nowMs = this.getCurrentSimTimeMs()) {
+    return getCurrentDestinyStamp(nowMs);
+  }
+
+  getMovementStamp(nowMs = this.getCurrentSimTimeMs()) {
+    return getMovementStamp(nowMs);
+  }
+
+  getNextDestinyStamp(nowMs = this.getCurrentSimTimeMs()) {
+    const currentStamp = this.getCurrentDestinyStamp(nowMs);
+    const maxAllowedStamp = (currentStamp + DESTINY_STAMP_MAX_LEAD) >>> 0;
+    if (this.nextStamp < currentStamp) {
+      this.nextStamp = currentStamp;
+      return this.nextStamp;
+    }
+    if (this.nextStamp >= maxAllowedStamp) {
+      this.nextStamp = maxAllowedStamp;
+      return this.nextStamp;
+    }
+    this.nextStamp = (this.nextStamp + 1) >>> 0;
+    return this.nextStamp;
+  }
+
+  getTimeDilation() {
+    return clampTimeDilationFactor(this.timeDilation);
+  }
+
+  buildTimeStateSnapshot() {
+    return {
+      systemID: this.systemID,
+      timeDilation: this.getTimeDilation(),
+      simTimeMs: this.getCurrentSimTimeMs(),
+      simFileTime: this.getCurrentFileTime(),
+      destinyStamp: this.getCurrentDestinyStamp(),
+    };
+  }
+
+  syncSessionSimClock(session, options = {}) {
+    if (!session || !session._space) {
+      return null;
+    }
+
+    const previousSimTimeMs =
+      options.previousSimTimeMs === undefined || options.previousSimTimeMs === null
+        ? fileTimeToMs(session._space.simFileTime, this.getCurrentSimTimeMs())
+        : toFiniteNumber(options.previousSimTimeMs, this.getCurrentSimTimeMs());
+    const currentSimTimeMs =
+      options.currentSimTimeMs === undefined || options.currentSimTimeMs === null
+        ? this.getCurrentSessionSimTimeMs(session)
+        : toFiniteNumber(
+            options.currentSimTimeMs,
+            this.getCurrentSessionSimTimeMs(session),
+          );
+    const previousSimFileTime = toFileTimeFromMs(
+      previousSimTimeMs,
+      this.getCurrentFileTime(),
+    );
+    const currentSimFileTime = toFileTimeFromMs(
+      currentSimTimeMs,
+      this.getCurrentFileTime(),
+    );
+
+    this.refreshSessionClockSnapshot(session, currentSimTimeMs, {
+      currentSimTimeMs,
+    });
+
+    if (
+      options.emit !== false &&
+      typeof session.sendNotification === "function" &&
+      (options.forceRebase === true || previousSimFileTime !== currentSimFileTime)
+    ) {
+      session.sendNotification("DoSimClockRebase", "clientID", [[
+        { type: "long", value: previousSimFileTime },
+        { type: "long", value: currentSimFileTime },
+      ]]);
+    }
+
+    const result = {
+      previousSimTimeMs,
+      currentSimTimeMs,
+      previousSimFileTime,
+      currentSimFileTime,
+      timeDilation: this.getTimeDilation(),
+    };
+    recordSessionJumpTimingTrace(session, "sync-session-sim-clock", {
+      emit: options.emit !== false,
+      forceRebase: options.forceRebase === true,
+      deltaMs: roundNumber(currentSimTimeMs - previousSimTimeMs, 3),
+      result,
+    });
+    return result;
+  }
+
+  syncAllSessionSimClocks(options = {}) {
+    const synced = [];
+    for (const session of this.sessions.values()) {
+      const result = this.syncSessionSimClock(session, options);
+      if (result) {
+        synced.push({
+          clientID: session.clientID,
+          characterID: session.characterID,
+          ...result,
+        });
+      }
+    }
+    return synced;
+  }
+
+  maybeBroadcastSimClockUpdate(clockState) {
+    if (!clockState || this.sessions.size === 0) {
+      return [];
+    }
+
+    const wallclockNowMs = toFiniteNumber(
+      clockState.wallclockNowMs,
+      this.getCurrentWallclockMs(),
+    );
+    const minimumIntervalMs =
+      this.getTimeDilation() < 1
+        ? SIM_CLOCK_REBASE_INTERVAL_MS
+        : DESTINY_STAMP_INTERVAL_MS;
+    if (
+      wallclockNowMs - toFiniteNumber(
+        this.lastSimClockBroadcastWallclockAt,
+        0,
+      ) < minimumIntervalMs
+    ) {
+      return [];
+    }
+
+    this.lastSimClockBroadcastWallclockAt = wallclockNowMs;
+    return this.syncAllSessionSimClocks({
+      emit: true,
+      forceRebase: true,
+      currentSimTimeMs: clockState.simNowMs,
+    });
+  }
+
+  //testing: Sets the server-side time dilation factor for this scene.
+  //testing: Affects sim clock advancement (warp, movement, destiny stamps).
+  //testing: Client-side TiDi HUD notification is sent separately by the /tidi command
+  //testing: and autoscaler via synchronizedTimeDilation.js.
+  setTimeDilation(value, options = {}) {
+    const previousFactor = this.getTimeDilation();
+    const nextFactor = clampTimeDilationFactor(value, previousFactor);
+
+    const clockState = this.advanceClock(options.wallclockNowMs);
+    const previousSimTimeMs = clockState.simNowMs;
+    this.timeDilation = nextFactor;
+
+    this.lastSimClockBroadcastWallclockAt = clockState.wallclockNowMs;
+    if (options.syncSessions !== false) {
+      this.syncAllSessionSimClocks({
+        ...options,
+        previousSimTimeMs,
+        currentSimTimeMs: this.getCurrentSimTimeMs(),
+        forceRebase: options.forceRebase === true,
+      });
+    }
+
+    return {
+      systemID: this.systemID,
+      previousFactor,
+      factor: nextFactor,
+      simTimeMs: this.getCurrentSimTimeMs(),
+      simFileTime: this.getCurrentFileTime(),
+      syncedSessionCount: this.sessions.size,
+    };
   }
 
   getAllVisibleEntities() {
     return [...this.staticEntities, ...this.dynamicEntities.values()];
   }
 
+  resolveBubbleCenter(center) {
+    let resolvedCenter = cloneVector(center);
+    for (let index = 0; index < 8; index += 1) {
+      let overlappingBubble = null;
+      for (const bubble of this.bubbles.values()) {
+        if (
+          distanceSquared(resolvedCenter, bubble.center) <
+          BUBBLE_CENTER_MIN_DISTANCE_SQUARED
+        ) {
+          overlappingBubble = bubble;
+          break;
+        }
+      }
+      if (!overlappingBubble) {
+        return resolvedCenter;
+      }
+
+      const offset = subtractVectors(resolvedCenter, overlappingBubble.center);
+      const direction = normalizeVector(
+        magnitude(offset) > 0 ? offset : DEFAULT_RIGHT,
+        DEFAULT_RIGHT,
+      );
+      resolvedCenter = addVectors(
+        cloneVector(overlappingBubble.center),
+        scaleVector(direction, BUBBLE_CENTER_MIN_DISTANCE_METERS),
+      );
+    }
+
+    return resolvedCenter;
+  }
+
   createBubble(center) {
     const bubble = {
       id: this.nextBubbleID,
-      center: cloneVector(center),
+      uuid: crypto.randomUUID(),
+      center: this.resolveBubbleCenter(center),
       entityIDs: new Set(),
     };
     this.nextBubbleID += 1;
@@ -3575,10 +7571,90 @@ class SolarSystemScene {
     this.bubbles.delete(bubble.id);
   }
 
+  getDynamicEntitiesInBubble(bubbleID) {
+    const bubble = this.getBubbleByID(bubbleID);
+    if (!bubble) {
+      return [];
+    }
+
+    const entities = [];
+    for (const entityID of bubble.entityIDs.values()) {
+      const entity = this.dynamicEntities.get(entityID);
+      if (entity) {
+        entities.push(entity);
+      }
+    }
+    return entities;
+  }
+
+  getShipsInBubble(bubbleID) {
+    return this.getDynamicEntitiesInBubble(bubbleID).filter(
+      (entity) => entity && entity.kind === "ship",
+    );
+  }
+
+  getBubbleForSession(session) {
+    const egoEntity = this.getShipEntityForSession(session);
+    return egoEntity ? this.getBubbleByID(egoEntity.bubbleID) : null;
+  }
+
+  getPublicGridKeyForEntity(entity) {
+    if (!entity) {
+      return null;
+    }
+    return String(entity.publicGridKey || buildPublicGridKey(entity.position || null));
+  }
+
+  getPublicGridClusterKeyForEntity(entity) {
+    if (!entity) {
+      return null;
+    }
+    this.ensurePublicGridComposition();
+    const publicGridKey = this.getPublicGridKeyForEntity(entity);
+    if (!publicGridKey) {
+      return null;
+    }
+    const clusterKey = String(
+      entity.publicGridClusterKey ||
+      this.publicGridClustersByBoxKey.get(publicGridKey) ||
+      publicGridKey
+    );
+    entity.publicGridClusterKey = clusterKey;
+    return clusterKey;
+  }
+
+  getPublicGridKeyForSession(session) {
+    const egoEntity = this.getShipEntityForSession(session);
+    return egoEntity ? this.getPublicGridKeyForEntity(egoEntity) : null;
+  }
+
+  getPublicGridClusterKeyForSession(session) {
+    const egoEntity = this.getShipEntityForSession(session);
+    return egoEntity ? this.getPublicGridClusterKeyForEntity(egoEntity) : null;
+  }
+
+  getSessionsInBubble(bubbleID) {
+    const numericBubbleID = toInt(bubbleID, 0);
+    if (!numericBubbleID) {
+      return [];
+    }
+
+    const sessions = [];
+    for (const session of this.sessions.values()) {
+      const egoEntity = this.getShipEntityForSession(session);
+      if (egoEntity && toInt(egoEntity.bubbleID, 0) === numericBubbleID) {
+        sessions.push(session);
+      }
+    }
+    return sessions;
+  }
+
   buildBubbleCenterForEntity(entity, position = entity && entity.position) {
     const numericPosition = cloneVector(position, { x: 0, y: 0, z: 0 });
+    const velocity = cloneVector(entity && entity.velocity, { x: 0, y: 0, z: 0 });
+    const direction = cloneVector(entity && entity.direction, DEFAULT_RIGHT);
     const motionDirection = normalizeVector(
-      magnitude(entity && entity.velocity) > 1 ? entity.velocity : entity && entity.direction,
+      magnitude(velocity) > 1 ? velocity : direction,
       DEFAULT_RIGHT,
     );
     return addVectors(
@@ -3690,6 +7766,158 @@ class SolarSystemScene {
     return bubble;
   }
 
+  reconcileEntityPublicGrid(entity) {
+    if (!entity) {
+      return null;
+    }
+
+    const previousPublicGridKey = String(entity.publicGridKey || "");
+    const nextPublicGridKey = buildPublicGridKey(entity.position || null);
+    entity.publicGridKey = nextPublicGridKey;
+    entity.publicGridClusterKey = null;
+    if (previousPublicGridKey !== nextPublicGridKey) {
+      this.publicGridCompositionDirty = true;
+    }
+    if (previousPublicGridKey && previousPublicGridKey !== nextPublicGridKey) {
+      logBubbleDebug("public_grid.entity_moved", {
+        systemID: this.systemID,
+        entity: summarizeBubbleEntity(entity),
+        previousPublicGridKey,
+        publicGrid: summarizePublicGrid(entity.position),
+      });
+    }
+    return nextPublicGridKey;
+  }
+
+  collectOccupiedPublicGridBoxes() {
+    const occupiedBoxes = new Map();
+    const noteEntity = (entity, source) => {
+      if (!entity || !entity.position) {
+        return;
+      }
+      const parsed = parsePublicGridKey(this.reconcileEntityPublicGrid(entity));
+      let entry = occupiedBoxes.get(parsed.key);
+      if (!entry) {
+        entry = {
+          key: parsed.key,
+          xIndex: parsed.xIndex,
+          yIndex: parsed.yIndex,
+          zIndex: parsed.zIndex,
+          staticEntityIDs: new Set(),
+          dynamicEntityIDs: new Set(),
+        };
+        occupiedBoxes.set(parsed.key, entry);
+      }
+      if (source === "static") {
+        entry.staticEntityIDs.add(toInt(entity.itemID, 0));
+      } else {
+        entry.dynamicEntityIDs.add(toInt(entity.itemID, 0));
+      }
+    };
+
+    for (const entity of this.staticEntities) {
+      noteEntity(entity, "static");
+    }
+    for (const entity of this.dynamicEntities.values()) {
+      noteEntity(entity, "dynamic");
+    }
+
+    return occupiedBoxes;
+  }
+
+  rebuildPublicGridComposition() {
+    const occupiedBoxes = this.collectOccupiedPublicGridBoxes();
+    const clusterByBoxKey = new Map();
+    const visited = new Set();
+    const sortedBoxKeys = [...occupiedBoxes.keys()].sort();
+
+    const visitNeighborKeys = (entry) => {
+      // Treat giant-grid composition as face-connected box occupancy.
+      // Diagonal/corner joins over-compose dense systems like Jita and cause
+      // login/bootstrap visibility to leak across nearby but distinct gates.
+      return [
+        buildPublicGridKeyFromIndices(entry.xIndex - 1, entry.yIndex, entry.zIndex),
+        buildPublicGridKeyFromIndices(entry.xIndex + 1, entry.yIndex, entry.zIndex),
+        buildPublicGridKeyFromIndices(entry.xIndex, entry.yIndex - 1, entry.zIndex),
+        buildPublicGridKeyFromIndices(entry.xIndex, entry.yIndex + 1, entry.zIndex),
+        buildPublicGridKeyFromIndices(entry.xIndex, entry.yIndex, entry.zIndex - 1),
+        buildPublicGridKeyFromIndices(entry.xIndex, entry.yIndex, entry.zIndex + 1),
+      ];
+    };
+
+    for (const boxKey of sortedBoxKeys) {
+      if (visited.has(boxKey)) {
+        continue;
+      }
+      const seed = occupiedBoxes.get(boxKey);
+      if (!seed) {
+        continue;
+      }
+      const stack = [seed];
+      const clusterKeys = [];
+      while (stack.length > 0) {
+        const current = stack.pop();
+        if (!current || visited.has(current.key)) {
+          continue;
+        }
+        visited.add(current.key);
+        clusterKeys.push(current.key);
+        for (const neighborKey of visitNeighborKeys(current)) {
+          if (visited.has(neighborKey) || !occupiedBoxes.has(neighborKey)) {
+            continue;
+          }
+          stack.push(occupiedBoxes.get(neighborKey));
+        }
+      }
+      clusterKeys.sort();
+      const clusterKey = `cluster:${clusterKeys[0]}`;
+      for (const clusterBoxKey of clusterKeys) {
+        clusterByBoxKey.set(clusterBoxKey, clusterKey);
+      }
+    }
+
+    this.publicGridOccupiedBoxes = occupiedBoxes;
+    this.publicGridClustersByBoxKey = clusterByBoxKey;
+    this.publicGridCompositionDirty = false;
+
+    for (const entity of this.staticEntities) {
+      const publicGridKey = this.getPublicGridKeyForEntity(entity);
+      entity.publicGridClusterKey = publicGridKey
+        ? String(clusterByBoxKey.get(publicGridKey) || publicGridKey)
+        : null;
+    }
+    for (const entity of this.dynamicEntities.values()) {
+      const publicGridKey = this.getPublicGridKeyForEntity(entity);
+      entity.publicGridClusterKey = publicGridKey
+        ? String(clusterByBoxKey.get(publicGridKey) || publicGridKey)
+        : null;
+    }
+
+    return clusterByBoxKey;
+  }
+
+  ensurePublicGridComposition() {
+    if (this.publicGridCompositionDirty !== true) {
+      return this.publicGridClustersByBoxKey;
+    }
+    return this.rebuildPublicGridComposition();
+  }
+
+  reconcileAllDynamicEntityPublicGrids() {
+    let changed = false;
+    for (const entity of this.dynamicEntities.values()) {
+      const previousKey = this.getPublicGridKeyForEntity(entity);
+      const nextKey = this.reconcileEntityPublicGrid(entity);
+      if (previousKey !== nextKey) {
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.publicGridCompositionDirty = true;
+    }
+    return changed;
+  }
+
   reconcileAllDynamicEntityBubbles() {
     for (const entity of this.dynamicEntities.values()) {
       if (entity.mode === "WARP") {
@@ -3699,24 +7927,25 @@ class SolarSystemScene {
     }
   }
 
-  beginWarpDepartureOwnership(entity, now = Date.now()) {
+  beginWarpDepartureOwnership(entity, now = this.getCurrentSimTimeMs()) {
     if (!entity) {
       return;
     }
     entity.departureBubbleID = this.removeEntityFromBubble(entity);
-    entity.departureBubbleVisibleUntilMs =
-      toFiniteNumber(now, Date.now()) + OBSERVER_WARP_DEPARTURE_VISIBLE_MS;
+    entity.departureBubbleVisibleUntilMs = 0;
     logBubbleDebug("bubble.warp_departure_ownership_started", {
       systemID: this.systemID,
       entity: summarizeBubbleEntity(entity),
-      departureBubbleVisibleUntilMs: toFiniteNumber(
-        entity.departureBubbleVisibleUntilMs,
-        0,
-      ),
+      departureBubbleVisibleUntilMs: 0,
+      publicGrid: summarizePublicGrid(entity.position),
     });
   }
 
-  canSessionSeeWarpingDynamicEntity(session, entity, now = Date.now()) {
+  canSessionSeeWarpingDynamicEntity(
+    session,
+    entity,
+    now = this.getCurrentSimTimeMs(),
+  ) {
     if (!session || !session._space || !entity) {
       return false;
     }
@@ -3726,41 +7955,22 @@ class SolarSystemScene {
     if (entity.mode !== "WARP" || !entity.warpState) {
       return false;
     }
-    const currentIDs =
-      session._space.visibleDynamicEntityIDs instanceof Set
-        ? session._space.visibleDynamicEntityIDs
-        : new Set();
-    if (!currentIDs.has(entity.itemID)) {
-      // Do not acquire new visibility for ships that are already mid-warp.
-      // Late AddBalls2 plus a fresh WarpTo from the origin creates the
-      // observed "appears absurdly far away, then lands again" observer bug.
+    if (toFiniteNumber(entity.visibilitySuppressedUntilMs, 0) > now) {
       return false;
     }
     const egoEntity = this.getShipEntityForSession(session);
-    const departureBubbleID = toInt(entity.departureBubbleID, 0);
-    if (
-      !egoEntity ||
-      !departureBubbleID ||
-      departureBubbleID !== toInt(egoEntity.bubbleID, 0)
-    ) {
+    if (!egoEntity) {
       return false;
     }
-    // Observer-side departure ownership starts when the authoritative warp
-    // begins, not when the pilot-local active-warp effectStamp/effectAtMs
-    // kicks in. Using effectAtMs here keeps the ship owned on the departure
-    // scene for too long and produces the "frozen ship, then vanish" bug.
-    const warpStartAtMs = toFiniteNumber(entity.warpState.startTimeMs, 0);
-    if (warpStartAtMs <= 0) {
+    const egoPublicGridClusterKey = this.getPublicGridClusterKeyForEntity(egoEntity);
+    const entityPublicGridClusterKey = this.getPublicGridClusterKeyForEntity(entity);
+    if (!egoPublicGridClusterKey || !entityPublicGridClusterKey) {
       return false;
     }
-    const departureVisibleUntilMs = Math.max(
-      toFiniteNumber(entity.departureBubbleVisibleUntilMs, 0),
-      warpStartAtMs + OBSERVER_WARP_DEPARTURE_VISIBLE_MS,
-    );
-    return toFiniteNumber(now, Date.now()) <= departureVisibleUntilMs;
+    return egoPublicGridClusterKey === entityPublicGridClusterKey;
   }
 
-  canSessionSeeDynamicEntity(session, entity, now = Date.now()) {
+  canSessionSeeDynamicEntity(session, entity, now = this.getCurrentSimTimeMs()) {
     if (!session || !session._space || !entity) {
       return false;
     }
@@ -3774,15 +7984,18 @@ class SolarSystemScene {
     if (!egoEntity) {
       return false;
     }
-    const egoBubbleID = toInt(egoEntity.bubbleID, 0);
-    const entityBubbleID = toInt(entity.bubbleID, 0);
-    if (!egoBubbleID || !entityBubbleID) {
+    const egoPublicGridClusterKey = this.getPublicGridClusterKeyForEntity(egoEntity);
+    const entityPublicGridClusterKey = this.getPublicGridClusterKeyForEntity(entity);
+    if (!egoPublicGridClusterKey || !entityPublicGridClusterKey) {
       return false;
     }
-    return egoBubbleID === entityBubbleID;
+    return egoPublicGridClusterKey === entityPublicGridClusterKey;
   }
 
-  getVisibleDynamicEntitiesForSession(session, now = Date.now()) {
+  getVisibleDynamicEntitiesForSession(
+    session,
+    now = this.getCurrentSimTimeMs(),
+  ) {
     const visible = [];
     for (const entity of this.dynamicEntities.values()) {
       if (this.canSessionSeeDynamicEntity(session, entity, now)) {
@@ -3792,9 +8005,18 @@ class SolarSystemScene {
     return visible;
   }
 
-  getVisibleEntitiesForSession(session, now = Date.now()) {
+  getVisibleEntitiesForSession(session, now = this.getCurrentSimTimeMs()) {
+    const egoEntity = this.getShipEntityForSession(session);
+    const egoBubbleID = toInt(egoEntity && egoEntity.bubbleID, 0);
+    const visibleStaticEntities = this.staticEntities.filter((entity) => {
+      if (!isBubbleScopedStaticEntity(entity)) {
+        return true;
+      }
+      return egoBubbleID > 0 && egoBubbleID === toInt(entity.bubbleID, 0);
+    });
+
     return [
-      ...this.staticEntities,
+      ...visibleStaticEntities,
       ...this.getVisibleDynamicEntitiesForSession(session, now),
     ];
   }
@@ -3816,12 +8038,1880 @@ class SolarSystemScene {
     );
   }
 
+  refreshInventoryBackedEntityPresentation(entityID, options = {}) {
+    const entity = this.getEntityByID(entityID);
+    if (!isInventoryBackedDynamicEntity(entity)) {
+      return {
+        success: false,
+        errorMsg: "DYNAMIC_ENTITY_NOT_FOUND",
+      };
+    }
+
+    refreshInventoryBackedEntityPresentationFields(entity);
+    if (options.broadcast !== false) {
+      this.broadcastSlimItemChanges([entity], options.excludedSession || null);
+    }
+
+    return {
+      success: true,
+      data: {
+        entity,
+      },
+    };
+  }
+
   getShipEntityForSession(session) {
     if (!session || !session._space) {
       return null;
     }
 
     return this.dynamicEntities.get(session._space.shipID) || null;
+  }
+
+  getActiveModuleEffect(shipID, moduleID) {
+    const entity = this.getEntityByID(shipID);
+    if (!entity || !(entity.activeModuleEffects instanceof Map)) {
+      return null;
+    }
+    return entity.activeModuleEffects.get(toInt(moduleID, 0)) || null;
+  }
+
+  allocateTargetSequence() {
+    const sequence = toInt(this.nextTargetSequence, 1);
+    this.nextTargetSequence = sequence + 1;
+    return sequence;
+  }
+
+  getEntityTargetingStats(entity) {
+    if (!entity) {
+      return null;
+    }
+
+    const numericCharID = getShipEntityInventoryCharacterID(entity, 0);
+    const characterTargetingState =
+      numericCharID > 0
+        ? buildCharacterTargetingState(numericCharID)
+        : { maxLockedTargets: toInt(entity.maxLockedTargets, 0) };
+    const shipMaxLockedTargets = Math.max(0, toInt(entity.maxLockedTargets, 0));
+    const characterMaxLockedTargets = Math.max(
+      0,
+      toInt(characterTargetingState.maxLockedTargets, shipMaxLockedTargets),
+    );
+    const effectiveMaxLockedTargets =
+      shipMaxLockedTargets > 0 && characterMaxLockedTargets > 0
+        ? Math.min(shipMaxLockedTargets, characterMaxLockedTargets)
+        : Math.max(shipMaxLockedTargets, characterMaxLockedTargets);
+
+    return {
+      maxTargetRange: Math.max(0, toFiniteNumber(entity.maxTargetRange, 0)),
+      shipMaxLockedTargets,
+      characterMaxLockedTargets,
+      effectiveMaxLockedTargets,
+      scanResolution: Math.max(0, toFiniteNumber(entity.scanResolution, 0)),
+      cloakingTargetingDelay: Math.max(
+        0,
+        toFiniteNumber(entity.cloakingTargetingDelay, 0),
+      ),
+    };
+  }
+
+  getTargetsForEntity(entity) {
+    const state = ensureEntityTargetingState(entity);
+    if (!state) {
+      return [];
+    }
+
+    return [...state.lockedTargets.values()]
+      .sort(
+        (left, right) =>
+          toInt(left && left.sequence, 0) - toInt(right && right.sequence, 0) ||
+          toInt(left && left.targetID, 0) - toInt(right && right.targetID, 0),
+      )
+      .map((entry) => toInt(entry && entry.targetID, 0))
+      .filter((targetID) => targetID > 0);
+  }
+
+  getTargetersForEntity(entity) {
+    const state = ensureEntityTargetingState(entity);
+    if (!state) {
+      return [];
+    }
+
+    return [...state.targetedBy]
+      .map((sourceID) => toInt(sourceID, 0))
+      .filter((sourceID) => sourceID > 0)
+      .sort((left, right) => left - right);
+  }
+
+  getSortedPendingTargetLocks(entity) {
+    const state = ensureEntityTargetingState(entity);
+    if (!state) {
+      return [];
+    }
+
+    return [...state.pendingTargetLocks.values()].sort(
+      (left, right) =>
+        toFiniteNumber(left && left.completeAtMs, 0) -
+          toFiniteNumber(right && right.completeAtMs, 0) ||
+        toInt(left && left.sequence, 0) - toInt(right && right.sequence, 0),
+    );
+  }
+
+  notifyTargetEvent(session, what, targetID = null, reason = null) {
+    if (!session || typeof session.sendNotification !== "function") {
+      return false;
+    }
+
+    const payload = [String(what || "")];
+    if (targetID !== null && targetID !== undefined) {
+      payload.push(toInt(targetID, 0));
+    }
+    if (reason !== null && reason !== undefined) {
+      payload.push(String(reason));
+    }
+
+    session.sendNotification("OnTarget", "clientID", payload);
+    return true;
+  }
+
+  notifyTargetLockFailure(session, targetID) {
+    if (!session) {
+      return false;
+    }
+
+    const normalizedTargetID = toInt(targetID, 0);
+    if (normalizedTargetID <= 0) {
+      return false;
+    }
+
+    if (typeof session.sendServiceNotification === "function") {
+      session.sendServiceNotification("target", "FailLockTarget", [
+        normalizedTargetID,
+      ]);
+      return true;
+    }
+
+    return this.notifyTargetEvent(
+      session,
+      "lost",
+      normalizedTargetID,
+      TARGET_LOSS_REASON_ATTEMPT_CANCELLED,
+    );
+  }
+
+  isTargetLockRangeValid(sourceEntity, targetEntity) {
+    if (!sourceEntity || !targetEntity) {
+      return false;
+    }
+
+    const targetingStats = this.getEntityTargetingStats(sourceEntity);
+    if (!targetingStats || targetingStats.maxTargetRange <= 0) {
+      return false;
+    }
+
+    return getEntitySurfaceDistance(sourceEntity, targetEntity) < targetingStats.maxTargetRange;
+  }
+
+  validateTargetLockRequest(session, sourceEntity, targetEntity, options = {}) {
+    if ((!session || !session._space) && !sourceEntity) {
+      return {
+        success: false,
+        errorMsg: "NOT_IN_SPACE",
+      };
+    }
+    if (!sourceEntity) {
+      return {
+        success: false,
+        errorMsg: "SHIP_NOT_FOUND",
+      };
+    }
+    if (!targetEntity) {
+      return {
+        success: false,
+        errorMsg: "TARGET_NOT_FOUND",
+      };
+    }
+    if (toInt(sourceEntity.itemID, 0) === toInt(targetEntity.itemID, 0)) {
+      return {
+        success: false,
+        errorMsg: "TARGET_SELF",
+      };
+    }
+    if (
+      (sourceEntity.mode === "WARP" && sourceEntity.warpState) ||
+      sourceEntity.pendingWarp
+    ) {
+      return {
+        success: false,
+        errorMsg: "SOURCE_WARPING",
+      };
+    }
+    if (
+      (targetEntity.mode === "WARP" && targetEntity.warpState) ||
+      targetEntity.pendingWarp
+    ) {
+      return {
+        success: false,
+        errorMsg: "TARGET_WARPING",
+      };
+    }
+    if (!this.isTargetLockRangeValid(sourceEntity, targetEntity)) {
+      return {
+        success: false,
+        errorMsg: "TARGET_OUT_OF_RANGE",
+      };
+    }
+
+    const targetingStats = this.getEntityTargetingStats(sourceEntity);
+    if (!targetingStats || targetingStats.effectiveMaxLockedTargets <= 0) {
+      return {
+        success: false,
+        errorMsg: "TARGET_LOCK_LIMIT_REACHED",
+      };
+    }
+
+    if (options.ignoreCapacity !== true) {
+      const state = ensureEntityTargetingState(sourceEntity);
+      const totalTargets =
+        state.lockedTargets.size + state.pendingTargetLocks.size;
+      if (totalTargets >= targetingStats.effectiveMaxLockedTargets) {
+        return {
+          success: false,
+          errorMsg: "TARGET_LOCK_LIMIT_REACHED",
+        };
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        targetingStats,
+      },
+    };
+  }
+
+  rebasePendingTargetLock(sourceEntity, pendingLock, targetEntity, now = this.getCurrentSimTimeMs()) {
+    if (!sourceEntity || !pendingLock || !targetEntity) {
+      return null;
+    }
+
+    const oldDurationMs = Math.max(
+      1,
+      toFiniteNumber(pendingLock.totalDurationMs, TARGETING_CLIENT_FALLBACK_LOCK_MS),
+    );
+    const nowMs = toFiniteNumber(now, this.getCurrentSimTimeMs());
+    const elapsedMs = clamp(
+      nowMs - toFiniteNumber(pendingLock.requestedAtMs, nowMs),
+      0,
+      oldDurationMs,
+    );
+    const progressRatio = clamp(elapsedMs / oldDurationMs, 0, 1);
+    const newDurationMs = computeTargetLockDurationMs(sourceEntity, targetEntity);
+
+    pendingLock.totalDurationMs = newDurationMs;
+    pendingLock.requestedAtMs = nowMs - (newDurationMs * progressRatio);
+    pendingLock.completeAtMs = pendingLock.requestedAtMs + newDurationMs;
+    return pendingLock;
+  }
+
+  rebasePendingTargetLocksForSource(sourceEntity, now = this.getCurrentSimTimeMs()) {
+    const state = ensureEntityTargetingState(sourceEntity);
+    if (!state) {
+      return;
+    }
+
+    for (const pendingLock of state.pendingTargetLocks.values()) {
+      const targetEntity = this.getEntityByID(pendingLock.targetID);
+      if (!targetEntity) {
+        continue;
+      }
+      this.rebasePendingTargetLock(sourceEntity, pendingLock, targetEntity, now);
+    }
+  }
+
+  rebaseIncomingPendingTargetLocksForTarget(targetEntity, now = this.getCurrentSimTimeMs()) {
+    if (!targetEntity) {
+      return;
+    }
+
+    const targetID = toInt(targetEntity.itemID, 0);
+    if (targetID <= 0) {
+      return;
+    }
+
+    for (const sourceEntity of this.dynamicEntities.values()) {
+      const sourceState = ensureEntityTargetingState(sourceEntity);
+      if (!sourceState) {
+        continue;
+      }
+      const pendingLock = sourceState.pendingTargetLocks.get(targetID) || null;
+      if (!pendingLock) {
+        continue;
+      }
+      this.rebasePendingTargetLock(sourceEntity, pendingLock, targetEntity, now);
+    }
+  }
+
+  cancelPendingTargetLock(sourceEntity, targetEntityID, options = {}) {
+    const sourceState = ensureEntityTargetingState(sourceEntity);
+    if (!sourceState) {
+      return false;
+    }
+
+    const normalizedTargetID = toInt(targetEntityID, 0);
+    if (!sourceState.pendingTargetLocks.has(normalizedTargetID)) {
+      return false;
+    }
+
+    sourceState.pendingTargetLocks.delete(normalizedTargetID);
+    if (options.notifySelf !== false && sourceEntity && sourceEntity.session) {
+      this.notifyTargetLockFailure(sourceEntity.session, normalizedTargetID);
+    }
+    return true;
+  }
+
+  finalizeTargetLock(sourceEntity, targetEntity, options = {}) {
+    const sourceState = ensureEntityTargetingState(sourceEntity);
+    const targetState = ensureEntityTargetingState(targetEntity);
+    if (!sourceState || !targetState) {
+      return {
+        success: false,
+        errorMsg: "TARGET_NOT_FOUND",
+      };
+    }
+
+    const targetID = toInt(targetEntity.itemID, 0);
+    const pendingLock =
+      options.pendingLock || sourceState.pendingTargetLocks.get(targetID) || null;
+    const validation = this.validateTargetLockRequest(
+      sourceEntity && sourceEntity.session,
+      sourceEntity,
+      targetEntity,
+      {
+        ignoreCapacity: true,
+      },
+    );
+    if (!validation.success) {
+      if (pendingLock) {
+        sourceState.pendingTargetLocks.delete(targetID);
+      }
+      return validation;
+    }
+
+    const targetingStats = validation.data.targetingStats;
+    if (sourceState.lockedTargets.has(targetID)) {
+      if (pendingLock) {
+        sourceState.pendingTargetLocks.delete(targetID);
+      }
+      return {
+        success: true,
+        data: {
+          pending: false,
+          targets: this.getTargetsForEntity(sourceEntity),
+        },
+      };
+    }
+    if (sourceState.lockedTargets.size >= targetingStats.effectiveMaxLockedTargets) {
+      if (pendingLock) {
+        sourceState.pendingTargetLocks.delete(targetID);
+      }
+      return {
+        success: false,
+        errorMsg: "TARGET_LOCK_LIMIT_REACHED",
+      };
+    }
+
+    if (pendingLock) {
+      sourceState.pendingTargetLocks.delete(targetID);
+    }
+
+    const sourceID = toInt(sourceEntity.itemID, 0);
+    sourceState.lockedTargets.set(targetID, {
+      targetID,
+      sequence: toInt(pendingLock && pendingLock.sequence, 0) || this.allocateTargetSequence(),
+      acquiredAtMs: toFiniteNumber(options.nowMs, this.getCurrentSimTimeMs()),
+    });
+    targetState.targetedBy.add(sourceID);
+
+    if (sourceEntity.session) {
+      this.notifyTargetEvent(sourceEntity.session, "add", targetID);
+    }
+    if (
+      targetEntity.session &&
+      targetEntity.session !== sourceEntity.session
+    ) {
+      this.notifyTargetEvent(targetEntity.session, "otheradd", sourceID);
+    }
+
+    return {
+      success: true,
+      data: {
+        pending: false,
+        targets: this.getTargetsForEntity(sourceEntity),
+      },
+    };
+  }
+
+  removeLockedTarget(sourceEntity, targetEntityID, options = {}) {
+    const sourceState = ensureEntityTargetingState(sourceEntity);
+    if (!sourceState) {
+      return false;
+    }
+
+    const normalizedTargetID = toInt(targetEntityID, 0);
+    if (!sourceState.lockedTargets.has(normalizedTargetID)) {
+      return false;
+    }
+
+    sourceState.lockedTargets.delete(normalizedTargetID);
+    this.stopTargetedModuleEffects(sourceEntity, normalizedTargetID, {
+      reason: options.reason ?? "target",
+    });
+    const targetEntity = this.getEntityByID(normalizedTargetID);
+    if (targetEntity) {
+      ensureEntityTargetingState(targetEntity).targetedBy.delete(
+        toInt(sourceEntity && sourceEntity.itemID, 0),
+      );
+    }
+
+    if (options.notifySelf !== false && sourceEntity && sourceEntity.session) {
+      this.notifyTargetEvent(
+        sourceEntity.session,
+        "lost",
+        normalizedTargetID,
+        options.reason ?? null,
+      );
+    }
+    if (
+      options.notifyTarget !== false &&
+      targetEntity &&
+      targetEntity.session &&
+      targetEntity.session !== sourceEntity.session
+    ) {
+      this.notifyTargetEvent(
+        targetEntity.session,
+        "otherlost",
+        sourceEntity.itemID,
+        options.reason ?? null,
+      );
+    }
+
+    return true;
+  }
+
+  stopTargetedModuleEffects(sourceEntity, targetEntityID, options = {}) {
+    if (
+      !sourceEntity ||
+      !(sourceEntity.activeModuleEffects instanceof Map)
+    ) {
+      return 0;
+    }
+
+    const normalizedTargetID = toInt(targetEntityID, 0);
+    if (normalizedTargetID <= 0) {
+      return 0;
+    }
+
+    const stopReason = String(options.reason || "target");
+    const stopTimeMs = Math.max(
+      0,
+      toFiniteNumber(options.nowMs, this.getCurrentSimTimeMs()),
+    );
+    let stoppedCount = 0;
+
+    for (const effectState of [...sourceEntity.activeModuleEffects.values()]) {
+      if (!effectState || toInt(effectState.targetID, 0) !== normalizedTargetID) {
+        continue;
+      }
+
+      const moduleID = toInt(effectState.moduleID, 0);
+      if (moduleID <= 0) {
+        continue;
+      }
+
+      let stopResult = null;
+      if (sourceEntity.session && isReadyForDestiny(sourceEntity.session)) {
+        stopResult = effectState.isGeneric
+          ? this.finalizeGenericModuleDeactivation(
+              sourceEntity.session,
+              moduleID,
+              {
+                reason: stopReason,
+                nowMs: stopTimeMs,
+              },
+            )
+          : this.finalizePropulsionModuleDeactivation(
+              sourceEntity.session,
+              moduleID,
+              {
+                reason: stopReason,
+                nowMs: stopTimeMs,
+              },
+            );
+      } else {
+        sourceEntity.activeModuleEffects.delete(moduleID);
+        if (!(sourceEntity.moduleReactivationLocks instanceof Map)) {
+          sourceEntity.moduleReactivationLocks = new Map();
+        }
+        sourceEntity.moduleReactivationLocks.set(
+          moduleID,
+          stopTimeMs + Math.max(0, toFiniteNumber(effectState.reactivationDelayMs, 0)),
+        );
+        effectState.deactivatedAtMs = stopTimeMs;
+        effectState.deactivationRequestedAtMs = 0;
+        effectState.deactivateAtMs = 0;
+        effectState.stopReason = stopReason;
+
+        if (effectState.guid) {
+          this.broadcastSpecialFx(
+            sourceEntity.itemID,
+            effectState.guid,
+            {
+              moduleID: effectState.moduleID,
+              moduleTypeID: effectState.typeID,
+              targetID: effectState.targetID || null,
+              chargeTypeID: effectState.chargeTypeID || null,
+              isOffensive: effectState.weaponFamily === "laserTurret",
+              start: false,
+              active: false,
+              duration: effectState.durationMs,
+              useCurrentStamp: true,
+            },
+            sourceEntity,
+          );
+        }
+
+        stopResult = { success: true };
+      }
+
+      if (stopResult && stopResult.success) {
+        stoppedCount += 1;
+      }
+    }
+
+    return stoppedCount;
+  }
+
+  clearOutgoingTargetLocks(sourceEntity, options = {}) {
+    const sourceState = ensureEntityTargetingState(sourceEntity);
+    if (!sourceState) {
+      return {
+        clearedTargetIDs: [],
+        cancelledPendingIDs: [],
+      };
+    }
+
+    const notifySelf = options.notifySelf !== false;
+    const notifyTarget = options.notifyTarget !== false;
+    const cancelledPendingIDs = [...sourceState.pendingTargetLocks.keys()]
+      .map((targetID) => toInt(targetID, 0))
+      .filter((targetID) => targetID > 0);
+    for (const pendingTargetID of cancelledPendingIDs) {
+      this.cancelPendingTargetLock(sourceEntity, pendingTargetID, {
+        notifySelf,
+        reason: options.pendingReason ?? TARGET_LOSS_REASON_ATTEMPT_CANCELLED,
+      });
+    }
+
+    const clearedTargetIDs = this.getTargetsForEntity(sourceEntity);
+    const sourceID = toInt(sourceEntity && sourceEntity.itemID, 0);
+    for (const targetID of clearedTargetIDs) {
+      sourceState.lockedTargets.delete(targetID);
+      this.stopTargetedModuleEffects(sourceEntity, targetID, {
+        reason: options.activeReason ?? "target",
+      });
+      const targetEntity = this.getEntityByID(targetID);
+      if (!targetEntity) {
+        continue;
+      }
+      ensureEntityTargetingState(targetEntity).targetedBy.delete(sourceID);
+      if (
+        notifyTarget &&
+        targetEntity.session &&
+        targetEntity.session !== sourceEntity.session
+      ) {
+        this.notifyTargetEvent(
+          targetEntity.session,
+          "otherlost",
+          sourceID,
+          options.activeReason ?? null,
+        );
+      }
+    }
+
+    if (notifySelf && clearedTargetIDs.length > 0 && sourceEntity && sourceEntity.session) {
+      this.notifyTargetEvent(sourceEntity.session, "clear");
+    }
+
+    return {
+      clearedTargetIDs,
+      cancelledPendingIDs,
+    };
+  }
+
+  clearAllTargetingForEntity(entity, options = {}) {
+    if (!entity) {
+      return {
+        clearedTargetIDs: [],
+        cancelledPendingIDs: [],
+      };
+    }
+
+    const reason = options.reason ?? TARGET_LOSS_REASON_ATTEMPT_CANCELLED;
+    const outgoingResult = this.clearOutgoingTargetLocks(entity, {
+      notifySelf: options.notifySelf !== false,
+      notifyTarget: options.notifyTarget !== false,
+      activeReason: reason === TARGET_LOSS_REASON_EXPLODING ? TARGET_LOSS_REASON_EXPLODING : null,
+      pendingReason: reason,
+    });
+
+    const normalizedEntityID = toInt(entity.itemID, 0);
+    for (const sourceEntity of this.dynamicEntities.values()) {
+      if (!sourceEntity || toInt(sourceEntity.itemID, 0) === normalizedEntityID) {
+        continue;
+      }
+
+      const sourceState = ensureEntityTargetingState(sourceEntity);
+      if (!sourceState) {
+        continue;
+      }
+
+      if (sourceState.pendingTargetLocks.has(normalizedEntityID)) {
+        this.cancelPendingTargetLock(sourceEntity, normalizedEntityID, {
+          notifySelf: true,
+          reason,
+        });
+      }
+      if (sourceState.lockedTargets.has(normalizedEntityID)) {
+        this.removeLockedTarget(sourceEntity, normalizedEntityID, {
+          notifySelf: true,
+          notifyTarget: false,
+          reason: reason === TARGET_LOSS_REASON_EXPLODING ? TARGET_LOSS_REASON_EXPLODING : null,
+        });
+      }
+    }
+
+    ensureEntityTargetingState(entity).targetedBy.clear();
+    return outgoingResult;
+  }
+
+  enforceEntityTargetCap(entity) {
+    const state = ensureEntityTargetingState(entity);
+    if (!state) {
+      return;
+    }
+
+    const targetingStats = this.getEntityTargetingStats(entity);
+    const maximumTargets = Math.max(
+      0,
+      toInt(
+        targetingStats && targetingStats.effectiveMaxLockedTargets,
+        0,
+      ),
+    );
+
+    const pendingLocksDescending = [...state.pendingTargetLocks.values()].sort(
+      (left, right) => toInt(right && right.sequence, 0) - toInt(left && left.sequence, 0),
+    );
+    while (
+      state.lockedTargets.size + state.pendingTargetLocks.size > maximumTargets &&
+      pendingLocksDescending.length > 0
+    ) {
+      const pendingLock = pendingLocksDescending.shift();
+      if (!pendingLock || !state.pendingTargetLocks.has(pendingLock.targetID)) {
+        continue;
+      }
+      this.cancelPendingTargetLock(entity, pendingLock.targetID, {
+        notifySelf: true,
+        reason: TARGET_LOSS_REASON_ATTEMPT_CANCELLED,
+      });
+    }
+
+    const activeLocksDescending = [...state.lockedTargets.values()].sort(
+      (left, right) => toInt(right && right.sequence, 0) - toInt(left && left.sequence, 0),
+    );
+    while (
+      state.lockedTargets.size > maximumTargets &&
+      activeLocksDescending.length > 0
+    ) {
+      const lockState = activeLocksDescending.shift();
+      if (!lockState || !state.lockedTargets.has(lockState.targetID)) {
+        continue;
+      }
+      this.removeLockedTarget(entity, lockState.targetID, {
+        notifySelf: true,
+        reason: null,
+      });
+    }
+  }
+
+  validateEntityTargetLocks(entity, now = this.getCurrentSimTimeMs()) {
+    const state = ensureEntityTargetingState(entity);
+    if (!state) {
+      return;
+    }
+
+    if (
+      (entity.mode === "WARP" && entity.warpState) ||
+      entity.pendingWarp
+    ) {
+      this.clearOutgoingTargetLocks(entity, {
+        notifySelf: true,
+        notifyTarget: true,
+        activeReason: null,
+        pendingReason: TARGET_LOSS_REASON_ATTEMPT_CANCELLED,
+      });
+      return;
+    }
+
+    this.enforceEntityTargetCap(entity);
+
+    for (const pendingLock of this.getSortedPendingTargetLocks(entity)) {
+      if (!state.pendingTargetLocks.has(pendingLock.targetID)) {
+        continue;
+      }
+
+      const targetEntity = this.getEntityByID(pendingLock.targetID);
+      const validation = this.validateTargetLockRequest(
+        entity.session,
+        entity,
+        targetEntity,
+        {
+          ignoreCapacity: true,
+        },
+      );
+      if (!validation.success) {
+        this.cancelPendingTargetLock(entity, pendingLock.targetID, {
+          notifySelf: true,
+          reason: TARGET_LOSS_REASON_ATTEMPT_CANCELLED,
+        });
+        continue;
+      }
+
+      const targetingStats = validation.data.targetingStats;
+      if (state.lockedTargets.size >= targetingStats.effectiveMaxLockedTargets) {
+        this.cancelPendingTargetLock(entity, pendingLock.targetID, {
+          notifySelf: true,
+          reason: TARGET_LOSS_REASON_ATTEMPT_CANCELLED,
+        });
+        continue;
+      }
+
+      if (toFiniteNumber(pendingLock.completeAtMs, 0) > now) {
+        continue;
+      }
+
+      const finalizeResult = this.finalizeTargetLock(entity, targetEntity, {
+        pendingLock,
+        nowMs: now,
+      });
+      if (!finalizeResult.success) {
+        this.cancelPendingTargetLock(entity, pendingLock.targetID, {
+          notifySelf: true,
+          reason: TARGET_LOSS_REASON_ATTEMPT_CANCELLED,
+        });
+      }
+    }
+
+    for (const targetID of this.getTargetsForEntity(entity)) {
+      if (!state.lockedTargets.has(targetID)) {
+        continue;
+      }
+
+      const targetEntity = this.getEntityByID(targetID);
+      const validation = this.validateTargetLockRequest(
+        entity.session,
+        entity,
+        targetEntity,
+        {
+          ignoreCapacity: true,
+        },
+      );
+      if (!validation.success) {
+        this.removeLockedTarget(entity, targetID, {
+          notifySelf: true,
+          reason:
+            validation.errorMsg === "TARGET_NOT_FOUND"
+              ? TARGET_LOSS_REASON_ATTEMPT_CANCELLED
+              : null,
+        });
+      }
+    }
+
+    this.enforceEntityTargetCap(entity);
+  }
+
+  validateAllTargetLocks(now = this.getCurrentSimTimeMs()) {
+    for (const entity of this.dynamicEntities.values()) {
+      this.validateEntityTargetLocks(entity, now);
+    }
+  }
+
+  handleEntityTargetingAttributeChanges(entity, previousSnapshot, now = this.getCurrentSimTimeMs()) {
+    if (!entity || !previousSnapshot) {
+      return buildEntityTargetingAttributeSnapshot(entity);
+    }
+
+    const currentSnapshot = buildEntityTargetingAttributeSnapshot(entity);
+    if (currentSnapshot.scanResolution !== previousSnapshot.scanResolution) {
+      this.rebasePendingTargetLocksForSource(entity, now);
+    }
+    if (currentSnapshot.signatureRadius !== previousSnapshot.signatureRadius) {
+      this.rebaseIncomingPendingTargetLocksForTarget(entity, now);
+    }
+
+    this.enforceEntityTargetCap(entity);
+    this.validateEntityTargetLocks(entity, now);
+    return currentSnapshot;
+  }
+
+  addTarget(session, targetEntityID) {
+    const sourceEntity = this.getShipEntityForSession(session);
+    const targetEntity = this.getEntityByID(targetEntityID);
+    const sourceState = ensureEntityTargetingState(sourceEntity);
+    const normalizedTargetID = toInt(targetEntityID, 0);
+    if (!sourceEntity || !sourceState) {
+      return {
+        success: false,
+        errorMsg: "NOT_IN_SPACE",
+      };
+    }
+
+    if (sourceState.lockedTargets.has(normalizedTargetID)) {
+      return {
+        success: true,
+        data: {
+          pending: false,
+          targets: this.getTargetsForEntity(sourceEntity),
+        },
+      };
+    }
+    if (sourceState.pendingTargetLocks.has(normalizedTargetID)) {
+      return {
+        success: true,
+        data: {
+          pending: true,
+          targets: this.getTargetsForEntity(sourceEntity),
+        },
+      };
+    }
+
+    const validation = this.validateTargetLockRequest(session, sourceEntity, targetEntity);
+    if (!validation.success) {
+      return validation;
+    }
+
+    const now = this.getCurrentSimTimeMs();
+    const lockDurationMs = computeTargetLockDurationMs(sourceEntity, targetEntity);
+    if (lockDurationMs <= 1) {
+      return this.finalizeTargetLock(sourceEntity, targetEntity, {
+        nowMs: now,
+      });
+    }
+
+    sourceState.pendingTargetLocks.set(normalizedTargetID, {
+      targetID: normalizedTargetID,
+      sequence: this.allocateTargetSequence(),
+      requestedAtMs: now,
+      completeAtMs: now + lockDurationMs,
+      totalDurationMs: lockDurationMs,
+    });
+
+    return {
+      success: true,
+      data: {
+        pending: true,
+        targets: this.getTargetsForEntity(sourceEntity),
+        lockDurationMs,
+      },
+    };
+  }
+
+  cancelAddTarget(session, targetEntityID, options = {}) {
+    const sourceEntity = this.getShipEntityForSession(session);
+    if (!sourceEntity) {
+      return {
+        success: false,
+        errorMsg: "NOT_IN_SPACE",
+      };
+    }
+
+    const cancelled = this.cancelPendingTargetLock(sourceEntity, targetEntityID, {
+      notifySelf: options.notifySelf === true,
+      reason: options.reason ?? TARGET_LOSS_REASON_ATTEMPT_CANCELLED,
+    });
+    return {
+      success: true,
+      data: {
+        cancelled,
+        targets: this.getTargetsForEntity(sourceEntity),
+      },
+    };
+  }
+
+  removeTarget(session, targetEntityID, options = {}) {
+    const sourceEntity = this.getShipEntityForSession(session);
+    if (!sourceEntity) {
+      return {
+        success: false,
+        errorMsg: "NOT_IN_SPACE",
+      };
+    }
+
+    const removed = this.removeLockedTarget(sourceEntity, targetEntityID, {
+      notifySelf: options.notifySelf !== false,
+      notifyTarget: options.notifyTarget !== false,
+      reason: options.reason ?? null,
+    });
+    return {
+      success: true,
+      data: {
+        removed,
+        targets: this.getTargetsForEntity(sourceEntity),
+      },
+    };
+  }
+
+  removeTargets(session, targetEntityIDs = [], options = {}) {
+    const removedTargetIDs = [];
+    for (const targetEntityID of targetEntityIDs) {
+      const result = this.removeTarget(session, targetEntityID, options);
+      if (result.success && result.data && result.data.removed) {
+        removedTargetIDs.push(toInt(targetEntityID, 0));
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        removedTargetIDs,
+      },
+    };
+  }
+
+  clearTargets(session, options = {}) {
+    const sourceEntity = this.getShipEntityForSession(session);
+    if (!sourceEntity) {
+      return {
+        success: false,
+        errorMsg: "NOT_IN_SPACE",
+      };
+    }
+
+    const result = this.clearOutgoingTargetLocks(sourceEntity, {
+      notifySelf: options.notifySelf !== false,
+      notifyTarget: options.notifyTarget !== false,
+      activeReason: options.reason ?? null,
+      pendingReason: TARGET_LOSS_REASON_ATTEMPT_CANCELLED,
+    });
+    return {
+      success: true,
+      data: result,
+    };
+  }
+
+  getTargets(session) {
+    return this.getTargetsForEntity(this.getShipEntityForSession(session));
+  }
+
+  getTargeters(session) {
+    return this.getTargetersForEntity(this.getShipEntityForSession(session));
+  }
+
+  refreshSessionShipDerivedState(session, options = {}) {
+    const entity = this.getShipEntityForSession(session);
+    if (!entity || !session || !session.characterID) {
+      return {
+        success: false,
+        errorMsg: "SHIP_NOT_FOUND",
+      };
+    }
+
+    const shipRecord = getActiveShipRecord(session.characterID) || null;
+    if (!shipRecord) {
+      return {
+        success: false,
+        errorMsg: "SHIP_NOT_FOUND",
+      };
+    }
+
+    const previousCommandedSpeedFraction = clamp(
+      toFiniteNumber(entity.speedFraction, 0),
+      0,
+      MAX_SUBWARP_SPEED_FRACTION,
+    );
+    const previousTargetingSnapshot = buildEntityTargetingAttributeSnapshot(entity);
+    const previousMass = toFiniteNumber(entity.mass, 0);
+    const previousMaxVelocity = toFiniteNumber(entity.maxVelocity, 0);
+    const previousVelocity = cloneVector(entity.velocity);
+    const passiveResourceState = buildPassiveShipResourceState(
+      session.characterID,
+      shipRecord,
+    );
+    applyPassiveResourceStateToEntity(entity, passiveResourceState, {
+      recalculateSpeedFraction: false,
+    });
+    if (entity.activeModuleEffects instanceof Map) {
+      for (const effectState of entity.activeModuleEffects.values()) {
+        applyPropulsionEffectStateToEntity(entity, effectState);
+      }
+    }
+
+    entity.speedFraction = previousCommandedSpeedFraction;
+    this.handleEntityTargetingAttributeChanges(entity, previousTargetingSnapshot);
+
+    persistDynamicEntity(entity);
+
+    if (options.broadcast !== false) {
+      const updates = buildShipPrimeUpdates(entity, this.getNextDestinyStamp());
+      if (updates.length > 0) {
+        this.broadcastMovementUpdates(updates);
+      }
+      if (session && isReadyForDestiny(session)) {
+        notifyTargetingDerivedAttributesToSession(
+          session,
+          entity,
+          previousTargetingSnapshot,
+        );
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        entity,
+        previousMass,
+        previousMaxVelocity,
+        previousVelocity,
+      },
+    };
+  }
+
+  getShipCapacitorState(session) {
+    const entity = this.getShipEntityForSession(session);
+    if (!entity) {
+      return null;
+    }
+
+    return {
+      capacity: toFiniteNumber(entity.capacitorCapacity, 0),
+      amount: getEntityCapacitorAmount(entity),
+      ratio: getEntityCapacitorRatio(entity),
+    };
+  }
+
+  setShipCapacitorRatio(session, nextRatio) {
+    const entity = this.getShipEntityForSession(session);
+    if (!entity) {
+      return {
+        success: false,
+        errorMsg: "SHIP_NOT_FOUND",
+      };
+    }
+
+    setEntityCapacitorRatio(entity, nextRatio);
+    persistEntityCapacitorRatio(entity);
+    return {
+      success: true,
+      data: this.getShipCapacitorState(session),
+    };
+  }
+
+  activatePropulsionModule(session, moduleItem, effectName, options = {}) {
+    const entity = this.getShipEntityForSession(session);
+    if (!entity || !moduleItem) {
+      return {
+        success: false,
+        errorMsg: "SHIP_NOT_FOUND",
+      };
+    }
+
+    const normalizedModuleID = toInt(moduleItem.itemID, 0);
+    if (
+      normalizedModuleID <= 0 ||
+      toInt(moduleItem.locationID, 0) !== toInt(entity.itemID, 0)
+    ) {
+      return {
+        success: false,
+        errorMsg: "MODULE_NOT_FOUND",
+      };
+    }
+    if (!isModuleOnline(moduleItem)) {
+      return {
+        success: false,
+        errorMsg: "MODULE_NOT_ONLINE",
+      };
+    }
+    if (!(entity.activeModuleEffects instanceof Map)) {
+      entity.activeModuleEffects = new Map();
+    }
+    if (!(entity.moduleReactivationLocks instanceof Map)) {
+      entity.moduleReactivationLocks = new Map();
+    }
+    if (entity.activeModuleEffects.has(normalizedModuleID)) {
+      return {
+        success: false,
+        errorMsg: "MODULE_ALREADY_ACTIVE",
+      };
+    }
+
+    const lockUntil = toFiniteNumber(
+      entity.moduleReactivationLocks.get(normalizedModuleID),
+      0,
+    );
+    const now = this.getCurrentSimTimeMs();
+    if (lockUntil > now) {
+      return {
+        success: false,
+        errorMsg: "MODULE_REACTIVATING",
+      };
+    }
+
+    const runtimeAttributes = getPropulsionModuleRuntimeAttributes(
+      session.characterID,
+      moduleItem,
+    );
+    if (!runtimeAttributes) {
+      return {
+        success: false,
+        errorMsg: "UNSUPPORTED_EFFECT",
+      };
+    }
+
+    const currentSpeed = magnitude(entity.velocity);
+    if (
+      runtimeAttributes.maxVelocityActivationLimit > 0 &&
+      currentSpeed > runtimeAttributes.maxVelocityActivationLimit + 1e-6
+    ) {
+      return {
+        success: false,
+        errorMsg: "MAX_VELOCITY_ACTIVATION_LIMIT",
+      };
+    }
+
+    if (runtimeAttributes.maxGroupActive > 0) {
+      const activeCount = [...entity.activeModuleEffects.values()].filter(
+        (effectState) => toInt(effectState.groupID, 0) === toInt(moduleItem.groupID, 0),
+      ).length;
+      if (activeCount >= runtimeAttributes.maxGroupActive) {
+        return {
+          success: false,
+          errorMsg: "MAX_GROUP_ACTIVE",
+        };
+      }
+    }
+
+    const previousChargeAmount = getEntityCapacitorAmount(entity);
+    if (!consumeEntityCapacitor(entity, runtimeAttributes.capNeed)) {
+      return {
+        success: false,
+        errorMsg: "NOT_ENOUGH_CAPACITOR",
+      };
+    }
+    // CCP parity: Notify the client that capacitor has been consumed so the
+    // HUD gauge updates immediately rather than waiting for the next poll.
+    notifyCapacitorChangeToSession(session, entity, now, previousChargeAmount);
+
+    const effectState = {
+      moduleID: normalizedModuleID,
+      moduleFlagID: toInt(moduleItem.flagID, 0),
+      effectName,
+      groupID: toInt(moduleItem.groupID, 0),
+      typeID: toInt(moduleItem.typeID, 0),
+      startedAtMs: now,
+      durationMs: runtimeAttributes.durationMs,
+      nextCycleAtMs: now + runtimeAttributes.durationMs,
+      capNeed: runtimeAttributes.capNeed,
+      speedFactor: runtimeAttributes.speedFactor,
+      speedBoostFactor: runtimeAttributes.speedBoostFactor,
+      massAddition: runtimeAttributes.massAddition,
+      signatureRadiusBonus: runtimeAttributes.signatureRadiusBonus,
+      reactivationDelayMs: runtimeAttributes.reactivationDelayMs,
+      guid: PROPULSION_GUID_BY_EFFECT[effectName] || "",
+      repeat: normalizeEffectRepeatCount(options.repeat, null),
+      deactivationRequestedAtMs: 0,
+      deactivateAtMs: 0,
+      stopReason: null,
+    };
+    entity.activeModuleEffects.set(normalizedModuleID, effectState);
+    const refreshResult = this.refreshSessionShipDerivedState(session, {
+      broadcast: true,
+    });
+    if (refreshResult.success) {
+      notifyPropulsionDerivedAttributesToSession(session, entity, effectState, now);
+      this.broadcastSpecialFx(
+        entity.itemID,
+        effectState.guid,
+        {
+          moduleID: effectState.moduleID,
+          moduleTypeID: effectState.typeID,
+          start: true,
+          active: true,
+          duration: effectState.durationMs,
+          useCurrentStamp: true,
+        },
+        entity,
+      );
+      notifyModuleEffectState(session, entity, effectState, true, {
+        whenMs: now,
+        startTimeMs: now,
+      });
+    }
+
+    return {
+      success: true,
+      data: {
+        entity,
+        effectState,
+      },
+    };
+  }
+
+  finalizePropulsionModuleDeactivation(session, moduleID, options = {}) {
+    const entity = this.getShipEntityForSession(session);
+    const normalizedModuleID = toInt(moduleID, 0);
+    if (
+      !entity ||
+      normalizedModuleID <= 0 ||
+      !(entity.activeModuleEffects instanceof Map)
+    ) {
+      return {
+        success: false,
+        errorMsg: "MODULE_NOT_ACTIVE",
+      };
+    }
+
+    const effectState = entity.activeModuleEffects.get(normalizedModuleID) || null;
+    if (!effectState) {
+      return {
+        success: false,
+        errorMsg: "MODULE_NOT_ACTIVE",
+      };
+    }
+
+    const stopTimeMs = Math.max(
+      0,
+      toFiniteNumber(
+        options.nowMs,
+        getEffectCycleBoundaryMs(effectState, this.getCurrentSimTimeMs()),
+      ),
+    );
+
+    entity.activeModuleEffects.delete(normalizedModuleID);
+    if (!(entity.moduleReactivationLocks instanceof Map)) {
+      entity.moduleReactivationLocks = new Map();
+    }
+    entity.moduleReactivationLocks.set(
+      normalizedModuleID,
+      stopTimeMs + Math.max(0, toFiniteNumber(effectState.reactivationDelayMs, 0)),
+    );
+
+    effectState.deactivatedAtMs = stopTimeMs;
+    effectState.deactivationRequestedAtMs = 0;
+    effectState.deactivateAtMs = 0;
+    effectState.stopReason = options.reason || effectState.stopReason || null;
+
+    const refreshResult = this.refreshSessionShipDerivedState(session, {
+      broadcast: true,
+    });
+    if (refreshResult.success) {
+      notifyPropulsionDerivedAttributesToSession(session, entity, effectState, stopTimeMs);
+      this.broadcastSpecialFx(
+        entity.itemID,
+        effectState.guid,
+        {
+          moduleID: effectState.moduleID,
+          moduleTypeID: effectState.typeID,
+          targetID: effectState.targetID || null,
+          chargeTypeID: effectState.chargeTypeID || null,
+          isOffensive:
+            effectState.weaponFamily === "laserTurret",
+          start: false,
+          active: false,
+          duration: effectState.durationMs,
+          useCurrentStamp: true,
+        },
+        entity,
+      );
+      notifyModuleEffectState(session, entity, effectState, false, {
+        whenMs: stopTimeMs,
+      });
+    }
+
+    return {
+      success: true,
+      data: {
+        entity,
+        effectState,
+        stoppedAtMs: stopTimeMs,
+      },
+    };
+  }
+
+  deactivatePropulsionModule(session, moduleID, options = {}) {
+    const entity = this.getShipEntityForSession(session);
+    const normalizedModuleID = toInt(moduleID, 0);
+    if (
+      !entity ||
+      normalizedModuleID <= 0 ||
+      !(entity.activeModuleEffects instanceof Map)
+    ) {
+      return {
+        success: false,
+        errorMsg: "MODULE_NOT_ACTIVE",
+      };
+    }
+
+    const effectState = entity.activeModuleEffects.get(normalizedModuleID) || null;
+    if (!effectState) {
+      return {
+        success: false,
+        errorMsg: "MODULE_NOT_ACTIVE",
+      };
+    }
+
+    const now = this.getCurrentSimTimeMs();
+    const reason = String(options.reason || "manual");
+    const cycleBoundaryMs = getEffectCycleBoundaryMs(effectState, now);
+    const shouldDefer = options.deferUntilCycle !== false && reason === "manual";
+
+    if (effectState.deactivateAtMs > 0 && effectState.deactivateAtMs > now) {
+      return {
+        success: true,
+        data: {
+          entity,
+          effectState,
+          pending: true,
+          deactivateAtMs: effectState.deactivateAtMs,
+        },
+      };
+    }
+
+    if (shouldDefer && cycleBoundaryMs > now + 1) {
+      effectState.deactivationRequestedAtMs = now;
+      effectState.deactivateAtMs = cycleBoundaryMs;
+      effectState.stopReason = reason;
+      persistDynamicEntity(entity);
+      return {
+        success: true,
+        data: {
+          entity,
+          effectState,
+          pending: true,
+          deactivateAtMs: cycleBoundaryMs,
+        },
+      };
+    }
+
+    return this.finalizePropulsionModuleDeactivation(session, normalizedModuleID, {
+      reason,
+      nowMs: cycleBoundaryMs > 0 ? cycleBoundaryMs : now,
+    });
+  }
+
+  // -------------------------------------------------------------------
+  // Generic module activation (non-propulsion) — weapons, repairers,
+  // shield boosters, etc.  Sends OnGodmaShipEffect with proper timing
+  // so the HUD radial cycle ring animates correctly.
+  // -------------------------------------------------------------------
+
+  activateGenericModule(session, moduleItem, effectName, options = {}) {
+    const entity = this.getShipEntityForSession(session);
+    if (!entity || !moduleItem) {
+      return { success: false, errorMsg: "SHIP_NOT_FOUND" };
+    }
+
+    const normalizedModuleID = toInt(moduleItem.itemID, 0);
+    if (
+      normalizedModuleID <= 0 ||
+      toInt(moduleItem.locationID, 0) !== toInt(entity.itemID, 0)
+    ) {
+      return { success: false, errorMsg: "MODULE_NOT_FOUND" };
+    }
+    if (!isModuleOnline(moduleItem)) {
+      return { success: false, errorMsg: "MODULE_NOT_ONLINE" };
+    }
+    if (!(entity.activeModuleEffects instanceof Map)) {
+      entity.activeModuleEffects = new Map();
+    }
+    if (!(entity.moduleReactivationLocks instanceof Map)) {
+      entity.moduleReactivationLocks = new Map();
+    }
+    if (entity.activeModuleEffects.has(normalizedModuleID)) {
+      return { success: false, errorMsg: "MODULE_ALREADY_ACTIVE" };
+    }
+
+    const lockUntil = toFiniteNumber(
+      entity.moduleReactivationLocks.get(normalizedModuleID),
+      0,
+    );
+    const now = this.getCurrentSimTimeMs();
+    if (lockUntil > now) {
+      return { success: false, errorMsg: "MODULE_REACTIVATING" };
+    }
+
+    // Resolve the activation effect from the module's type dogma
+    let effectRecord = effectName
+      ? resolveEffectByName(moduleItem.typeID, effectName)
+      : null;
+    if (!effectRecord) {
+      effectRecord = resolveDefaultActivationEffect(moduleItem.typeID);
+    }
+    if (!effectRecord) {
+      return { success: false, errorMsg: "NO_ACTIVATABLE_EFFECT" };
+    }
+
+    const chargeItem =
+      session && session.characterID
+        ? getLoadedChargeByFlag(session.characterID, entity.itemID, moduleItem.flagID)
+        : null;
+    const weaponFamily = resolveWeaponFamily(moduleItem, chargeItem);
+    let weaponSnapshot = null;
+    let targetEntity = null;
+    if (weaponFamily === "laserTurret") {
+      if (!chargeItem) {
+        return { success: false, errorMsg: "NO_AMMO" };
+      }
+      const normalizedTargetID = toInt(options.targetID, 0);
+      if (normalizedTargetID <= 0) {
+        return { success: false, errorMsg: "TARGET_REQUIRED" };
+      }
+      targetEntity = this.getEntityByID(normalizedTargetID);
+      if (!targetEntity || !hasDamageableHealth(targetEntity)) {
+        return { success: false, errorMsg: "TARGET_NOT_FOUND" };
+      }
+      if (!isEntityLockedTarget(entity, normalizedTargetID)) {
+        return { success: false, errorMsg: "TARGET_NOT_LOCKED" };
+      }
+      const shipRecord = getActiveShipRecord(session.characterID) || findShipItemById(entity.itemID);
+      if (!shipRecord) {
+        return { success: false, errorMsg: "SHIP_NOT_FOUND" };
+      }
+      weaponSnapshot = buildWeaponModuleSnapshot({
+        characterID: session.characterID,
+        shipItem: shipRecord,
+        moduleItem,
+        chargeItem,
+      });
+      if (!weaponSnapshot) {
+        return { success: false, errorMsg: chargeItem ? "UNSUPPORTED_WEAPON" : "NO_AMMO" };
+      }
+    }
+    const shipRecord =
+      session && session.characterID
+        ? getActiveShipRecord(session.characterID) || findShipItemById(entity.itemID)
+        : null;
+    const runtimeAttrs = getGenericModuleRuntimeAttributes(
+      session && session.characterID,
+      shipRecord,
+      moduleItem,
+      chargeItem,
+      weaponSnapshot,
+    );
+    if (!runtimeAttrs) {
+      return { success: false, errorMsg: "UNSUPPORTED_MODULE" };
+    }
+
+    if (runtimeAttrs.maxGroupActive > 0) {
+      const activeCount = [...entity.activeModuleEffects.values()].filter(
+        (es) => toInt(es.groupID, 0) === toInt(moduleItem.groupID, 0),
+      ).length;
+      if (activeCount >= runtimeAttrs.maxGroupActive) {
+        return { success: false, errorMsg: "MAX_GROUP_ACTIVE" };
+      }
+    }
+
+    const previousChargeAmount = getEntityCapacitorAmount(entity);
+    if (!consumeEntityCapacitor(entity, runtimeAttrs.capNeed)) {
+      return { success: false, errorMsg: "NOT_ENOUGH_CAPACITOR" };
+    }
+    notifyCapacitorChangeToSession(session, entity, now, previousChargeAmount);
+
+    const effectState = {
+      moduleID: normalizedModuleID,
+      moduleFlagID: toInt(moduleItem.flagID, 0),
+      effectName: effectRecord.name,
+      effectID: toInt(effectRecord.effectID, 0),
+      effectCategoryID: toInt(effectRecord.effectCategoryID, 0),
+      guid: effectRecord.guid || "",
+      groupID: toInt(moduleItem.groupID, 0),
+      typeID: toInt(moduleItem.typeID, 0),
+      startedAtMs: now,
+      durationMs: runtimeAttrs.durationMs,
+      durationAttributeID: runtimeAttrs.durationAttributeID,
+      nextCycleAtMs: now + runtimeAttrs.durationMs,
+      capNeed: runtimeAttrs.capNeed,
+      reactivationDelayMs: runtimeAttrs.reactivationDelayMs,
+      repeat: normalizeEffectRepeatCount(options.repeat, null),
+      targetID:
+        weaponSnapshot && weaponSnapshot.family === "laserTurret"
+          ? toInt(options.targetID, 0)
+          : 0,
+      chargeTypeID: toInt(
+        (chargeItem && chargeItem.typeID) ||
+          (weaponSnapshot && weaponSnapshot.chargeTypeID),
+        0,
+      ),
+      weaponFamily:
+        weaponSnapshot && weaponSnapshot.family
+          ? weaponSnapshot.family
+          : null,
+      deactivationRequestedAtMs: 0,
+      deactivateAtMs: 0,
+      stopReason: null,
+      isGeneric: true,
+    };
+    entity.activeModuleEffects.set(normalizedModuleID, effectState);
+
+    if (effectState.guid) {
+      this.broadcastSpecialFx(
+        entity.itemID,
+        effectState.guid,
+        {
+          moduleID: effectState.moduleID,
+          moduleTypeID: effectState.typeID,
+          targetID: effectState.targetID || null,
+          chargeTypeID: effectState.chargeTypeID || null,
+          isOffensive:
+            effectState.weaponFamily === "laserTurret" ||
+            effectRecord.isOffensive === true,
+          start: true,
+          active: true,
+          duration: effectState.durationMs,
+          repeat: resolveSpecialFxRepeatCount(effectState),
+          useCurrentStamp: true,
+        },
+        entity,
+      );
+    }
+    notifyGenericDerivedAttributesToSession(session, effectState, now);
+    notifyGenericModuleEffectState(session, entity, effectState, true, {
+      whenMs: now,
+      startTimeMs: now,
+    });
+
+    if (
+      targetEntity &&
+      (
+        effectState.weaponFamily === "laserTurret" ||
+        effectRecord.isOffensive === true
+      )
+    ) {
+      try {
+        const crimewatchState = require(path.join(__dirname, "../services/security/crimewatchState"));
+        if (
+          crimewatchState &&
+          typeof crimewatchState.recordHighSecCriminalAggression === "function"
+        ) {
+          crimewatchState.recordHighSecCriminalAggression(
+            this,
+            entity,
+            targetEntity,
+            now,
+          );
+        }
+      } catch (error) {
+        log.warn(`[SpaceRuntime] Crimewatch activation hook failed: ${error.message}`);
+      }
+    }
+
+    if (effectState.weaponFamily === "laserTurret") {
+      const initialCycleResult = executeLaserTurretCycle(
+        this,
+        entity,
+        effectState,
+        now,
+      );
+      if (!initialCycleResult.success) {
+        this.finalizeGenericModuleDeactivation(session, normalizedModuleID, {
+          reason: initialCycleResult.stopReason || "weapon",
+          nowMs: now,
+        });
+      } else if (
+        initialCycleResult.data &&
+        initialCycleResult.data.stopReason
+      ) {
+        this.finalizeGenericModuleDeactivation(session, normalizedModuleID, {
+          reason: initialCycleResult.data.stopReason,
+          nowMs: now,
+        });
+      }
+    }
+
+    return {
+      success: true,
+      data: { entity, effectState },
+    };
+  }
+
+  finalizeGenericModuleDeactivation(session, moduleID, options = {}) {
+    const entity = this.getShipEntityForSession(session);
+    const normalizedModuleID = toInt(moduleID, 0);
+    if (
+      !entity ||
+      normalizedModuleID <= 0 ||
+      !(entity.activeModuleEffects instanceof Map)
+    ) {
+      return { success: false, errorMsg: "MODULE_NOT_ACTIVE" };
+    }
+
+    const effectState = entity.activeModuleEffects.get(normalizedModuleID) || null;
+    if (!effectState) {
+      return { success: false, errorMsg: "MODULE_NOT_ACTIVE" };
+    }
+
+    const stopTimeMs = Math.max(
+      0,
+      toFiniteNumber(
+        options.nowMs,
+        getEffectCycleBoundaryMs(effectState, this.getCurrentSimTimeMs()),
+      ),
+    );
+
+    entity.activeModuleEffects.delete(normalizedModuleID);
+    if (!(entity.moduleReactivationLocks instanceof Map)) {
+      entity.moduleReactivationLocks = new Map();
+    }
+    entity.moduleReactivationLocks.set(
+      normalizedModuleID,
+      stopTimeMs + Math.max(0, toFiniteNumber(effectState.reactivationDelayMs, 0)),
+    );
+
+    effectState.deactivatedAtMs = stopTimeMs;
+    effectState.deactivationRequestedAtMs = 0;
+    effectState.deactivateAtMs = 0;
+    effectState.stopReason = options.reason || effectState.stopReason || null;
+
+    if (effectState.guid) {
+      this.broadcastSpecialFx(
+        entity.itemID,
+        effectState.guid,
+        {
+          moduleID: effectState.moduleID,
+          moduleTypeID: effectState.typeID,
+          targetID: effectState.targetID || null,
+          chargeTypeID: effectState.chargeTypeID || null,
+          isOffensive: effectState.weaponFamily === "laserTurret",
+          start: false,
+          active: false,
+          duration: effectState.durationMs,
+          useCurrentStamp: true,
+        },
+        entity,
+      );
+    }
+    notifyGenericDerivedAttributesToSession(session, effectState, stopTimeMs);
+    notifyGenericModuleEffectState(session, entity, effectState, false, {
+      whenMs: stopTimeMs,
+    });
+
+    return {
+      success: true,
+      data: { entity, effectState, stoppedAtMs: stopTimeMs },
+    };
+  }
+
+  deactivateGenericModule(session, moduleID, options = {}) {
+    const entity = this.getShipEntityForSession(session);
+    const normalizedModuleID = toInt(moduleID, 0);
+    if (
+      !entity ||
+      normalizedModuleID <= 0 ||
+      !(entity.activeModuleEffects instanceof Map)
+    ) {
+      return { success: false, errorMsg: "MODULE_NOT_ACTIVE" };
+    }
+
+    const effectState = entity.activeModuleEffects.get(normalizedModuleID) || null;
+    if (!effectState) {
+      return { success: false, errorMsg: "MODULE_NOT_ACTIVE" };
+    }
+
+    const now = this.getCurrentSimTimeMs();
+    const reason = String(options.reason || "manual");
+    const cycleBoundaryMs = getEffectCycleBoundaryMs(effectState, now);
+    const shouldDefer = options.deferUntilCycle !== false && reason === "manual";
+
+    if (effectState.deactivateAtMs > 0 && effectState.deactivateAtMs > now) {
+      return {
+        success: true,
+        data: { entity, effectState, pending: true, deactivateAtMs: effectState.deactivateAtMs },
+      };
+    }
+
+    if (shouldDefer && cycleBoundaryMs > now + 1) {
+      effectState.deactivationRequestedAtMs = now;
+      effectState.deactivateAtMs = cycleBoundaryMs;
+      effectState.stopReason = reason;
+      return {
+        success: true,
+        data: { entity, effectState, pending: true, deactivateAtMs: cycleBoundaryMs },
+      };
+    }
+
+    return this.finalizeGenericModuleDeactivation(session, normalizedModuleID, {
+      reason,
+      nowMs: cycleBoundaryMs > 0 ? cycleBoundaryMs : now,
+    });
+  }
+
+  spawnDynamicEntity(entity, options = {}) {
+    if (!entity || !entity.itemID) {
+      return {
+        success: false,
+        errorMsg: "INVALID_DYNAMIC_ENTITY",
+      };
+    }
+    if (this.dynamicEntities.has(entity.itemID)) {
+      return {
+        success: false,
+        errorMsg: "DYNAMIC_ENTITY_ALREADY_EXISTS",
+      };
+    }
+
+    entity.systemID = this.systemID;
+    entity.session = entity.session || null;
+    this.reconcileEntityPublicGrid(entity);
+    entity.departureBubbleID = null;
+    entity.departureBubbleVisibleUntilMs = 0;
+    ensureEntityTargetingState(entity);
+    this.dynamicEntities.set(entity.itemID, entity);
+    this.reconcileEntityBubble(entity);
+    this.publicGridCompositionDirty = true;
+    this.ensurePublicGridComposition();
+    persistDynamicEntity(entity);
+
+    if (options.broadcast !== false) {
+      this.broadcastAddBalls([entity], options.excludedSession || null);
+    }
+
+    return {
+      success: true,
+      data: {
+        entity,
+      },
+    };
+  }
+
+  unregisterDynamicEntity(entity, options = {}) {
+    if (!entity) {
+      return null;
+    }
+
+    const visibilityEntity =
+      options.broadcast !== false
+        ? {
+            ...entity,
+            publicGridKey: this.getPublicGridKeyForEntity(entity),
+            publicGridClusterKey: this.getPublicGridClusterKeyForEntity(entity),
+          }
+        : null;
+
+    this.clearAllTargetingForEntity(entity, {
+      notifySelf: entity.session ? isReadyForDestiny(entity.session) : false,
+      notifyTarget: true,
+      reason:
+        toInt(options && options.terminalDestructionEffectID, 0) > 0
+          ? TARGET_LOSS_REASON_EXPLODING
+          : TARGET_LOSS_REASON_ATTEMPT_CANCELLED,
+    });
+    persistDynamicEntity(entity);
+    this.removeEntityFromBubble(entity);
+    entity.publicGridKey = null;
+    entity.publicGridClusterKey = null;
+    entity.departureBubbleID = null;
+    entity.departureBubbleVisibleUntilMs = 0;
+    this.dynamicEntities.delete(entity.itemID);
+    this.publicGridCompositionDirty = true;
+    this.ensurePublicGridComposition();
+    if (options.broadcast !== false) {
+      this.broadcastRemoveBall(entity.itemID, options.excludedSession || null, {
+        terminalDestructionEffectID: options.terminalDestructionEffectID,
+        visibilityEntity,
+      });
+    } else {
+      for (const session of this.sessions.values()) {
+        if (
+          session &&
+          session._space &&
+          session._space.visibleDynamicEntityIDs instanceof Set
+        ) {
+          session._space.visibleDynamicEntityIDs.delete(entity.itemID);
+        }
+      }
+    }
+    return entity;
+  }
+
+  removeDynamicEntity(entityID, options = {}) {
+    const entity = this.dynamicEntities.get(Number(entityID)) || null;
+    if (!entity) {
+      return {
+        success: false,
+        errorMsg: "DYNAMIC_ENTITY_NOT_FOUND",
+      };
+    }
+    if (entity.session && options.allowSessionOwned !== true) {
+      return {
+        success: false,
+        errorMsg: "DYNAMIC_ENTITY_SESSION_OWNED",
+      };
+    }
+
+    this.unregisterDynamicEntity(entity, options);
+    return {
+      success: true,
+      data: {
+        entityID: entity.itemID,
+      },
+    };
+  }
+
+  destroyInventoryBackedDynamicEntity(entityID, options = {}) {
+    const entity = this.dynamicEntities.get(Number(entityID)) || null;
+    if (!isInventoryBackedDynamicEntity(entity)) {
+      return {
+        success: false,
+        errorMsg: "DYNAMIC_ENTITY_NOT_FOUND",
+      };
+    }
+
+    this.unregisterDynamicEntity(entity, options);
+    const removeResult = removeInventoryItem(entity.itemID, {
+      removeContents: options.removeContents !== false,
+    });
+    if (!removeResult.success) {
+      return removeResult;
+    }
+
+    return {
+      success: true,
+      data: {
+        entityID: entity.itemID,
+        changes: removeResult.data && removeResult.data.changes,
+      },
+    };
+  }
+
+  destroyExpiredInventoryBackedEntities(now = this.getCurrentSimTimeMs()) {
+    const numericNow = toFiniteNumber(now, this.getCurrentSimTimeMs());
+    const expiredEntityIDs = [...this.dynamicEntities.values()]
+      .filter((entity) =>
+        isInventoryBackedDynamicEntity(entity) &&
+        toFiniteNumber(entity.expiresAtMs, 0) > 0 &&
+        toFiniteNumber(entity.expiresAtMs, 0) <= numericNow,
+      )
+      .map((entity) => entity.itemID);
+
+    const destroyedEntityIDs = [];
+    for (const entityID of expiredEntityIDs) {
+      const destroyResult = this.destroyInventoryBackedDynamicEntity(entityID);
+      if (destroyResult.success) {
+        destroyedEntityIDs.push(entityID);
+      }
+    }
+
+    return destroyedEntityIDs;
   }
 
   sendSlimItemChangesToSession(session, entities) {
@@ -3834,8 +9924,9 @@ class SolarSystemScene {
       return;
     }
 
-    const stamp = getNextStamp();
-    const updates = entities
+    const refreshedEntities = refreshEntitiesForSlimPayload(entities);
+    const stamp = this.getNextDestinyStamp();
+    const updates = refreshedEntities
       .filter(Boolean)
       .map((entity) => ({
         stamp,
@@ -3852,9 +9943,24 @@ class SolarSystemScene {
   }
 
   broadcastSpecialFx(shipID, guid, options = {}, visibilityEntity = null) {
-    const payload = destiny.buildOnSpecialFXPayload(shipID, guid, options);
-    const stamp = getNextStamp();
+    const resolvedOptions = resolveSpecialFxOptionsForEntity(
+      shipID,
+      options,
+      visibilityEntity,
+    );
+    const payload = destiny.buildOnSpecialFXPayload(
+      shipID,
+      guid,
+      resolvedOptions,
+    );
+    // Use current stamp when requested so Michelle dispatches immediately rather
+    // than queuing for a future tick. Critical under TiDi where the next tick is
+    // delayed and a session change can tear down the ballpark before it arrives.
+    const baseStamp = resolvedOptions.useCurrentStamp
+      ? this.getCurrentDestinyStamp()
+      : this.getNextDestinyStamp();
     let deliveredCount = 0;
+    let resultStamp = null;
 
     for (const session of this.sessions.values()) {
       if (!isReadyForDestiny(session)) {
@@ -3867,17 +9973,40 @@ class SolarSystemScene {
         continue;
       }
 
+      const useImmediateVisibleStamp =
+        resolvedOptions.useImmediateClientVisibleStamp === true &&
+        sessionMatchesIdentity(session, resolvedOptions.resultSession);
+      const stamp = useImmediateVisibleStamp
+        ? this.getImmediateDestinyStampForSession(session, baseStamp)
+        : resolvedOptions.useLastClientVisibleStamp
+          ? this.getLastSentDestinyStampForSession(session, baseStamp)
+          : baseStamp;
       this.sendDestinyUpdates(session, [
         {
           stamp,
           payload,
         },
-      ]);
+      ], false, {
+        translateStamps:
+          useImmediateVisibleStamp || options.useLastClientVisibleStamp
+            ? false
+            : undefined,
+      });
       deliveredCount += 1;
+      if (
+        resultStamp === null &&
+        (
+          resolvedOptions.resultSession === undefined ||
+          resolvedOptions.resultSession === null ||
+          sessionMatchesIdentity(session, resolvedOptions.resultSession)
+        )
+      ) {
+        resultStamp = stamp;
+      }
     }
 
     return {
-      stamp,
+      stamp: resultStamp === null ? baseStamp : resultStamp,
       deliveredCount,
     };
   }
@@ -3895,28 +10024,56 @@ class SolarSystemScene {
     }
   }
 
+  broadcastBallRefresh(entities, excludedSession = null) {
+    if (!Array.isArray(entities) || entities.length === 0) {
+      return;
+    }
+
+    const refreshedEntities = refreshEntitiesForSlimPayload(entities);
+    for (const session of this.sessions.values()) {
+      if (session === excludedSession || !isReadyForDestiny(session)) {
+        continue;
+      }
+      const visibleEntities = refreshedEntities.filter((entity) =>
+        this.canSessionSeeDynamicEntity(session, entity),
+      );
+      if (visibleEntities.length === 0) {
+        continue;
+      }
+      this.sendAddBallsToSession(session, visibleEntities);
+    }
+  }
+
   sendAddBallsToSession(session, entities) {
     if (!session || !isReadyForDestiny(session) || entities.length === 0) {
       return;
     }
 
-    const stamp = getNextStamp();
+    const refreshedEntities = refreshEntitiesForSlimPayload(entities);
+    const rawStamp = this.getNextDestinyStamp();
+    const rawSimTimeMs = this.getCurrentSimTimeMs();
+    const stamp = this.translateDestinyStampForSession(session, rawStamp);
+    const simFileTime = this.getCurrentSessionFileTime(session, rawSimTimeMs);
     this.sendDestinyUpdates(session, [
       {
         stamp,
-        payload: destiny.buildAddBalls2Payload(stamp, entities),
+        payload: destiny.buildAddBalls2Payload(stamp, refreshedEntities, simFileTime),
       },
-    ]);
-    const primeUpdates = buildShipPrimeUpdatesForEntities(entities);
+    ], false, { translateStamps: false });
+    const primeUpdates = buildShipPrimeUpdatesForEntities(refreshedEntities, stamp);
     if (primeUpdates.length > 0) {
-      this.sendDestinyUpdates(session, primeUpdates);
+      this.sendDestinyUpdates(session, primeUpdates, false, {
+        translateStamps: false,
+      });
     }
     const modeUpdates = [];
-    for (const entity of entities) {
-      modeUpdates.push(...this.buildModeUpdates(entity));
+    for (const entity of refreshedEntities) {
+      modeUpdates.push(...this.buildModeUpdates(entity, stamp));
     }
     if (modeUpdates.length > 0) {
-      this.sendDestinyUpdates(session, modeUpdates);
+      this.sendDestinyUpdates(session, modeUpdates, false, {
+        translateStamps: false,
+      });
     }
   }
 
@@ -3927,13 +10084,34 @@ class SolarSystemScene {
 
     this.sendDestinyUpdates(session, [
       {
-        stamp: getNextStamp(),
+        stamp: this.getNextDestinyStamp(),
         payload: destiny.buildRemoveBallsPayload(entityIDs),
       },
     ]);
   }
 
-  syncDynamicVisibilityForSession(session, now = Date.now()) {
+  broadcastDestinyUpdatesToBubble(bubbleID, updates, options = {}) {
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return {
+        deliveredCount: 0,
+      };
+    }
+
+    let deliveredCount = 0;
+    for (const session of this.getSessionsInBubble(bubbleID)) {
+      if (session === options.excludedSession || !isReadyForDestiny(session)) {
+        continue;
+      }
+      this.sendDestinyUpdates(session, updates, options.waitForBubble === true);
+      deliveredCount += 1;
+    }
+
+    return {
+      deliveredCount,
+    };
+  }
+
+  syncDynamicVisibilityForSession(session, now = this.getCurrentSimTimeMs()) {
     if (!session || !session._space || session._space.initialStateSent !== true) {
       return;
     }
@@ -3979,7 +10157,7 @@ class SolarSystemScene {
     session._space.visibleDynamicEntityIDs = desiredIDs;
   }
 
-  syncDynamicVisibilityForAllSessions(now = Date.now()) {
+  syncDynamicVisibilityForAllSessions(now = this.getCurrentSimTimeMs()) {
     for (const session of this.sessions.values()) {
       this.syncDynamicVisibilityForSession(session, now);
     }
@@ -3987,7 +10165,10 @@ class SolarSystemScene {
 
   buildModeUpdates(entity, stampOverride = null) {
     const updates = [];
-    const modeStamp = stampOverride === null ? getNextStamp() : toInt(stampOverride, getNextStamp());
+    const modeStamp =
+      stampOverride === null
+        ? this.getNextDestinyStamp()
+        : toInt(stampOverride, this.getNextDestinyStamp());
 
     switch (entity.mode) {
       case "GOTO":
@@ -4030,7 +10211,13 @@ class SolarSystemScene {
               ),
             );
           } else {
-            updates.push(...buildWarpStartUpdates(entity, entity.warpState, modeStamp));
+            updates.push(
+              ...buildWarpInFlightAcquireUpdates(
+                entity,
+                entity.warpState,
+                modeStamp,
+              ),
+            );
           }
         }
         break;
@@ -4092,29 +10279,267 @@ class SolarSystemScene {
       );
     }
 
+    ensureEntityTargetingState(shipEntity);
     session._space = {
       systemID: this.systemID,
       shipID: shipEntity.itemID,
       beyonceBound: Boolean(options.beyonceBound),
-      initialStateSent: false,
+      initialStateSent: Boolean(options.initialStateSent),
+      initialBallparkVisualsSent: false,
+      initialBallparkClockSynced: false,
+      deferInitialBallparkClockUntilBind:
+        options.deferInitialBallparkClockUntilBind === true,
+      deferInitialBallparkStateUntilBind:
+        options.deferInitialBallparkStateUntilBind === true,
       pendingUndockMovement: Boolean(options.pendingUndockMovement),
       visibleDynamicEntityIDs: new Set(),
+      clockOffsetMs: 0,
+      lastSentDestinyStamp: null,
+      timeDilation: this.getTimeDilation(),
+      simTimeMs: this.getCurrentSimTimeMs(),
+      simFileTime: this.getCurrentFileTime(),
     };
 
     this.sessions.set(session.clientID, session);
     this.dynamicEntities.set(shipEntity.itemID, shipEntity);
+    this.reconcileEntityPublicGrid(shipEntity);
     this.reconcileEntityBubble(shipEntity);
+    this.publicGridCompositionDirty = true;
+    this.ensurePublicGridComposition();
     persistShipEntity(shipEntity);
+    session._skipNextInitialBallparkRebase =
+      options.skipNextInitialBallparkRebase === true;
+    session._nextInitialBallparkPreviousSimTimeMs =
+      options.initialBallparkPreviousSimTimeMs === undefined ||
+      options.initialBallparkPreviousSimTimeMs === null
+        ? null
+        : toFiniteNumber(options.initialBallparkPreviousSimTimeMs, null);
+    session._nextInitialBallparkPreviousTimeDilation =
+      options.initialBallparkPreviousTimeDilation === undefined ||
+      options.initialBallparkPreviousTimeDilation === null
+        ? null
+        : clampTimeDilationFactor(options.initialBallparkPreviousTimeDilation);
+    session._nextInitialBallparkPreviousCapturedAtWallclockMs =
+      options.initialBallparkPreviousCapturedAtWallclockMs === undefined ||
+      options.initialBallparkPreviousCapturedAtWallclockMs === null
+        ? null
+        : toFiniteNumber(options.initialBallparkPreviousCapturedAtWallclockMs, null);
+    const attachedSceneCurrentSimTimeMs = this.getCurrentSimTimeMs();
+    const preservedCurrentSessionSimTimeMs = resolvePreservedSimTimeMs(
+      options.initialBallparkPreviousSimTimeMs,
+      options.initialBallparkPreviousTimeDilation,
+      options.initialBallparkPreviousCapturedAtWallclockMs,
+      null,
+    );
+    if (preservedCurrentSessionSimTimeMs !== null) {
+      session._space.clockOffsetMs = roundNumber(
+        preservedCurrentSessionSimTimeMs - attachedSceneCurrentSimTimeMs,
+        3,
+      );
+    }
+    const syncResult = this.syncSessionSimClock(session, {
+      previousSimTimeMs: options.previousSimTimeMs,
+      currentSimTimeMs:
+        preservedCurrentSessionSimTimeMs === null
+          ? undefined
+          : preservedCurrentSessionSimTimeMs,
+      emit: options.emitSimClockRebase !== false,
+      forceRebase: options.forceSimClockRebase === true,
+    });
+    recordSessionJumpTimingTrace(session, "attach-session", {
+      systemID: this.systemID,
+      shipID: shipEntity.itemID,
+      options: {
+        beyonceBound: options.beyonceBound === true,
+        pendingUndockMovement: options.pendingUndockMovement === true,
+        spawnStopped: options.spawnStopped === true,
+        broadcast: options.broadcast !== false,
+        emitSimClockRebase: options.emitSimClockRebase !== false,
+        forceSimClockRebase: options.forceSimClockRebase === true,
+        previousSimTimeMs:
+          options.previousSimTimeMs === undefined ? null : options.previousSimTimeMs,
+        initialBallparkPreviousSimTimeMs:
+          options.initialBallparkPreviousSimTimeMs === undefined
+            ? null
+            : options.initialBallparkPreviousSimTimeMs,
+        initialBallparkPreviousTimeDilation:
+          options.initialBallparkPreviousTimeDilation === undefined
+            ? null
+            : options.initialBallparkPreviousTimeDilation,
+        initialBallparkPreviousCapturedAtWallclockMs:
+          options.initialBallparkPreviousCapturedAtWallclockMs === undefined
+            ? null
+            : options.initialBallparkPreviousCapturedAtWallclockMs,
+        deferInitialBallparkClockUntilBind:
+          options.deferInitialBallparkClockUntilBind === true,
+        deferInitialBallparkStateUntilBind:
+          options.deferInitialBallparkStateUntilBind === true,
+      },
+      sceneTimeState: this.buildTimeStateSnapshot(),
+      sessionClockOffsetMs: session._space.clockOffsetMs,
+      syncResult,
+    });
 
     log.info(
       `[SpaceRuntime] Attached ${session.characterName || session.characterID} ship=${shipEntity.itemID} to system ${this.systemID}`,
     );
 
     if (options.broadcast !== false) {
+      if (options.emitEgoBallAdd === true && isReadyForDestiny(session)) {
+        // Same-ballpark ship swaps (for example ejecting into a fresh capsule)
+        // still need the new ego ball inserted into Michelle. Visibility sync
+        // intentionally excludes the ego ship, so seed it explicitly first.
+        this.sendAddBallsToSession(session, [shipEntity]);
+      }
       this.syncDynamicVisibilityForAllSessions();
     }
 
     return shipEntity;
+  }
+
+  attachSessionToExistingEntity(session, shipItem, entity, options = {}) {
+    if (!session || !shipItem || !entity || entity.kind !== "ship") {
+      return null;
+    }
+
+    applySessionStateToShipEntity(entity, session, shipItem);
+    ensureEntityTargetingState(entity);
+    if (
+      entity.mode === "WARP" &&
+      entity.warpState &&
+      !entity.pendingWarp
+    ) {
+      log.warn(
+        `[SpaceRuntime] Restoring persisted warp state for boarded ship=${entity.itemID} is unsupported; spawning stopped at current position instead.`,
+      );
+      resetEntityMotion(entity);
+      entity.warpState = null;
+      entity.pendingWarp = null;
+      entity.targetEntityID = null;
+    }
+    if (options.skipLegacyStationNormalization !== true) {
+      normalizeLegacyStationState(entity);
+    }
+    if (options.spawnStopped) {
+      resetEntityMotion(entity);
+    } else if (options.undockDirection) {
+      buildUndockMovement(
+        entity,
+        options.undockDirection,
+        options.speedFraction ?? 1,
+      );
+    }
+
+    session._space = {
+      systemID: this.systemID,
+      shipID: entity.itemID,
+      beyonceBound: Boolean(options.beyonceBound),
+      initialStateSent: Boolean(options.initialStateSent),
+      initialBallparkVisualsSent: false,
+      initialBallparkClockSynced: false,
+      deferInitialBallparkClockUntilBind:
+        options.deferInitialBallparkClockUntilBind === true,
+      deferInitialBallparkStateUntilBind:
+        options.deferInitialBallparkStateUntilBind === true,
+      pendingUndockMovement: Boolean(options.pendingUndockMovement),
+      visibleDynamicEntityIDs: new Set(),
+      clockOffsetMs: 0,
+      lastSentDestinyStamp: null,
+      timeDilation: this.getTimeDilation(),
+      simTimeMs: this.getCurrentSimTimeMs(),
+      simFileTime: this.getCurrentFileTime(),
+    };
+
+    this.sessions.set(session.clientID, session);
+    this.reconcileEntityPublicGrid(entity);
+    this.reconcileEntityBubble(entity);
+    this.publicGridCompositionDirty = true;
+    this.ensurePublicGridComposition();
+    persistShipEntity(entity);
+    session._skipNextInitialBallparkRebase =
+      options.skipNextInitialBallparkRebase === true;
+    session._nextInitialBallparkPreviousSimTimeMs =
+      options.initialBallparkPreviousSimTimeMs === undefined ||
+      options.initialBallparkPreviousSimTimeMs === null
+        ? null
+        : toFiniteNumber(options.initialBallparkPreviousSimTimeMs, null);
+    session._nextInitialBallparkPreviousTimeDilation =
+      options.initialBallparkPreviousTimeDilation === undefined ||
+      options.initialBallparkPreviousTimeDilation === null
+        ? null
+        : clampTimeDilationFactor(options.initialBallparkPreviousTimeDilation);
+    session._nextInitialBallparkPreviousCapturedAtWallclockMs =
+      options.initialBallparkPreviousCapturedAtWallclockMs === undefined ||
+      options.initialBallparkPreviousCapturedAtWallclockMs === null
+        ? null
+        : toFiniteNumber(options.initialBallparkPreviousCapturedAtWallclockMs, null);
+    const attachedExistingSceneCurrentSimTimeMs = this.getCurrentSimTimeMs();
+    const preservedExistingSessionSimTimeMs = resolvePreservedSimTimeMs(
+      options.initialBallparkPreviousSimTimeMs,
+      options.initialBallparkPreviousTimeDilation,
+      options.initialBallparkPreviousCapturedAtWallclockMs,
+      null,
+    );
+    if (preservedExistingSessionSimTimeMs !== null) {
+      session._space.clockOffsetMs = roundNumber(
+        preservedExistingSessionSimTimeMs - attachedExistingSceneCurrentSimTimeMs,
+        3,
+      );
+    }
+    const syncResult = this.syncSessionSimClock(session, {
+      previousSimTimeMs: options.previousSimTimeMs,
+      currentSimTimeMs:
+        preservedExistingSessionSimTimeMs === null
+          ? undefined
+          : preservedExistingSessionSimTimeMs,
+      emit: options.emitSimClockRebase !== false,
+      forceRebase: options.forceSimClockRebase === true,
+    });
+    recordSessionJumpTimingTrace(session, "attach-session-existing-entity", {
+      systemID: this.systemID,
+      shipID: entity.itemID,
+      options: {
+        beyonceBound: options.beyonceBound === true,
+        pendingUndockMovement: options.pendingUndockMovement === true,
+        spawnStopped: options.spawnStopped === true,
+        broadcast: options.broadcast !== false,
+        emitSimClockRebase: options.emitSimClockRebase !== false,
+        forceSimClockRebase: options.forceSimClockRebase === true,
+        previousSimTimeMs:
+          options.previousSimTimeMs === undefined ? null : options.previousSimTimeMs,
+        initialBallparkPreviousSimTimeMs:
+          options.initialBallparkPreviousSimTimeMs === undefined
+            ? null
+            : options.initialBallparkPreviousSimTimeMs,
+        initialBallparkPreviousTimeDilation:
+          options.initialBallparkPreviousTimeDilation === undefined
+            ? null
+            : options.initialBallparkPreviousTimeDilation,
+        initialBallparkPreviousCapturedAtWallclockMs:
+          options.initialBallparkPreviousCapturedAtWallclockMs === undefined
+            ? null
+            : options.initialBallparkPreviousCapturedAtWallclockMs,
+        deferInitialBallparkClockUntilBind:
+          options.deferInitialBallparkClockUntilBind === true,
+        deferInitialBallparkStateUntilBind:
+          options.deferInitialBallparkStateUntilBind === true,
+      },
+      sceneTimeState: this.buildTimeStateSnapshot(),
+      sessionClockOffsetMs: session._space.clockOffsetMs,
+      syncResult,
+    });
+
+    log.info(
+      `[SpaceRuntime] Attached ${session.characterName || session.characterID} to existing ship=${entity.itemID} in system ${this.systemID}`,
+    );
+
+    if (options.broadcast !== false) {
+      this.broadcastSlimItemChanges([entity]);
+      this.broadcastBallRefresh([entity], session);
+      this.syncDynamicVisibilityForAllSessions();
+    }
+
+    return entity;
   }
 
   detachSession(session, options = {}) {
@@ -4122,29 +10547,57 @@ class SolarSystemScene {
       return;
     }
 
+    recordSessionJumpTimingTrace(session, "detach-session", {
+      systemID: session._space.systemID,
+      shipID: session._space.shipID,
+      broadcast: options.broadcast !== false,
+      sessionSimTimeMs: session._space.simTimeMs,
+      sessionSimFileTime: session._space.simFileTime,
+      sessionTimeDilation: session._space.timeDilation,
+    });
     const entity = this.dynamicEntities.get(session._space.shipID) || null;
     this.sessions.delete(session.clientID);
     if (entity) {
-      persistShipEntity(entity);
-      this.removeEntityFromBubble(entity);
-      entity.departureBubbleID = null;
-      entity.departureBubbleVisibleUntilMs = 0;
-      this.dynamicEntities.delete(entity.itemID);
-      for (const otherSession of this.sessions.values()) {
-        if (
-          otherSession &&
-          otherSession._space &&
-          otherSession._space.visibleDynamicEntityIDs instanceof Set
-        ) {
-          otherSession._space.visibleDynamicEntityIDs.delete(entity.itemID);
-        }
-      }
-      if (options.broadcast !== false) {
-        this.broadcastRemoveBall(entity.itemID, session);
-      }
+      this.clearAllTargetingForEntity(entity, {
+        notifySelf: false,
+        notifyTarget: true,
+        reason: TARGET_LOSS_REASON_ATTEMPT_CANCELLED,
+      });
+      this.unregisterDynamicEntity(entity, {
+        broadcast: options.broadcast !== false,
+        excludedSession: session,
+      });
     }
 
     session._space = null;
+  }
+
+  disembarkSession(session, options = {}) {
+    if (!session || !session._space) {
+      return null;
+    }
+
+    const entity = this.dynamicEntities.get(session._space.shipID) || null;
+    this.sessions.delete(session.clientID);
+
+    if (entity) {
+      this.clearAllTargetingForEntity(entity, {
+        notifySelf: true,
+        notifyTarget: true,
+        reason: TARGET_LOSS_REASON_ATTEMPT_CANCELLED,
+      });
+      clearSessionStateFromShipEntity(entity);
+      persistShipEntity(entity);
+    }
+
+    session._space = null;
+
+    if (entity && options.broadcast !== false) {
+      this.broadcastSlimItemChanges([entity]);
+      this.broadcastBallRefresh([entity], session);
+    }
+
+    return entity;
   }
 
   markBeyonceBound(session) {
@@ -4153,11 +10606,13 @@ class SolarSystemScene {
     }
   }
 
-  sendDestinyUpdates(session, payloads, waitForBubble = false) {
+  sendDestinyUpdates(session, payloads, waitForBubble = false, options = {}) {
     if (!session || payloads.length === 0) {
       return;
     }
 
+    this.refreshSessionClockSnapshot(session);
+    const translateStamps = options.translateStamps === true;
     let groupedUpdates = [];
     let currentStamp = null;
     let firstGroup = true;
@@ -4175,12 +10630,25 @@ class SolarSystemScene {
           waitForBubble && firstGroup,
         ),
       );
+      if (session._space) {
+        session._space.lastSentDestinyStamp = currentStamp;
+      }
       groupedUpdates = [];
       currentStamp = null;
       firstGroup = false;
     };
 
-    for (const payload of payloads) {
+    for (const rawPayload of payloads) {
+      const payload =
+        !translateStamps || !rawPayload
+          ? rawPayload
+          : {
+              ...rawPayload,
+              stamp: this.translateDestinyStampForSession(
+                session,
+                rawPayload.stamp,
+              ),
+            };
       const stamp = Number(payload && payload.stamp);
       if (groupedUpdates.length === 0) {
         groupedUpdates.push(payload);
@@ -4237,8 +10705,17 @@ class SolarSystemScene {
       return;
     }
 
-    const stamp =
-      stampOverride === null ? getNextStamp() : toInt(stampOverride, getNextStamp());
+    refreshShipPresentationFields(egoEntity);
+    const visibleEntities = refreshEntitiesForSlimPayload(
+      this.getVisibleEntitiesForSession(session),
+    );
+    const rawStamp =
+      stampOverride === null
+        ? this.getNextDestinyStamp()
+        : toInt(stampOverride, this.getNextDestinyStamp());
+    const rawSimTimeMs = this.getCurrentSimTimeMs();
+    const stamp = this.translateDestinyStampForSession(session, rawStamp);
+    const simFileTime = this.getCurrentSessionFileTime(session, rawSimTimeMs);
     this.sendDestinyUpdates(session, [
       {
         stamp,
@@ -4246,10 +10723,11 @@ class SolarSystemScene {
           stamp,
           this.system,
           egoEntity.itemID,
-          this.getVisibleEntitiesForSession(session),
+          visibleEntities,
+          simFileTime,
         ),
       },
-    ]);
+    ], false, { translateStamps: false });
   }
 
   ensureInitialBallpark(session, options = {}) {
@@ -4266,39 +10744,161 @@ class SolarSystemScene {
       return false;
     }
 
-    const dynamicEntities = this.getVisibleDynamicEntitiesForSession(session);
-    const visibleEntities = this.getVisibleEntitiesForSession(session);
+    refreshShipPresentationFields(egoEntity);
+    const dynamicEntities = refreshEntitiesForSlimPayload(
+      this.getVisibleDynamicEntitiesForSession(session),
+    );
+    const visibleEntities = refreshEntitiesForSlimPayload(
+      this.getVisibleEntitiesForSession(session),
+    );
     // V23.02 expects the initial bootstrap as a split AddBalls2 -> SetState ->
     // prime/mode sequence. Collapsing everything into one waitForBubble batch
     // leaves Michelle stuck in "state waiting: yes" on login.
-    const bootstrapBaseStamp = getCurrentDestinyStamp();
-    const addBallsStamp = bootstrapBaseStamp;
-    const setStateStamp = (bootstrapBaseStamp + 1) >>> 0;
-    const primeStamp = setStateStamp;
-    const modeStamp = setStateStamp;
-    nextStamp = Math.max(nextStamp, modeStamp);
+    const deferInitialBallparkStateUntilBind =
+      session._space.deferInitialBallparkStateUntilBind === true;
+    const deferInitialBallparkClockUntilBind =
+      session._space.deferInitialBallparkClockUntilBind === true;
+    const allowDeferredJumpBootstrapVisuals =
+      options.allowDeferredJumpBootstrapVisuals === true;
+    const skipInitialBallparkRebase = session._skipNextInitialBallparkRebase === true;
+    const initialBallparkPreviousSimTimeMs = resolveBootstrapPreviousSimTimeMs(
+      session,
+      undefined,
+    );
+    const currentFactor = this.getTimeDilation();
+    const rawCurrentSimTimeMs = this.getCurrentSimTimeMs();
+    const currentSimTimeMs =
+      initialBallparkPreviousSimTimeMs === undefined ||
+      initialBallparkPreviousSimTimeMs === null
+        ? this.getCurrentSessionSimTimeMs(session, rawCurrentSimTimeMs)
+        : initialBallparkPreviousSimTimeMs;
+    session._space.clockOffsetMs = roundNumber(
+      currentSimTimeMs - rawCurrentSimTimeMs,
+      3,
+    );
+    this.refreshSessionClockSnapshot(session, rawCurrentSimTimeMs, {
+      currentSimTimeMs,
+    });
+    recordSessionJumpTimingTrace(session, "ensure-initial-ballpark-enter", {
+      options,
+      deferInitialBallparkStateUntilBind,
+      deferInitialBallparkClockUntilBind,
+      allowDeferredJumpBootstrapVisuals,
+      skipInitialBallparkRebase,
+      initialBallparkPreviousSimTimeMs,
+      currentFactor,
+      sceneTimeState: this.buildTimeStateSnapshot(),
+    });
 
-    const bootstrapUpdates = [
-      {
-        stamp: addBallsStamp,
-        payload: destiny.buildAddBalls2Payload(addBallsStamp, dynamicEntities),
-      },
-      {
-        stamp: setStateStamp,
-        payload: destiny.buildSetStatePayload(
-          setStateStamp,
-          this.system,
-          egoEntity.itemID,
-          visibleEntities,
-        ),
-      },
-    ];
+    const syncClockOnce = () => {
+      if (session._space.initialBallparkClockSynced === true) {
+        return;
+      }
 
-    const primeUpdates = buildShipPrimeUpdatesForEntities(dynamicEntities, primeStamp);
-    if (primeUpdates.length > 0) {
-      bootstrapUpdates.push(...primeUpdates);
+      // Always announce the destination scene's TiDi factor as part of the
+      // first jump bootstrap. Cross-system jumps that leave TiDi need the
+      // client clock resynced immediately, but seeding SetState too early
+      // causes Michelle to run backwards when the destination scene swaps in.
+      sendTimeDilationNotificationToSession(session, currentFactor);
+
+      const syncResult = this.syncSessionSimClock(session, {
+        previousSimTimeMs: initialBallparkPreviousSimTimeMs,
+        currentSimTimeMs,
+        emit: skipInitialBallparkRebase ? false : true,
+        forceRebase: skipInitialBallparkRebase ? false : true,
+      });
+      recordSessionJumpTimingTrace(session, "ensure-initial-ballpark-sync-clock", {
+        currentFactor,
+        skipInitialBallparkRebase,
+        initialBallparkPreviousSimTimeMs,
+        syncResult,
+      });
+      session._skipNextInitialBallparkRebase = false;
+      session._nextInitialBallparkPreviousSimTimeMs = null;
+      session._nextInitialBallparkPreviousTimeDilation = null;
+      session._nextInitialBallparkPreviousCapturedAtWallclockMs = null;
+      session._space.initialBallparkClockSynced = true;
+    };
+
+    const updateVisibleDynamicEntities = () => {
+      session._space.visibleDynamicEntityIDs = new Set(
+        dynamicEntities
+          .filter((entity) => entity.itemID !== egoEntity.itemID)
+          .map((entity) => entity.itemID),
+      );
+    };
+
+    const bootstrapBaseRawStamp = this.getCurrentDestinyStamp(rawCurrentSimTimeMs);
+    const bootstrapFileTime = this.getCurrentSessionFileTime(
+      session,
+      rawCurrentSimTimeMs,
+    );
+    const addBallsStamp = this.translateDestinyStampForSession(
+      session,
+      bootstrapBaseRawStamp,
+    );
+    recordSessionJumpTimingTrace(session, "ensure-initial-ballpark-bootstrap-state", {
+      currentSimTimeMs,
+      bootstrapBaseStamp: addBallsStamp,
+      bootstrapBaseRawStamp,
+      bootstrapFileTime,
+      addBallsStamp,
+      dynamicEntityCount: dynamicEntities.length,
+      visibleEntityCount: visibleEntities.length,
+    });
+
+    if (
+      deferInitialBallparkStateUntilBind &&
+      allowDeferredJumpBootstrapVisuals === true
+    ) {
+      if (!deferInitialBallparkClockUntilBind) {
+        syncClockOnce();
+      }
+      if (session._space.initialBallparkVisualsSent !== true) {
+        this.sendDestinyUpdates(session, [
+          {
+            stamp: addBallsStamp,
+            payload: destiny.buildAddBalls2Payload(
+              addBallsStamp,
+              dynamicEntities,
+              bootstrapFileTime,
+            ),
+          },
+        ], true, { translateStamps: false });
+        recordSessionJumpTimingTrace(session, "ensure-initial-ballpark-addballs-only", {
+          addBallsStamp,
+          bootstrapFileTime,
+          dynamicEntityCount: dynamicEntities.length,
+        });
+        session._space.initialBallparkVisualsSent = true;
+        updateVisibleDynamicEntities();
+      }
+
+      return true;
     }
 
+    syncClockOnce();
+    const setStateRawStamp = (bootstrapBaseRawStamp + 1) >>> 0;
+    const setStateStamp = this.translateDestinyStampForSession(
+      session,
+      setStateRawStamp,
+    );
+    const primeStamp = setStateStamp;
+    const modeStamp = setStateStamp;
+    this.nextStamp = Math.max(this.nextStamp, setStateRawStamp);
+
+    const setStateUpdate = {
+      stamp: setStateStamp,
+      payload: destiny.buildSetStatePayload(
+        setStateStamp,
+        this.system,
+        egoEntity.itemID,
+        visibleEntities,
+        bootstrapFileTime,
+      ),
+    };
+
+    const primeUpdates = buildShipPrimeUpdatesForEntities(dynamicEntities, primeStamp);
     const followUp = this.buildModeUpdates(egoEntity, modeStamp);
     logBallDebug("bootstrap.ego", egoEntity, {
       addBallsStamp,
@@ -4307,27 +10907,61 @@ class SolarSystemScene {
       modeStamp,
       dynamicEntityCount: dynamicEntities.length,
       visibleEntityCount: visibleEntities.length,
+      addBallsAlreadySent: session._space.initialBallparkVisualsSent === true,
+      deferredStateUntilBind: deferInitialBallparkStateUntilBind,
     });
-    if (followUp.length > 0) {
-      bootstrapUpdates.push(...followUp);
+
+    if (session._space.initialBallparkVisualsSent !== true) {
+      this.sendDestinyUpdates(session, [
+        {
+          stamp: addBallsStamp,
+          payload: destiny.buildAddBalls2Payload(
+            addBallsStamp,
+            dynamicEntities,
+            bootstrapFileTime,
+          ),
+        },
+      ], true, { translateStamps: false });
+      recordSessionJumpTimingTrace(session, "ensure-initial-ballpark-addballs", {
+        addBallsStamp,
+        bootstrapFileTime,
+        dynamicEntityCount: dynamicEntities.length,
+      });
+      session._space.initialBallparkVisualsSent = true;
     }
 
-    this.sendDestinyUpdates(session, [bootstrapUpdates[0]], true);
-    this.sendDestinyUpdates(session, [bootstrapUpdates[1]]);
+    this.sendDestinyUpdates(session, [setStateUpdate], false, {
+      translateStamps: false,
+    });
+    recordSessionJumpTimingTrace(session, "ensure-initial-ballpark-setstate", {
+      setStateStamp,
+      bootstrapFileTime,
+      visibleEntityCount: visibleEntities.length,
+    });
     if (primeUpdates.length > 0) {
-      this.sendDestinyUpdates(session, primeUpdates);
+      this.sendDestinyUpdates(session, primeUpdates, false, {
+        translateStamps: false,
+      });
+      recordSessionJumpTimingTrace(session, "ensure-initial-ballpark-prime", {
+        primeStamp,
+        primeUpdateCount: primeUpdates.length,
+      });
     }
     if (followUp.length > 0) {
-      this.sendDestinyUpdates(session, followUp);
+      this.sendDestinyUpdates(session, followUp, false, {
+        translateStamps: false,
+      });
+      recordSessionJumpTimingTrace(session, "ensure-initial-ballpark-followup", {
+        modeStamp,
+        followUpCount: followUp.length,
+      });
     }
 
     session._space.initialStateSent = true;
     session._space.pendingUndockMovement = false;
-    session._space.visibleDynamicEntityIDs = new Set(
-      dynamicEntities
-        .filter((entity) => entity.itemID !== egoEntity.itemID)
-        .map((entity) => entity.itemID),
-    );
+    session._space.deferInitialBallparkClockUntilBind = false;
+    session._space.deferInitialBallparkStateUntilBind = false;
+    updateVisibleDynamicEntities();
     return true;
   }
 
@@ -4336,38 +10970,50 @@ class SolarSystemScene {
       return;
     }
 
-    const stamp = getNextStamp();
-    const payload = {
-      stamp,
-      payload: destiny.buildAddBalls2Payload(stamp, entities),
-    };
+    const refreshedEntities = refreshEntitiesForSlimPayload(entities);
+    const rawStamp = this.getNextDestinyStamp();
+    const rawSimTimeMs = this.getCurrentSimTimeMs();
 
     for (const session of this.sessions.values()) {
       if (session === excludedSession || !isReadyForDestiny(session)) {
         continue;
       }
-      const visibleEntities = entities.filter((entity) =>
+      const visibleEntities = refreshedEntities.filter((entity) =>
         this.canSessionSeeDynamicEntity(session, entity),
       );
       if (visibleEntities.length === 0) {
         continue;
       }
+      const stamp = rawStamp;
+      const translatedStamp = this.translateDestinyStampForSession(session, rawStamp);
+      const simFileTime = this.getCurrentSessionFileTime(session, rawSimTimeMs);
       this.sendDestinyUpdates(session, [
         {
-          ...payload,
-          payload: destiny.buildAddBalls2Payload(stamp, visibleEntities),
+          payload: destiny.buildAddBalls2Payload(
+            translatedStamp,
+            visibleEntities,
+            simFileTime,
+          ),
+          stamp: translatedStamp,
         },
-      ]);
-      const primeUpdates = buildShipPrimeUpdatesForEntities(visibleEntities);
+      ], false, { translateStamps: false });
+      const primeUpdates = buildShipPrimeUpdatesForEntities(
+        visibleEntities,
+        translatedStamp,
+      );
       if (primeUpdates.length > 0) {
-        this.sendDestinyUpdates(session, primeUpdates);
+        this.sendDestinyUpdates(session, primeUpdates, false, {
+          translateStamps: false,
+        });
       }
       const modeUpdates = [];
       for (const entity of visibleEntities) {
-        modeUpdates.push(...this.buildModeUpdates(entity));
+        modeUpdates.push(...this.buildModeUpdates(entity, translatedStamp));
       }
       if (modeUpdates.length > 0) {
-        this.sendDestinyUpdates(session, modeUpdates);
+        this.sendDestinyUpdates(session, modeUpdates, false, {
+          translateStamps: false,
+        });
       }
       if (session._space) {
         const currentIDs =
@@ -4384,19 +11030,53 @@ class SolarSystemScene {
     }
   }
 
-  broadcastRemoveBall(entityID, excludedSession = null) {
-    const update = {
-      stamp: getNextStamp(),
-      payload: destiny.buildRemoveBallsPayload([entityID]),
-    };
+  broadcastRemoveBall(entityID, excludedSession = null, options = {}) {
+    const normalizedEntityID = toInt(entityID, 0);
+    const terminalDestructionEffectID = toInt(
+      options && options.terminalDestructionEffectID,
+      0,
+    );
+    const visibilityEntity =
+      options && options.visibilityEntity && typeof options.visibilityEntity === "object"
+        ? options.visibilityEntity
+        : null;
+    const stamp = this.getNextDestinyStamp();
+    const updates = [];
+    if (terminalDestructionEffectID > 0) {
+      updates.push({
+        stamp,
+        payload: destiny.buildTerminalPlayDestructionEffectPayload(
+          normalizedEntityID,
+          terminalDestructionEffectID,
+        ),
+      });
+    }
+    updates.push({
+      stamp,
+      payload: destiny.buildRemoveBallsPayload([normalizedEntityID]),
+    });
 
     for (const session of this.sessions.values()) {
       if (session === excludedSession || !isReadyForDestiny(session)) {
         continue;
       }
-      this.sendDestinyUpdates(session, [update]);
-      if (session._space && session._space.visibleDynamicEntityIDs instanceof Set) {
-        session._space.visibleDynamicEntityIDs.delete(entityID);
+      const visibleEntityIDs =
+        session._space && session._space.visibleDynamicEntityIDs instanceof Set
+          ? session._space.visibleDynamicEntityIDs
+          : null;
+      const wasMarkedVisible =
+        visibleEntityIDs instanceof Set && visibleEntityIDs.has(normalizedEntityID);
+      const canStillSeeEntity =
+        visibilityEntity && this.canSessionSeeDynamicEntity(session, visibilityEntity);
+      if (!wasMarkedVisible && !canStillSeeEntity) {
+        continue;
+      }
+
+      // Be tolerant of visibility-cache drift so observers still drop ghost balls
+      // when the scene says they can see the entity but the cached set missed it.
+      this.sendDestinyUpdates(session, updates);
+      if (visibleEntityIDs instanceof Set) {
+        visibleEntityIDs.delete(normalizedEntityID);
       }
     }
   }
@@ -4430,16 +11110,19 @@ class SolarSystemScene {
     }
   }
 
-  scheduleWatcherMovementAnchor(entity, now = Date.now(), reason = "movement") {
+  scheduleWatcherMovementAnchor(
+    entity,
+    now = this.getCurrentSimTimeMs(),
+    reason = "movement",
+  ) {
     if (!entity) {
       return false;
     }
 
-    // Force a fast watcher velocity correction after command changes, but do
-    // not also force an immediate position anchor. Position rebases during
-    // heading changes were still landing on the same 1-second Destiny stamp
-    // and caused the visible remote jolts. Let the periodic position anchor
-    // handle reconciliation instead.
+    // Mark watcher correction cadence dirty after command changes. Non-active
+    // movers may still emit a quick correction, but active subwarp movers now
+    // stay entirely on client-side command simulation until an explicit stop /
+    // resync / warp-edge anchor is needed.
     entity.lastObserverCorrectionBroadcastAt = 0;
     logMovementDebug("observer.anchor.scheduled", entity, {
       reason,
@@ -4453,7 +11136,7 @@ class SolarSystemScene {
       return false;
     }
 
-    const now = Date.now();
+    const now = this.getCurrentSimTimeMs();
     const commandDirection = normalizeVector(direction, entity.direction);
     clearTrackingState(entity);
     entity.targetPoint = addVectors(
@@ -4473,7 +11156,7 @@ class SolarSystemScene {
       commandDirection: summarizeVector(commandDirection),
     });
 
-    const movementStamp = getMovementStamp(now);
+    const movementStamp = this.getMovementStamp(now);
     const updates = buildDirectedMovementUpdates(
       entity,
       commandDirection,
@@ -4494,7 +11177,7 @@ class SolarSystemScene {
       return false;
     }
 
-    const now = Date.now();
+    const now = this.getCurrentSimTimeMs();
     const alignTargetPosition = getTargetMotionPosition(target);
     const commandDirection = normalizeVector(
       subtractVectors(alignTargetPosition, entity.position),
@@ -4522,7 +11205,7 @@ class SolarSystemScene {
       alignTargetPosition: summarizeVector(alignTargetPosition),
     });
 
-    const movementStamp = getMovementStamp(now);
+    const movementStamp = this.getMovementStamp(now);
     const updates = buildDirectedMovementUpdates(
       entity,
       commandDirection,
@@ -4549,7 +11232,7 @@ class SolarSystemScene {
       return false;
     }
 
-    const now = Date.now();
+    const now = this.getCurrentSimTimeMs();
     const explicitDockingTargetID =
       target.kind === "station" &&
       Number(options.dockingTargetID || 0) === target.itemID
@@ -4616,7 +11299,7 @@ class SolarSystemScene {
           : null,
     });
 
-    const movementStamp = getMovementStamp(now);
+    const movementStamp = this.getMovementStamp(now);
     const updates = [
       {
         stamp: movementStamp,
@@ -4656,7 +11339,7 @@ class SolarSystemScene {
       return false;
     }
 
-    const now = Date.now();
+    const now = this.getCurrentSimTimeMs();
     const radial = normalizeVector(
       subtractVectors(entity.position, target.position),
       buildPerpendicular(entity.direction),
@@ -4688,7 +11371,7 @@ class SolarSystemScene {
       orbitTargetPosition: summarizeVector(target.position),
     });
 
-    const movementStamp = getMovementStamp(now);
+    const movementStamp = this.getMovementStamp(now);
     const updates = [
       {
         stamp: movementStamp,
@@ -4766,8 +11449,30 @@ class SolarSystemScene {
       };
     }
 
+    try {
+      const crimewatchState = require(path.join(__dirname, "../services/security/crimewatchState"));
+      const crimewatchNow =
+        session &&
+        session._space &&
+        Number.isFinite(Number(session._space.simTimeMs))
+          ? Number(session._space.simTimeMs)
+          : this.getCurrentSimTimeMs();
+      if (
+        crimewatchState &&
+        crimewatchState.isCriminallyFlagged(session && session.characterID, crimewatchNow)
+      ) {
+        return {
+          success: false,
+          errorMsg: "CRIMINAL_TIMER_ACTIVE",
+        };
+      }
+    } catch (error) {
+      log.warn(`[SpaceRuntime] Crimewatch warp check failed: ${error.message}`);
+    }
+
     const pendingWarp = buildPendingWarpRequest(entity, point, {
       ...options,
+      nowMs: this.getCurrentSimTimeMs(),
       warpSpeedAU: options.warpSpeedAU || entity.warpSpeedAU,
     });
     if (!pendingWarp) {
@@ -4777,8 +11482,8 @@ class SolarSystemScene {
       };
     }
 
-    const now = Date.now();
-    const movementStamp = getMovementStamp(now);
+    const now = this.getCurrentSimTimeMs();
+    const movementStamp = this.getMovementStamp(now);
     clearTrackingState(entity);
     entity.pendingWarp = pendingWarp;
     entity.mode = "WARP";
@@ -4789,7 +11494,9 @@ class SolarSystemScene {
     );
     entity.targetPoint = cloneVector(pendingWarp.targetPoint);
     entity.targetEntityID = pendingWarp.targetEntityID || null;
-    entity.warpState = buildPreparingWarpState(entity, pendingWarp);
+    entity.warpState = buildPreparingWarpState(entity, pendingWarp, {
+      nowMs: now,
+    });
     persistShipEntity(entity);
     armMovementTrace(entity, "warp", {
       pendingWarp: summarizePendingWarp(pendingWarp),
@@ -4820,13 +11527,165 @@ class SolarSystemScene {
     };
   }
 
+  warpDynamicEntityToPoint(entityOrID, point, options = {}) {
+    const entity =
+      typeof entityOrID === "object" && entityOrID !== null
+        ? entityOrID
+        : this.getEntityByID(entityOrID);
+    if (!entity || entity.kind !== "ship" || entity.pendingDock) {
+      return {
+        success: false,
+        errorMsg: "SHIP_NOT_FOUND",
+      };
+    }
+
+    const now = this.getCurrentSimTimeMs();
+    const pendingWarp = buildPendingWarpRequest(entity, point, {
+      ...options,
+      nowMs: now,
+      warpSpeedAU: options.warpSpeedAU || entity.warpSpeedAU,
+    });
+    if (!pendingWarp) {
+      return {
+        success: false,
+        errorMsg: "WARP_DISTANCE_TOO_CLOSE",
+      };
+    }
+
+    const desiredDirection = normalizeVector(
+      subtractVectors(pendingWarp.targetPoint, entity.position),
+      entity.direction,
+    );
+    clearTrackingState(entity);
+    entity.pendingWarp = pendingWarp;
+    entity.mode = "WARP";
+    entity.speedFraction = 1;
+    entity.direction = desiredDirection;
+    entity.targetPoint = cloneVector(pendingWarp.targetPoint);
+    entity.targetEntityID = pendingWarp.targetEntityID || null;
+    if (options.forceImmediateStart === true) {
+      entity.velocity = scaleVector(desiredDirection, entity.maxVelocity);
+      pendingWarp.requestedAtMs = now - Math.max(
+        1_000,
+        (toFiniteNumber(entity.alignTime, 0) * 1000) + 500,
+      );
+    }
+    entity.warpState = buildPreparingWarpState(entity, pendingWarp, {
+      nowMs: now,
+    });
+    persistShipEntity(entity);
+    armMovementTrace(entity, "warp", {
+      pendingWarp: summarizePendingWarp(pendingWarp),
+      forceImmediateStart: options.forceImmediateStart === true,
+    }, now);
+    logMovementDebug("warp.requested.sessionless", entity, {
+      forceImmediateStart: options.forceImmediateStart === true,
+    });
+    logWarpDebug("warp.requested.sessionless", entity, {
+      forceImmediateStart: options.forceImmediateStart === true,
+      officialProfile: buildOfficialWarpReferenceProfile(
+        pendingWarp.totalDistance,
+        pendingWarp.warpSpeedAU,
+        entity.maxVelocity,
+      ),
+    });
+
+    const movementStamp = this.getMovementStamp(now);
+    const prepareDispatch = buildWarpPrepareDispatch(
+      entity,
+      movementStamp,
+      entity.warpState,
+    );
+    this.broadcastMovementUpdates(prepareDispatch.sharedUpdates);
+    return {
+      success: true,
+      data: pendingWarp,
+    };
+  }
+
+  teleportDynamicEntityToPoint(entityOrID, point, options = {}) {
+    const entity =
+      typeof entityOrID === "object" && entityOrID !== null
+        ? entityOrID
+        : this.getEntityByID(entityOrID);
+    if (!entity || !this.dynamicEntities.has(entity.itemID)) {
+      return {
+        success: false,
+        errorMsg: "DYNAMIC_ENTITY_NOT_FOUND",
+      };
+    }
+
+    const now = this.getCurrentSimTimeMs();
+    const movementStamp = this.getMovementStamp(now);
+    const previousBubbleID = toInt(entity.bubbleID, 0);
+    const previousPublicGridClusterKey = entity.publicGridClusterKey || null;
+
+    entity.position = cloneVector(point, entity.position);
+    entity.direction = normalizeVector(
+      options.direction,
+      entity.direction || { x: 1, y: 0, z: 0 },
+    );
+    resetEntityMotion(entity);
+    entity.lastObserverCorrectionBroadcastAt = 0;
+    entity.lastObserverPositionBroadcastAt = 0;
+    entity.lastWarpCorrectionBroadcastAt = 0;
+    this.reconcileEntityPublicGrid(entity);
+    this.reconcileEntityBubble(entity);
+    this.publicGridCompositionDirty = true;
+    this.ensurePublicGridComposition();
+    persistDynamicEntity(entity);
+
+    const visibilityChanged =
+      toInt(entity.bubbleID, 0) !== previousBubbleID ||
+      (entity.publicGridClusterKey || null) !== previousPublicGridClusterKey;
+    if (visibilityChanged) {
+      this.syncDynamicVisibilityForAllSessions(now);
+    }
+
+    this.broadcastMovementUpdates([
+      {
+        stamp: movementStamp,
+        payload: destiny.buildSetSpeedFractionPayload(entity.itemID, 0),
+      },
+      {
+        stamp: movementStamp,
+        payload: destiny.buildSetBallPositionPayload(entity.itemID, entity.position),
+      },
+      {
+        stamp: movementStamp,
+        payload: destiny.buildStopPayload(entity.itemID),
+      },
+      {
+        stamp: movementStamp,
+        payload: destiny.buildSetBallVelocityPayload(entity.itemID, entity.velocity),
+      },
+    ]);
+
+    if (
+      visibilityChanged &&
+      options.refreshOwnerSession !== false &&
+      entity.session &&
+      isReadyForDestiny(entity.session)
+    ) {
+      this.sendStateRefresh(entity.session, entity, movementStamp);
+    }
+
+    return {
+      success: true,
+      data: {
+        entity,
+        stamp: movementStamp,
+      },
+    };
+  }
+
   setSpeedFraction(session, fraction) {
     const entity = this.getShipEntityForSession(session);
     if (!entity || entity.mode === "WARP" || entity.pendingDock) {
       return false;
     }
 
-    const now = Date.now();
+    const now = this.getCurrentSimTimeMs();
     const normalizedFraction = clamp(fraction, 0, MAX_SUBWARP_SPEED_FRACTION);
     if (normalizedFraction <= 0) {
       return this.stop(session);
@@ -4846,7 +11705,7 @@ class SolarSystemScene {
     }, now);
     logMovementDebug("cmd.speed", entity);
 
-    const stamp = getMovementStamp(now);
+    const stamp = this.getMovementStamp(now);
     this.broadcastMovementUpdates([
       {
         stamp,
@@ -4867,7 +11726,12 @@ class SolarSystemScene {
       return false;
     }
 
-    const now = Date.now();
+    if (entity.mode === "WARP" && entity.warpState && !entity.pendingWarp) {
+      logMovementDebug("cmd.stop.ignored.activeWarp", entity);
+      return false;
+    }
+
+    const now = this.getCurrentSimTimeMs();
     const wasAlreadyStopped =
       entity.mode === "STOP" &&
       entity.speedFraction <= 0 &&
@@ -4884,13 +11748,24 @@ class SolarSystemScene {
       return true;
     }
 
-    const stamp = getMovementStamp(now);
-    this.broadcastMovementUpdates([
+    const stamp = this.getMovementStamp(now);
+    const updates = [
+      {
+        stamp,
+        payload: destiny.buildSetSpeedFractionPayload(entity.itemID, 0),
+      },
       {
         stamp,
         payload: destiny.buildStopPayload(entity.itemID),
       },
-    ]);
+    ];
+    if (magnitude(entity.velocity) > 0) {
+      updates.push({
+        stamp,
+        payload: destiny.buildSetBallVelocityPayload(entity.itemID, entity.velocity),
+      });
+    }
+    this.broadcastMovementUpdates(updates);
     this.scheduleWatcherMovementAnchor(entity, now, "stop");
 
     return true;
@@ -4933,9 +11808,9 @@ class SolarSystemScene {
     entity.targetPoint = cloneVector(entity.position);
     entity.pendingDock = {
       stationID: station.itemID,
-      acceptedAtMs: Date.now(),
-      completeAtMs: Date.now() + STATION_DOCK_ACCEPT_DELAY_MS,
-      acceptedAtFileTime: currentFileTime(),
+      acceptedAtMs: this.getCurrentSimTimeMs(),
+      completeAtMs: this.getCurrentSimTimeMs() + STATION_DOCK_ACCEPT_DELAY_MS,
+      acceptedAtFileTime: this.getCurrentFileTime(),
     };
     persistShipEntity(entity);
     logMovementDebug("dock.accepted", entity, {
@@ -4943,7 +11818,7 @@ class SolarSystemScene {
       dockingState: buildDockingDebugState(entity, station),
     });
 
-    const stamp = getNextStamp();
+    const stamp = this.getNextDestinyStamp();
     this.broadcastMovementUpdates([
       {
         stamp,
@@ -4980,11 +11855,18 @@ class SolarSystemScene {
     };
   }
 
-  tick(now) {
-    const deltaSeconds = Math.max((now - this.lastTickAt) / 1000, 0.05);
-    this.lastTickAt = now;
+  tick(wallclockNow) {
+    const clockState = this.advanceClock(wallclockNow);
+    const now = clockState.simNowMs;
+    const deltaSeconds = Math.max(clockState.simDeltaMs / 1000, 0);
+    // DoSimClockRebase mirrors native client sim-clock changes. Broadcasting
+    // it as a periodic keepalive made Michelle's ball time run backwards, so
+    // rebases are now limited to scene entry/bootstrap and explicit TiDi
+    // changes until the native TiDi update path is reproduced.
 
-    const settledStargates = this.settleTransientStargateActivationStates(now);
+    const settledStargates = this.settleTransientStargateActivationStates(
+      clockState.wallclockNowMs,
+    );
     if (settledStargates.length > 0) {
       this.broadcastSlimItemChanges(settledStargates);
     }
@@ -4994,7 +11876,247 @@ class SolarSystemScene {
     const sessionOnlyUpdates = [];
     const watcherOnlyUpdates = [];
     const dockRequests = new Map();
+    try {
+      const crimewatchState = require(path.join(__dirname, "../services/security/crimewatchState"));
+      if (crimewatchState && typeof crimewatchState.tickScene === "function") {
+        crimewatchState.tickScene(this, now);
+      }
+    } catch (error) {
+      log.warn(`[SpaceRuntime] Crimewatch tick failed for system=${this.systemID}: ${error.message}`);
+    }
+    try {
+      const npcService = require(path.join(__dirname, "./npc"));
+      if (npcService && typeof npcService.tickScene === "function") {
+        npcService.tickScene(this, now);
+      }
+    } catch (error) {
+      log.warn(`[SpaceRuntime] NPC tick failed for system=${this.systemID}: ${error.message}`);
+    }
     for (const entity of this.dynamicEntities.values()) {
+      if (entity.activeModuleEffects instanceof Map && entity.activeModuleEffects.size > 0) {
+        for (const effectState of [...entity.activeModuleEffects.values()]) {
+          const cycleBoundaryMs = getEffectCycleBoundaryMs(effectState, now);
+          if (!effectState || now < cycleBoundaryMs) {
+            continue;
+          }
+
+          const isGenericEffect = Boolean(effectState.isGeneric);
+          const finalizeDeactivation = isGenericEffect
+            ? (sess, modID, opts) => this.finalizeGenericModuleDeactivation(sess, modID, opts)
+            : (sess, modID, opts) => this.finalizePropulsionModuleDeactivation(sess, modID, opts);
+          const notifyEffect = isGenericEffect
+            ? notifyGenericModuleEffectState
+            : notifyModuleEffectState;
+
+          if (toFiniteNumber(effectState.deactivateAtMs, 0) > 0) {
+            if (entity.session && isReadyForDestiny(entity.session)) {
+              finalizeDeactivation(
+                entity.session,
+                effectState.moduleID,
+                {
+                  reason: effectState.stopReason || "manual",
+                  nowMs: Math.max(
+                    cycleBoundaryMs,
+                    toFiniteNumber(effectState.deactivateAtMs, 0),
+                  ),
+                },
+              );
+            } else {
+              entity.activeModuleEffects.delete(toInt(effectState.moduleID, 0));
+            }
+            continue;
+          }
+
+          const previousChargeAmount = getEntityCapacitorAmount(entity);
+          if (!consumeEntityCapacitor(entity, effectState.capNeed)) {
+            if (entity.session && isReadyForDestiny(entity.session)) {
+              notifyCapacitorChangeToSession(
+                entity.session,
+                entity,
+                now,
+                previousChargeAmount,
+              );
+              finalizeDeactivation(entity.session, effectState.moduleID, {
+                reason: "capacitor",
+                nowMs: cycleBoundaryMs,
+              });
+            } else {
+              entity.activeModuleEffects.delete(toInt(effectState.moduleID, 0));
+            }
+            continue;
+          }
+          // CCP parity: Update the client's capacitor gauge each cycle.
+          if (entity.session && isReadyForDestiny(entity.session)) {
+            notifyCapacitorChangeToSession(
+              entity.session,
+              entity,
+              now,
+              previousChargeAmount,
+            );
+          }
+
+          let cycleStopReason = null;
+          if (effectState.weaponFamily === "laserTurret") {
+            const cycleResult = executeLaserTurretCycle(
+              this,
+              entity,
+              effectState,
+              cycleBoundaryMs,
+            );
+            if (!cycleResult.success) {
+              cycleStopReason = cycleResult.stopReason || "weapon";
+            } else if (cycleResult.data) {
+              if (
+                (
+                  cycleResult.data.destroyResult &&
+                  cycleResult.data.destroyResult.success
+                ) ||
+                (
+                  cycleResult.data.damageResult &&
+                  cycleResult.data.damageResult.success &&
+                  cycleResult.data.damageResult.data &&
+                  cycleResult.data.damageResult.data.destroyed
+                )
+              ) {
+                cycleStopReason = "target";
+              } else if (cycleResult.data.stopReason) {
+                cycleStopReason = cycleResult.data.stopReason;
+              }
+            }
+          }
+          if (cycleStopReason) {
+            if (entity.session && isReadyForDestiny(entity.session)) {
+              finalizeDeactivation(entity.session, effectState.moduleID, {
+                reason: cycleStopReason,
+                nowMs: cycleBoundaryMs,
+              });
+            } else {
+              entity.activeModuleEffects.delete(toInt(effectState.moduleID, 0));
+            }
+            continue;
+          }
+
+          effectState.startedAtMs = cycleBoundaryMs;
+          effectState.nextCycleAtMs =
+            cycleBoundaryMs + Math.max(1, toFiniteNumber(effectState.durationMs, 1000));
+          if (entity.session && isReadyForDestiny(entity.session)) {
+            notifyEffect(entity.session, entity, effectState, true, {
+              whenMs: cycleBoundaryMs,
+              startTimeMs: cycleBoundaryMs,
+            });
+          }
+        }
+      }
+
+      // -----------------------------------------------------------------
+      // CCP parity: Non-linear capacitor recharge.
+      //
+      // Formula (instantaneous rate):
+      //   dC/dt = (10 * Cmax / tau) * ( sqrt(C/Cmax) - C/Cmax )
+      //
+      // Where Cmax = capacitorCapacity (GJ), tau = rechargeRate (ms → s),
+      // C = current capacitor level.  Peak recharge occurs at exactly 25%
+      // capacitor.  This matches CCP's Dogma engine as verified by
+      // community tools (Pyfa, EFT) and the EVE University wiki.
+      //
+      // Notifications are throttled to ~500 ms to avoid flooding the
+      // client (which itself only polls at 500 ms intervals).
+      // -----------------------------------------------------------------
+      if (
+        entity.kind === "ship" &&
+        toFiniteNumber(entity.capacitorCapacity, 0) > 0 &&
+        toFiniteNumber(entity.capacitorRechargeRate, 0) > 0
+      ) {
+        const capRatio = getEntityCapacitorRatio(entity);
+        if (capRatio < 1) {
+          const Cmax = entity.capacitorCapacity;
+          const tauSeconds = entity.capacitorRechargeRate / 1000;
+          const previousChargeAmount = Cmax * capRatio;
+          const rechargedRatio = advancePassiveRechargeRatio(
+            capRatio,
+            deltaSeconds,
+            tauSeconds,
+          );
+          const newRatio = settlePassiveRechargeRatio(rechargedRatio, Cmax);
+          if (newRatio !== capRatio) {
+            setEntityCapacitorRatio(entity, newRatio);
+            // Throttle persistence and client notifications to ~500 ms.
+            const lastCapNotify = toFiniteNumber(entity._lastCapNotifyAtMs, 0);
+            if (now - lastCapNotify >= 500) {
+              persistEntityCapacitorRatio(entity);
+              if (entity.session && isReadyForDestiny(entity.session)) {
+                notifyCapacitorChangeToSession(
+                  entity.session,
+                  entity,
+                  now,
+                  previousChargeAmount,
+                );
+              }
+              entity._lastCapNotifyAtMs = now;
+            }
+          }
+        }
+      }
+
+      // -----------------------------------------------------------------
+      // Server-authoritative passive shield recharge.
+      //
+      // The client animates shield recovery from the damage-state tau, but
+      // combat must still consume a server-side shield pool first. Keep the
+      // runtime conditionState in sync so later shots hit regenerated shield
+      // instead of incorrectly continuing straight into hull.
+      // -----------------------------------------------------------------
+      if (
+        entity.kind === "ship" &&
+        toFiniteNumber(entity.shieldCapacity, 0) > 0 &&
+        toFiniteNumber(entity.shieldRechargeRate, 0) > 0
+      ) {
+        const previousConditionState = normalizeShipConditionState(entity.conditionState);
+        const shieldRatio = clamp(
+          toFiniteNumber(previousConditionState.shieldCharge, 0),
+          0,
+          1,
+        );
+        if (shieldRatio < 1) {
+          const shieldCapacity = entity.shieldCapacity;
+          const rechargeSeconds = entity.shieldRechargeRate / 1000;
+          const seededShieldRatio =
+            shieldRatio > 0
+              ? shieldRatio
+              : Math.min(1, 1 / Math.max(1, shieldCapacity));
+          const rechargedRatio = advancePassiveRechargeRatio(
+            seededShieldRatio,
+            deltaSeconds,
+            rechargeSeconds,
+          );
+          const newShieldRatio = settlePassiveRechargeRatio(rechargedRatio, shieldCapacity);
+          if (Math.abs(newShieldRatio - shieldRatio) > 1e-9) {
+            entity.conditionState = normalizeShipConditionState({
+              ...previousConditionState,
+              shieldCharge: newShieldRatio,
+            });
+            const lastShieldNotify = toFiniteNumber(entity._lastShieldNotifyAtMs, 0);
+            if (now - lastShieldNotify >= 500) {
+              const healthTransitionResult = buildShipHealthTransitionResult(
+                entity,
+                previousConditionState,
+              );
+              persistDynamicEntity(entity);
+              if (entity.session && isReadyForDestiny(entity.session)) {
+                notifyShipHealthAttributesToSession(
+                  entity.session,
+                  entity,
+                  healthTransitionResult,
+                  now,
+                );
+              }
+              broadcastDamageStateChange(this, entity, now);
+              entity._lastShieldNotifyAtMs = now;
+            }
+          }
+        }
+      }
+
       const traceActive = isMovementTraceActive(entity, now);
       if (entity.pendingDock) {
         if (
@@ -5015,7 +12137,7 @@ class SolarSystemScene {
         const pendingWarp = entity.pendingWarp;
         const pendingWarpState = evaluatePendingWarp(entity, pendingWarp, now);
         if (pendingWarpState.ready) {
-          const currentStamp = getCurrentDestinyStamp(now);
+          const currentStamp = this.getCurrentDestinyStamp(now);
           const pilotCanReceiveWarpEgoStateRefresh =
             ENABLE_PILOT_WARP_EGO_STATE_REFRESH &&
             entity.session &&
@@ -5043,13 +12165,16 @@ class SolarSystemScene {
             pendingWarpState,
             preWarpSyncStamp: toInt(pendingWarp.preWarpSyncStamp, 0),
           });
-          const warpState = activatePendingWarp(entity, pendingWarp);
+          const warpState = activatePendingWarp(entity, pendingWarp, {
+            nowMs: now,
+            defaultEffectStamp: currentStamp,
+          });
           if (warpState) {
             this.beginWarpDepartureOwnership(entity, now);
             const warpStartStamp =
               entity.session && isReadyForDestiny(entity.session)
                 ? currentStamp
-                : getNextStamp(now);
+                : this.getNextDestinyStamp(now);
             warpState.commandStamp = warpStartStamp;
             warpState.startupGuidanceAtMs = 0;
             warpState.startupGuidanceStamp = 0;
@@ -5067,16 +12192,22 @@ class SolarSystemScene {
               warpStartStamp,
             );
             const pilotWarpFactor = getPilotWarpFactorOptionA(entity, warpState);
-            const warpStartUpdates = [
-              buildWarpStartEffectUpdate(entity, warpStartStamp),
-            ];
+            const warpStartUpdates = buildWarpStartUpdates(
+              entity,
+              warpState,
+              warpStartStamp,
+              {
+                includeEntityWarpIn: false,
+              },
+            );
             if (entity.session && isReadyForDestiny(entity.session)) {
               // Do NOT send any DoDestinyUpdate to the pilot between the
               // WarpTo prepare dispatch and warp completion.  ANY server update
               // during WarpState=1 causes a state-history rebase that disrupts
               // alignment progress (the "establishing warp vector" bar drops).
               // The DLL handles WarpState 1→2 entirely on its own.
-              // Watchers still get OnSpecialFX so they see the warp effect.
+              // Watchers still need the live warp-start contract so the
+              // client can drive departure motion and FX locally.
               watcherOnlyUpdates.push({
                 excludedSession: entity.session,
                 updates: warpStartUpdates,
@@ -5211,7 +12342,7 @@ class SolarSystemScene {
             toFiniteNumber(warpState && warpState.startTimeMs, now),
         );
         const warpCorrectionStamp = Math.max(
-          getMovementStamp(now),
+          this.getMovementStamp(now),
           warpCommandStamp,
         );
         const hasMeaningfulWarpVelocity = magnitude(entity.velocity) > 0.5;
@@ -5362,37 +12493,62 @@ class SolarSystemScene {
           entity.lastWarpDiagnosticStamp = warpCorrectionStamp;
         }
       } else {
-        const correctionStamp = getMovementStamp(now);
-        const usesActiveWatcherCadence = usesActiveSubwarpWatcherCorrections(entity);
-        const observerNeedsPositionAnchor = usesActiveWatcherCadence
-          ? correctionStamp !== toInt(entity.lastObserverPositionBroadcastStamp, -1)
-          : (now - entity.lastObserverPositionBroadcastAt) >=
-              getWatcherPositionCorrectionIntervalMs(entity);
-        const correctionUpdates = buildPositionVelocityCorrectionUpdates(entity, {
-          stamp: correctionStamp,
-          includePosition: observerNeedsPositionAnchor,
-        });
-        correctionDebug = {
-          stamp: correctionStamp,
-          includePosition: observerNeedsPositionAnchor,
-          includeVelocity: true,
-          target: "watchers-only",
-          dispatched: false,
-        };
-        if (
-          !result.warpCompleted &&
-          now - entity.lastObserverCorrectionBroadcastAt >=
-          getWatcherCorrectionIntervalMs(entity)
-        ) {
-          watcherOnlyUpdates.push({
-            excludedSession: entity.session || null,
-            updates: correctionUpdates,
+        const correctionStamp = this.getMovementStamp(now);
+        // `client/jolt3.txt` confirmed the remaining shared-space jolt was not
+        // an NPC-only issue: every moving remote player / NPC / entity in
+        // active GOTO/FOLLOW/ORBIT was still receiving a once-per-stamp
+        // watcher SetBallVelocity, and Michelle rebased on those batches.
+        // Keep active subwarp watchers entirely on the original command
+        // contract (GotoDirection / FollowBall / Orbit / SetSpeedFraction)
+        // until a mode transition or explicit recovery path needs a hard
+        // anchor. That removes the periodic heading/orientation snap while
+        // staying TiDi-safe because the command stamps are still scene-clock
+        // driven.
+        if (usesActiveSubwarpWatcherCorrections(entity)) {
+          correctionDebug = {
+            stamp: correctionStamp,
+            includePosition: false,
+            includeVelocity: false,
+            target: "watchers-local-subwarp-command",
+            dispatched: false,
+          };
+        } else {
+          const observerNeedsPositionAnchor = false;
+          const correctionUpdates = buildPositionVelocityCorrectionUpdates(entity, {
+            stamp: correctionStamp,
+            includePosition: observerNeedsPositionAnchor,
           });
-          entity.lastObserverCorrectionBroadcastAt = now;
-          correctionDebug.dispatched = correctionUpdates.length > 0;
-          if (observerNeedsPositionAnchor) {
-            entity.lastObserverPositionBroadcastAt = now;
-            entity.lastObserverPositionBroadcastStamp = correctionStamp;
+          correctionDebug = {
+            stamp: correctionStamp,
+            includePosition: observerNeedsPositionAnchor,
+            includeVelocity: true,
+            target: "watchers-only",
+            dispatched: false,
+          };
+          if (
+            !result.warpCompleted &&
+            now - entity.lastObserverCorrectionBroadcastAt >=
+              getWatcherCorrectionIntervalMs(entity) &&
+            correctionStamp !== toInt(entity.lastObserverCorrectionBroadcastStamp, -1)
+          ) {
+            watcherOnlyUpdates.push({
+              excludedSession: entity.session || null,
+              updates: correctionUpdates,
+            });
+            if (
+              entity.session &&
+              isReadyForDestiny(entity.session) &&
+              entity.mode === "STOP" &&
+              magnitude(entity.velocity) > 0.01
+            ) {
+              sessionOnlyUpdates.push({
+                session: entity.session,
+                updates: correctionUpdates,
+              });
+            }
+            entity.lastObserverCorrectionBroadcastAt = now;
+            entity.lastObserverCorrectionBroadcastStamp = correctionStamp;
+            correctionDebug.dispatched = correctionUpdates.length > 0;
           }
         }
       }
@@ -5431,7 +12587,7 @@ class SolarSystemScene {
       }
 
       if (result.warpCompleted) {
-        const warpCompletionStamp = getNextStamp();
+        const warpCompletionStamp = this.getNextDestinyStamp();
         entity.lastWarpCorrectionBroadcastAt = now;
         entity.lastWarpPositionBroadcastStamp = warpCompletionStamp;
         entity.lastObserverCorrectionBroadcastAt = now;
@@ -5481,6 +12637,16 @@ class SolarSystemScene {
             ),
           ),
         });
+        if (!entity.session) {
+          try {
+            const npcService = require(path.join(__dirname, "./npc"));
+            if (npcService && typeof npcService.wakeNpcController === "function") {
+              npcService.wakeNpcController(entity.itemID, now);
+            }
+          } catch (error) {
+            log.warn(`[SpaceRuntime] NPC warp completion wake failed: ${error.message}`);
+          }
+        }
       }
 
       if (now - entity.lastPersistAt >= 2000 || result.warpCompleted) {
@@ -5502,6 +12668,9 @@ class SolarSystemScene {
       }
     }
 
+    this.validateAllTargetLocks(now);
+    this.reconcileAllDynamicEntityPublicGrids();
+    this.ensurePublicGridComposition();
     this.reconcileAllDynamicEntityBubbles();
     this.syncDynamicVisibilityForAllSessions(now);
 
@@ -5546,6 +12715,7 @@ class SpaceRuntime {
     this.scenes = new Map();
     this.solarSystemGateActivationOverrides = new Map();
     this.stargateActivationOverrides = new Map();
+    pruneExpiredSpaceItems(Date.now());
     this._tickHandle = setInterval(() => this.tick(), 100);
     if (this._tickHandle && typeof this._tickHandle.unref === "function") {
       this._tickHandle.unref();
@@ -5720,7 +12890,22 @@ class SpaceRuntime {
   }
 
   preloadStartupSolarSystems(options = {}) {
-    return this.preloadSolarSystems(STARTUP_PRELOADED_SYSTEM_IDS, options);
+    const preloadPlan = resolveStartupSolarSystemPreloadPlan();
+    const startedAt = Date.now();
+    log.info(
+      `[SpaceRuntime] Starting startup solar-system preload: mode=${preloadPlan.mode} ` +
+        `${preloadPlan.modeName} count=${preloadPlan.systemIDs.length}`,
+    );
+    const activationChanges = this.preloadSolarSystems(preloadPlan.systemIDs, options);
+    log.success(
+      `[SpaceRuntime] Startup solar-system preload complete in ${Date.now() - startedAt}ms ` +
+        `(${preloadPlan.systemIDs.length} systems, ${activationChanges.length} stargate activation updates)`,
+    );
+    return activationChanges;
+  }
+
+  getStartupSolarSystemPreloadPlan() {
+    return resolveStartupSolarSystemPreloadPlan();
   }
 
   ensureScene(systemID, options = {}) {
@@ -5740,7 +12925,65 @@ class SpaceRuntime {
         broadcast: options.broadcastStargateChanges !== false,
       });
     }
+    if (created) {
+      if (config.asteroidFieldsEnabled === true) {
+        try {
+          const asteroidService = require(path.join(__dirname, "./asteroids"));
+          if (asteroidService && typeof asteroidService.handleSceneCreated === "function") {
+            asteroidService.handleSceneCreated(scene);
+          }
+        } catch (error) {
+          log.warn(
+            `[SpaceRuntime] Failed to initialize asteroid fields for system ${numericSystemID}: ${error.message}`,
+          );
+        }
+      } else {
+        scene._asteroidFieldsInitialized = true;
+      }
+      if (process.env.EVEJS_SKIP_NPC_STARTUP !== "1") {
+        try {
+          const npcService = require(path.join(__dirname, "./npc"));
+          if (npcService && typeof npcService.handleSceneCreated === "function") {
+            npcService.handleSceneCreated(scene);
+          }
+        } catch (error) {
+          log.warn(
+            `[SpaceRuntime] NPC scene startup failed for system=${numericSystemID}: ${error.message}`,
+          );
+        }
+      }
+    }
     return scene;
+  }
+
+  getSceneTimeSnapshot(systemID) {
+    const scene = this.ensureScene(systemID);
+    return scene ? scene.buildTimeStateSnapshot() : null;
+  }
+
+  getSolarSystemTimeDilation(systemID) {
+    const scene = this.ensureScene(systemID);
+    return scene ? scene.getTimeDilation() : 1;
+  }
+
+  setSolarSystemTimeDilation(systemID, factor, options = {}) {
+    const scene = this.ensureScene(systemID);
+    if (!scene) {
+      return {
+        success: false,
+        errorMsg: "SOLAR_SYSTEM_NOT_FOUND",
+      };
+    }
+
+    return {
+      success: true,
+      data: scene.setTimeDilation(factor, {
+        ...options,
+        syncSessions: options.syncSessions !== false,
+        emit: options.emit !== false,
+        forceRebase: options.forceRebase !== false,
+      }),
+    };
   }
 
   getSceneForSession(session) {
@@ -5751,12 +12994,256 @@ class SpaceRuntime {
     return this.scenes.get(Number(session._space.systemID)) || null;
   }
 
+  getSimulationTimeMsForSession(session, fallback = Date.now()) {
+    const scene = this.getSceneForSession(session);
+    return scene
+      ? scene.getCurrentSessionSimTimeMs(session)
+      : toFiniteNumber(fallback, Date.now());
+  }
+
+  getSimulationFileTimeForSession(session, fallback = currentFileTime()) {
+    const scene = this.getSceneForSession(session);
+    return scene ? scene.getCurrentSessionFileTime(session) : fallback;
+  }
+
+  getSimulationTimeMsForSystem(systemID, fallback = Date.now()) {
+    const scene = this.ensureScene(systemID);
+    return scene ? scene.getCurrentSimTimeMs() : toFiniteNumber(fallback, Date.now());
+  }
+
+  getSimulationFileTimeForSystem(systemID, fallback = currentFileTime()) {
+    const scene = this.ensureScene(systemID);
+    return scene ? scene.getCurrentFileTime() : fallback;
+  }
+
+  syncSessionSimClock(session, options = {}) {
+    const scene = this.getSceneForSession(session);
+    return scene ? scene.syncSessionSimClock(session, options) : null;
+  }
+
   getEntity(session, entityID) {
     const scene = this.getSceneForSession(session);
     return scene ? scene.getEntityByID(entityID) : null;
   }
 
+  healSessionShipResources(session, options = {}) {
+    const shipID = toInt(
+      session &&
+        session._space &&
+        session._space.shipID,
+      0,
+    );
+    if (!shipID) {
+      return {
+        success: false,
+        errorMsg: "SHIP_NOT_FOUND",
+      };
+    }
+
+    const scene = this.getSceneForSession(session);
+    if (!scene) {
+      return {
+        success: false,
+        errorMsg: "SCENE_NOT_FOUND",
+      };
+    }
+
+    const entity = scene.getEntityByID(shipID);
+    if (!entity || entity.kind !== "ship") {
+      return {
+        success: false,
+        errorMsg: "SHIP_NOT_FOUND",
+      };
+    }
+
+    return healShipResourcesForSession(session, scene, entity, options);
+  }
+
+  getEntitySpaceStateSnapshot(session, entityID) {
+    const entity = this.getEntity(session, entityID);
+    return entity ? serializeSpaceState(entity) : null;
+  }
+
+  getBubbleForSession(session) {
+    const scene = this.getSceneForSession(session);
+    return scene ? scene.getBubbleForSession(session) : null;
+  }
+
+  getSessionsInBubble(systemID, bubbleID) {
+    const scene = this.ensureScene(systemID);
+    return scene ? scene.getSessionsInBubble(bubbleID) : [];
+  }
+
+  getDynamicEntitiesInBubble(systemID, bubbleID) {
+    const scene = this.ensureScene(systemID);
+    return scene ? scene.getDynamicEntitiesInBubble(bubbleID) : [];
+  }
+
+  getShipsInBubble(systemID, bubbleID) {
+    const scene = this.ensureScene(systemID);
+    return scene ? scene.getShipsInBubble(bubbleID) : [];
+  }
+
+  broadcastDestinyUpdatesToBubble(systemID, bubbleID, updates, options = {}) {
+    const scene = this.ensureScene(systemID);
+    return scene
+      ? scene.broadcastDestinyUpdatesToBubble(bubbleID, updates, options)
+      : { deliveredCount: 0 };
+  }
+
+  spawnDynamicShip(systemID, shipSpec, options = {}) {
+    const numericSystemID = toInt(systemID, 0);
+    if (!numericSystemID) {
+      return {
+        success: false,
+        errorMsg: "SOLAR_SYSTEM_NOT_FOUND",
+      };
+    }
+
+    const scene = this.ensureScene(numericSystemID);
+    if (!scene) {
+      return {
+        success: false,
+        errorMsg: "SCENE_NOT_FOUND",
+      };
+    }
+
+    const entity = buildRuntimeShipEntity(shipSpec || {}, numericSystemID, {
+      session: options.session || null,
+      persistSpaceState: options.persistSpaceState === true,
+    });
+    return scene.spawnDynamicEntity(entity, options);
+  }
+
+  spawnDynamicInventoryEntity(systemID, itemID, options = {}) {
+    const numericSystemID = toInt(systemID, 0);
+    const numericItemID = toInt(itemID, 0);
+    if (!numericSystemID) {
+      return {
+        success: false,
+        errorMsg: "SOLAR_SYSTEM_NOT_FOUND",
+      };
+    }
+    if (!numericItemID) {
+      return {
+        success: false,
+        errorMsg: "ITEM_NOT_FOUND",
+      };
+    }
+
+    const scene = this.ensureScene(numericSystemID);
+    if (!scene) {
+      return {
+        success: false,
+        errorMsg: "SCENE_NOT_FOUND",
+      };
+    }
+
+    const existingEntity = scene.getEntityByID(numericItemID);
+    if (isInventoryBackedDynamicEntity(existingEntity)) {
+      return scene.refreshInventoryBackedEntityPresentation(numericItemID, options);
+    }
+    if (existingEntity) {
+      return {
+        success: true,
+        data: {
+          entity: existingEntity,
+        },
+      };
+    }
+
+    const itemRecord = findItemById(numericItemID);
+    if (!itemRecord) {
+      return {
+        success: false,
+        errorMsg: "ITEM_NOT_FOUND",
+      };
+    }
+
+    const entity = buildRuntimeSpaceEntityFromItem(
+      itemRecord,
+      numericSystemID,
+      scene.getCurrentSimTimeMs(),
+    );
+    if (!entity) {
+      return {
+        success: false,
+        errorMsg: "UNSUPPORTED_DYNAMIC_ITEM",
+      };
+    }
+
+    return scene.spawnDynamicEntity(entity, options);
+  }
+
+  refreshInventoryBackedEntityPresentation(systemID, entityID, options = {}) {
+    const numericSystemID = toInt(systemID, 0);
+    if (!numericSystemID) {
+      return {
+        success: false,
+        errorMsg: "SOLAR_SYSTEM_NOT_FOUND",
+      };
+    }
+
+    const scene = this.ensureScene(numericSystemID);
+    if (!scene) {
+      return {
+        success: false,
+        errorMsg: "SCENE_NOT_FOUND",
+      };
+    }
+
+    return scene.refreshInventoryBackedEntityPresentation(entityID, options);
+  }
+
+  removeDynamicEntity(systemID, entityID, options = {}) {
+    const numericSystemID = toInt(systemID, 0);
+    if (!numericSystemID) {
+      return {
+        success: false,
+        errorMsg: "SOLAR_SYSTEM_NOT_FOUND",
+      };
+    }
+
+    const scene = this.scenes.get(numericSystemID);
+    if (!scene) {
+      return {
+        success: false,
+        errorMsg: "SCENE_NOT_FOUND",
+      };
+    }
+
+    return scene.removeDynamicEntity(entityID, options);
+  }
+
+  destroyDynamicInventoryEntity(systemID, entityID, options = {}) {
+    const numericSystemID = toInt(systemID, 0);
+    if (!numericSystemID) {
+      return {
+        success: false,
+        errorMsg: "SOLAR_SYSTEM_NOT_FOUND",
+      };
+    }
+
+    const scene = this.scenes.get(numericSystemID);
+    if (!scene) {
+      return {
+        success: false,
+        errorMsg: "SCENE_NOT_FOUND",
+      };
+    }
+
+    return scene.destroyInventoryBackedDynamicEntity(entityID, options);
+  }
+
   attachSession(session, shipItem, options = {}) {
+    const previousSimTimeMs =
+      options.previousSimTimeMs === undefined || options.previousSimTimeMs === null
+        ? (
+          session && session._space
+            ? this.getSimulationTimeMsForSession(session, null)
+            : null
+        )
+        : toFiniteNumber(options.previousSimTimeMs, null);
     if (session && session._space) {
       this.detachSession(session, { broadcast: false });
     }
@@ -5768,7 +13255,38 @@ class SpaceRuntime {
     }
 
     const scene = this.ensureScene(numericSystemID);
-    return scene.attachSession(session, shipItem, options);
+    return scene.attachSession(session, shipItem, {
+      ...options,
+      forceSimClockRebase: options.forceSimClockRebase === true,
+      previousSimTimeMs,
+    });
+  }
+
+  attachSessionToExistingEntity(session, shipItem, entity, options = {}) {
+    const previousSimTimeMs =
+      options.previousSimTimeMs === undefined || options.previousSimTimeMs === null
+        ? (
+          session && session._space
+            ? this.getSimulationTimeMsForSession(session, null)
+            : null
+        )
+        : toFiniteNumber(options.previousSimTimeMs, null);
+    if (session && session._space) {
+      this.detachSession(session, { broadcast: false });
+    }
+
+    const numericSystemID =
+      Number(options.systemID || session.solarsystemid || session.solarsystemid2 || 0);
+    if (!numericSystemID) {
+      return null;
+    }
+
+    const scene = this.ensureScene(numericSystemID);
+    return scene.attachSessionToExistingEntity(session, shipItem, entity, {
+      ...options,
+      forceSimClockRebase: options.forceSimClockRebase === true,
+      previousSimTimeMs,
+    });
   }
 
   detachSession(session, options = {}) {
@@ -5782,6 +13300,20 @@ class SpaceRuntime {
     } else {
       session._space = null;
     }
+  }
+
+  disembarkSession(session, options = {}) {
+    if (!session || !session._space) {
+      return null;
+    }
+
+    const scene = this.scenes.get(Number(session._space.systemID));
+    if (!scene) {
+      session._space = null;
+      return null;
+    }
+
+    return scene.disembarkSession(session, options);
   }
 
   markBeyonceBound(session) {
@@ -5830,6 +13362,34 @@ class SpaceRuntime {
       : { success: false, errorMsg: "NOT_IN_SPACE" };
   }
 
+  warpDynamicEntityToPoint(systemID, entityOrID, point, options = {}) {
+    const scene = this.ensureScene(systemID);
+    return scene
+      ? scene.warpDynamicEntityToPoint(entityOrID, point, options)
+      : { success: false, errorMsg: "SCENE_NOT_FOUND" };
+  }
+
+  teleportSessionShipToPoint(session, point, options = {}) {
+    const scene = this.getSceneForSession(session);
+    return scene
+      ? scene.teleportDynamicEntityToPoint(
+        session && session._space ? session._space.shipID : null,
+        point,
+        {
+          ...options,
+          refreshOwnerSession: options.refreshOwnerSession !== false,
+        },
+      )
+      : { success: false, errorMsg: "NOT_IN_SPACE" };
+  }
+
+  teleportDynamicEntityToPoint(systemID, entityOrID, point, options = {}) {
+    const scene = this.ensureScene(systemID);
+    return scene
+      ? scene.teleportDynamicEntityToPoint(entityOrID, point, options)
+      : { success: false, errorMsg: "SCENE_NOT_FOUND" };
+  }
+
   setSpeedFraction(session, fraction) {
     const scene = this.getSceneForSession(session);
     return scene ? scene.setSpeedFraction(session, fraction) : false;
@@ -5838,6 +13398,181 @@ class SpaceRuntime {
   stop(session) {
     const scene = this.getSceneForSession(session);
     return scene ? scene.stop(session) : false;
+  }
+
+  refreshShipDerivedState(session, options = {}) {
+    const scene = this.getSceneForSession(session);
+    return scene
+      ? scene.refreshSessionShipDerivedState(session, options)
+      : {
+          success: false,
+          errorMsg: "SCENE_NOT_FOUND",
+        };
+  }
+
+  getShipCapacitorState(session) {
+    const scene = this.getSceneForSession(session);
+    return scene ? scene.getShipCapacitorState(session) : null;
+  }
+
+  setShipCapacitorRatio(session, nextRatio) {
+    const scene = this.getSceneForSession(session);
+    return scene
+      ? scene.setShipCapacitorRatio(session, nextRatio)
+      : {
+          success: false,
+          errorMsg: "SCENE_NOT_FOUND",
+        };
+  }
+
+  getActiveModuleEffect(session, moduleID) {
+    const scene = this.getSceneForSession(session);
+    const shipEntity = scene ? scene.getShipEntityForSession(session) : null;
+    if (!scene || !shipEntity) {
+      return null;
+    }
+
+    return scene.getActiveModuleEffect(shipEntity.itemID, moduleID);
+  }
+
+  getPropulsionModuleRuntimeAttributes(characterID, moduleItem) {
+    return getPropulsionModuleRuntimeAttributes(characterID, moduleItem);
+  }
+
+  getGenericModuleRuntimeAttributes(
+    characterID,
+    shipItem,
+    moduleItem,
+    chargeItem = null,
+    weaponSnapshot = null,
+  ) {
+    return getGenericModuleRuntimeAttributes(
+      characterID,
+      shipItem,
+      moduleItem,
+      chargeItem,
+      weaponSnapshot,
+    );
+  }
+
+  getShipAttributeSnapshot(session) {
+    const scene = this.getSceneForSession(session);
+    const entity = scene ? scene.getShipEntityForSession(session) : null;
+    if (!entity) {
+      return null;
+    }
+
+    return {
+      itemID: toInt(entity.itemID, 0),
+      mass: roundNumber(toFiniteNumber(entity.mass, 0), 6),
+      maxVelocity: roundNumber(toFiniteNumber(entity.maxVelocity, 0), 6),
+      maxLockedTargets: roundNumber(toFiniteNumber(entity.maxLockedTargets, 0), 6),
+      maxTargetRange: roundNumber(toFiniteNumber(entity.maxTargetRange, 0), 6),
+      cloakingTargetingDelay: roundNumber(
+        toFiniteNumber(entity.cloakingTargetingDelay, 0),
+        6,
+      ),
+      scanResolution: roundNumber(toFiniteNumber(entity.scanResolution, 0), 6),
+      signatureRadius: roundNumber(
+        toFiniteNumber(entity.signatureRadius, 0),
+        6,
+      ),
+      alignTime: roundNumber(toFiniteNumber(entity.alignTime, 0), 6),
+    };
+  }
+
+  addTarget(session, targetEntityID) {
+    const scene = this.getSceneForSession(session);
+    return scene
+      ? scene.addTarget(session, targetEntityID)
+      : {
+          success: false,
+          errorMsg: "NOT_IN_SPACE",
+        };
+  }
+
+  cancelAddTarget(session, targetEntityID, options = {}) {
+    const scene = this.getSceneForSession(session);
+    return scene
+      ? scene.cancelAddTarget(session, targetEntityID, options)
+      : {
+          success: false,
+          errorMsg: "NOT_IN_SPACE",
+        };
+  }
+
+  removeTarget(session, targetEntityID, options = {}) {
+    const scene = this.getSceneForSession(session);
+    return scene
+      ? scene.removeTarget(session, targetEntityID, options)
+      : {
+          success: false,
+          errorMsg: "NOT_IN_SPACE",
+        };
+  }
+
+  removeTargets(session, targetEntityIDs = [], options = {}) {
+    const scene = this.getSceneForSession(session);
+    return scene
+      ? scene.removeTargets(session, targetEntityIDs, options)
+      : {
+          success: false,
+          errorMsg: "NOT_IN_SPACE",
+        };
+  }
+
+  clearTargets(session, options = {}) {
+    const scene = this.getSceneForSession(session);
+    return scene
+      ? scene.clearTargets(session, options)
+      : {
+          success: false,
+          errorMsg: "NOT_IN_SPACE",
+        };
+  }
+
+  getTargets(session) {
+    const scene = this.getSceneForSession(session);
+    return scene ? scene.getTargets(session) : [];
+  }
+
+  getTargeters(session) {
+    const scene = this.getSceneForSession(session);
+    return scene ? scene.getTargeters(session) : [];
+  }
+
+  activatePropulsionModule(session, moduleItem, effectName, options = {}) {
+    const scene = this.getSceneForSession(session);
+    return scene
+      ? scene.activatePropulsionModule(session, moduleItem, effectName, options)
+      : {
+          success: false,
+          errorMsg: "NOT_IN_SPACE",
+        };
+  }
+
+  deactivatePropulsionModule(session, moduleID, options = {}) {
+    const scene = this.getSceneForSession(session);
+    return scene
+      ? scene.deactivatePropulsionModule(session, moduleID, options)
+      : {
+          success: false,
+          errorMsg: "NOT_IN_SPACE",
+        };
+  }
+
+  activateGenericModule(session, moduleItem, effectName, options = {}) {
+    const scene = this.getSceneForSession(session);
+    return scene
+      ? scene.activateGenericModule(session, moduleItem, effectName, options)
+      : { success: false, errorMsg: "NOT_IN_SPACE" };
+  }
+
+  deactivateGenericModule(session, moduleID, options = {}) {
+    const scene = this.getSceneForSession(session);
+    return scene
+      ? scene.deactivateGenericModule(session, moduleID, options)
+      : { success: false, errorMsg: "NOT_IN_SPACE" };
   }
 
   playSpecialFx(session, guid, options = {}) {
@@ -5914,7 +13649,7 @@ class SpaceRuntime {
       }
     }
 
-    const stamp = getNextStamp();
+    const stamp = scene.getNextDestinyStamp();
     scene.sendDestinyUpdates(session, [
       {
         stamp,
@@ -5976,6 +13711,17 @@ class SpaceRuntime {
       };
     }
 
+    const currentActivationState = coerceActivationState(
+      sourceGateEntity.activationState,
+      this.resolveStargateActivationState(sourceGateEntity),
+    );
+    if (currentActivationState !== STARGATE_ACTIVATION_STATE.OPEN) {
+      return {
+        success: false,
+        errorMsg: "STARGATE_NOT_ACTIVE",
+      };
+    }
+
     if (
       options.freezeMotion !== false &&
       (
@@ -6007,6 +13753,16 @@ class SpaceRuntime {
         targetID: sourceGateEntity.itemID,
         start: true,
         active: false,
+        // Use current stamp so Michelle dispatches the FX immediately. Under TiDi,
+        // getNextDestinyStamp() puts the FX 1 tick ahead, but the dilated sim clock
+        // won't reach that tick before completeStargateJump tears down the scene.
+        useCurrentStamp: true,
+        // For the jumping pilot, raw "current" can be one Michelle step ahead
+        // of the live client history under TiDi, but clamping to the last sent
+        // stamp can also backstep too far after the client has locally evolved.
+        // Use the immediate visible window instead: max(last visible, current-1).
+        useImmediateClientVisibleStamp: true,
+        resultSession: session,
         ...fxOptions,
       },
       shipEntity,
@@ -6032,6 +13788,24 @@ class SpaceRuntime {
   }
 
   canDockAtStation(session, stationID, maxDistance = DEFAULT_STATION_DOCKING_RADIUS) {
+    try {
+      const crimewatchState = require(path.join(__dirname, "../services/security/crimewatchState"));
+      const crimewatchNow =
+        session &&
+        session._space &&
+        Number.isFinite(Number(session._space.simTimeMs))
+          ? Number(session._space.simTimeMs)
+          : Date.now();
+      if (
+        crimewatchState &&
+        crimewatchState.isCriminallyFlagged(session && session.characterID, crimewatchNow)
+      ) {
+        return false;
+      }
+    } catch (error) {
+      log.warn(`[SpaceRuntime] Crimewatch dock check failed: ${error.message}`);
+    }
+
     const entity = this.getEntity(session, session && session._space ? session._space.shipID : null);
     const station = worldData.getStationByID(stationID);
     if (!entity || !station) {
@@ -6063,18 +13837,35 @@ class SpaceRuntime {
   tick() {
     const now = Date.now();
     for (const scene of this.scenes.values()) {
+      scene.destroyExpiredInventoryBackedEntities();
       scene.tick(now);
     }
   }
 }
 
-module.exports = new SpaceRuntime();
-module.exports._testing = {
+// Preserve the original CommonJS exports object so modules that observed it
+// during a circular load still see the fully initialized runtime singleton.
+const runtimeSingleton = new SpaceRuntime();
+const runtimeExports = module.exports;
+Object.setPrototypeOf(runtimeExports, Object.getPrototypeOf(runtimeSingleton));
+Object.assign(runtimeExports, runtimeSingleton);
+runtimeExports.beginSessionJumpTimingTrace = beginSessionJumpTimingTrace;
+runtimeExports.recordSessionJumpTimingTrace = recordSessionJumpTimingTrace;
+
+runtimeExports._testing = {
   BUBBLE_RADIUS_METERS,
   BUBBLE_HYSTERESIS_METERS,
+  BUBBLE_CENTER_MIN_DISTANCE_METERS,
+  PUBLIC_GRID_BOX_METERS,
+  PUBLIC_GRID_HALF_BOX_METERS,
   STARGATE_ACTIVATION_STATE,
   STARGATE_ACTIVATION_TRANSITION_MS,
+  NEW_EDEN_SYSTEM_LOADING,
   STARTUP_PRELOADED_SYSTEM_IDS,
+  getStartupSolarSystemPreloadPlanForTesting: resolveStartupSolarSystemPreloadPlan,
+  getConfiguredStartupSystemLoadingModeForTesting: getConfiguredStartupSystemLoadingMode,
+  resolveStartupPreloadedSystemIDsForTesting: resolveStartupPreloadedSystemIDs,
+  resolveStartupSolarSystemPreloadPlanForTesting: resolveStartupSolarSystemPreloadPlan,
   ACTIVE_SUBWARP_WATCHER_CORRECTION_INTERVAL_MS,
   ACTIVE_SUBWARP_WATCHER_POSITION_CORRECTION_INTERVAL_MS,
   WATCHER_CORRECTION_INTERVAL_MS,
@@ -6084,6 +13875,10 @@ module.exports._testing = {
   getWatcherPositionCorrectionIntervalMs,
   usesActiveSubwarpWatcherCorrections,
   buildShipEntityForTesting: buildShipEntity,
+  buildRuntimeShipEntityForTesting: buildRuntimeShipEntity,
+  buildRuntimeSpaceEntityFromItemForTesting: buildRuntimeSpaceEntityFromItem,
+  refreshShipPresentationFieldsForTesting: refreshShipPresentationFields,
+  buildPublicGridKeyForTesting: buildPublicGridKey,
   applyDesiredVelocityForTesting: applyDesiredVelocity,
   deriveAgilitySecondsForTesting: deriveAgilitySeconds,
   evaluatePendingWarpForTesting: evaluatePendingWarp,
@@ -6093,16 +13888,29 @@ module.exports._testing = {
   buildPilotWarpActivationUpdatesForTesting: buildPilotWarpActivationUpdates,
   buildWarpStartEffectUpdateForTesting: buildWarpStartEffectUpdate,
   buildDirectedMovementUpdatesForTesting: buildDirectedMovementUpdates,
+  buildAttributeChangeForTesting: buildAttributeChange,
+  computeTargetLockDurationMsForTesting: computeTargetLockDurationMs,
+  notifyCapacitorChangeToSessionForTesting: notifyCapacitorChangeToSession,
+  notifyShipHealthAttributesToSessionForTesting: notifyShipHealthAttributesToSession,
+  notifyModuleEffectStateForTesting: notifyModuleEffectState,
+  notifyGenericModuleEffectStateForTesting: notifyGenericModuleEffectState,
+  resolveSpecialFxOptionsForEntityForTesting: resolveSpecialFxOptionsForEntity,
+  resolveSpecialFxRepeatCountForTesting: resolveSpecialFxRepeatCount,
   buildStaticStargateEntityForTesting: buildStaticStargateEntity,
+  buildRuntimeInventoryEntityForTesting: buildRuntimeInventoryEntity,
+  isPlayerOwnedActiveSpaceShipRecordForTesting: isPlayerOwnedActiveSpaceShipRecord,
   getSharedWorldPosition,
   getStargateDerivedDunRotation,
   resetStargateActivationOverrides() {
-    module.exports.solarSystemGateActivationOverrides.clear();
-    module.exports.stargateActivationOverrides.clear();
+    runtimeExports.solarSystemGateActivationOverrides.clear();
+    runtimeExports.stargateActivationOverrides.clear();
   },
   clearScenes() {
-    module.exports.scenes.clear();
+    runtimeExports.scenes.clear();
+    nextRuntimeEntityID = 900_000_000_000;
+    nextFallbackStamp = 0;
   },
   getSecurityStatusIconKey,
   resolveShipSkinMaterialSetID,
+  allocateRuntimeEntityIDForTesting: allocateRuntimeEntityID,
 };

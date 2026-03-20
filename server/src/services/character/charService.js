@@ -9,11 +9,20 @@
 
 const BaseService = require("../baseService");
 const log = require("../../utils/logger");
-const database = require("../../database");
-const { applyCharacterToSession, getCharacterRecord } = require("./characterState");
+const database = require("../../newDatabase");
+const sessionRegistry = require("../chat/sessionRegistry");
+const { throwWrappedUserError } = require("../../common/machoErrors");
+const {
+  applyCharacterToSession,
+  flushCharacterSessionNotificationPlan,
+  getCharacterRecord,
+} = require("./characterState");
+const {
+  getCharacterCreationRace,
+  resolveCharacterCreationBloodlineProfile,
+} = require("./characterCreationData");
 const { restoreSpaceSession } = require("../../space/transitions");
 const {
-  ensureCharacterSkills,
   getCharacterSkillPointTotal,
 } = require("../skills/skillState");
 
@@ -375,26 +384,18 @@ class CharService extends BaseService {
     const newCharId =
       existingIds.length > 0 ? Math.max(...existingIds) + 1 : 140000001;
 
-    const bloodlineInfo = {
-      1: { raceID: 1, typeID: 1373, corpID: 1000006 },
-      2: { raceID: 1, typeID: 1374, corpID: 1000006 },
-      3: { raceID: 1, typeID: 1375, corpID: 1000009 },
-      4: { raceID: 1, typeID: 1376, corpID: 1000009 },
-      5: { raceID: 8, typeID: 1377, corpID: 1000115 },
-      6: { raceID: 8, typeID: 1378, corpID: 1000115 },
-      7: { raceID: 2, typeID: 1379, corpID: 1000044 },
-      8: { raceID: 2, typeID: 1380, corpID: 1000044 },
-      11: { raceID: 1, typeID: 1383, corpID: 1000009 },
-      12: { raceID: 8, typeID: 1384, corpID: 1000115 },
-      13: { raceID: 1, typeID: 1385, corpID: 1000006 },
-      14: { raceID: 2, typeID: 1386, corpID: 1000044 },
-    };
-
-    const info = bloodlineInfo[bloodlineID] || {
-      raceID: 1,
-      typeID: 1373,
-      corpID: 1000009,
-    };
+    const bloodlineProfile = resolveCharacterCreationBloodlineProfile(
+      bloodlineID,
+      {
+        raceID: 1,
+        typeID: 1373,
+        corporationID: 1000009,
+      },
+    );
+    const raceProfile = getCharacterCreationRace(bloodlineProfile.raceID) || null;
+    const starterShipTypeID = Number((raceProfile && raceProfile.shipTypeID) || 606) || 606;
+    const starterShipName =
+      (raceProfile && raceProfile.shipName) || "Velator";
     const now = BigInt(Date.now()) * 10000n + 116444736000000000n;
 
     characters[String(newCharId)] = {
@@ -404,10 +405,10 @@ class CharService extends BaseService {
       gender: genderID,
       bloodlineID,
       ancestryID,
-      raceID: info.raceID,
-      typeID: info.typeID,
-      corporationID: info.corpID,
-      schoolID: schoolID || info.corpID,
+      raceID: bloodlineProfile.raceID,
+      typeID: bloodlineProfile.typeID,
+      corporationID: bloodlineProfile.corporationID,
+      schoolID: schoolID || bloodlineProfile.corporationID,
       allianceID: 0,
       factionID: null,
       stationID: 60003760,
@@ -429,8 +430,8 @@ class CharService extends BaseService {
       plexBalance: 2222,
       balanceChange: 0.0,
       skillPoints: 50000,
-      shipTypeID: 606,
-      shipName: "Velator",
+      shipTypeID: starterShipTypeID,
+      shipName: starterShipName,
       bounty: 0.0,
       skillQueueEndTime: 0,
       daysLeft: 365,
@@ -445,7 +446,7 @@ class CharService extends BaseService {
       shortName: "none",
       employmentHistory: [
         {
-          corporationID: info.corpID,
+          corporationID: bloodlineProfile.corporationID,
           startDate: now.toString(),
           deleted: 0,
         },
@@ -489,7 +490,6 @@ class CharService extends BaseService {
       `/${String(newCharId)}`,
       characters[String(newCharId)],
     );
-    ensureCharacterSkills(newCharId);
     const createdCharacter = getCharacterRecord(newCharId);
 
     log.success(
@@ -548,8 +548,25 @@ class CharService extends BaseService {
       return null;
     }
 
+    const existingSession = sessionRegistry.findSessionByCharacterID(charId, {
+      excludeSession: session,
+    });
+    if (existingSession) {
+      const characterRecord = getCharacterRecord(charId);
+      const characterLabel =
+        (characterRecord && characterRecord.characterName) ||
+        existingSession.characterName ||
+        `Character ${charId}`;
+      log.warn(
+        `[CharService] Rejected duplicate login for ${characterLabel}(${charId}); already active on user=${existingSession.userName || "unknown"} client=${existingSession.clientID || 0}`,
+      );
+      throwWrappedUserError("CustomInfo", {
+        info: `${characterLabel} is already online.`,
+      });
+    }
+
     const applyResult = applyCharacterToSession(session, charId, {
-      emitNotifications: true,
+      emitNotifications: false,
       logSelection: true,
     });
 
@@ -557,8 +574,14 @@ class CharService extends BaseService {
       log.warn(
         `[CharService] Failed to select character ${charId}: ${applyResult.errorMsg}`,
       );
-    } else if (!session.stationid && !session.stationID) {
-      restoreSpaceSession(session);
+    } else {
+      if (!session.stationid && !session.stationID) {
+        restoreSpaceSession(session);
+      }
+      flushCharacterSessionNotificationPlan(
+        session,
+        applyResult.notificationPlan,
+      );
     }
 
     return null;

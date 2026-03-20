@@ -1,98 +1,238 @@
 # EvEJS Script Guide
 
-This is the simple Windows launcher set for EvEJS. The goal is:
+This file explains what the main scripts are for and when you would use them.
 
-- one config file
-- one one-off cert install
-- two server launchers
-- three client launchers
-- one standalone proxy launcher
-- one source zip builder
+If you are brand new, read `../docs/SETUP.md` first. Come back here when you want to understand which launcher or helper script fits a specific task.
 
-## Files You Actually Use
+## The Three Scripts Most People Need
+
+If you only remember three things, remember these:
 
 - `scripts\windows\EvEJSConfig.bat`
+  Edit this once so the repo knows where your EVE client copy lives.
 - `scripts\windows\InstallCerts.bat`
+  Run this after you set the client path.
 - `scripts\windows\StartServerOnly.bat`
-- `scripts\windows\StartServerNoProxy.bat`
-- `scripts\windows\StartClientProxyOnly.bat`
+  Use this to start the server for normal day-to-day testing.
+
+Then launch the client with:
+
 - `scripts\windows\StartClientOnly.bat`
+
+## Windows Launcher Scripts
+
+### Config
+
+- `scripts\windows\EvEJSConfig.bat`
+  Your local launcher settings live here.
+
+What it controls:
+
+- where the client copy is
+- whether you want to point directly at a specific `exefile.exe`
+- what local proxy URL the client should use
+- which CA certificate file should be trusted for local TLS
+
+### Certificate setup
+
+- `scripts\windows\InstallCerts.bat`
+  Beginner-friendly wrapper around the PowerShell certificate installer.
+
+Use it when:
+
+- this is your first setup
+- you changed `EVEJS_CLIENT_PATH`
+- you replaced or repaired the client copy
+
+It helps by:
+
+- trusting the local CA in your current Windows user store
+- appending that CA to the client certificate bundles
+
+### Server launchers
+
+- `scripts\windows\StartServerOnly.bat`
+  Starts the main server with the normal local intercept path enabled.
+
+Best for:
+
+- everyday testing
+- first-time setup checks
+- simple one-server-one-client sessions
+
+- `scripts\windows\StartServerNoProxy.bat`
+  Starts the server but leaves the proxy to a separate launcher.
+
+Best for:
+
+- proxy debugging
+- keeping server and proxy output in different windows
+
+### Proxy launcher
+
+- `scripts\windows\StartClientProxyOnly.bat`
+  Runs just the local proxy process.
+
+Best for:
+
+- pairing with `StartServerNoProxy.bat`
+- isolating proxy output while debugging
+
+### Client launchers
+
+- `scripts\windows\StartClientOnly.bat`
+  The simplest normal client launcher. No debug console.
+
+Best for:
+
+- everyday use
+- first login tests
+- situations where you do not want extra console noise
+
 - `scripts\windows\RunClientProxy.bat`
+  Starts the client with the local proxy and TLS environment variables wired in.
+
+Best for:
+
+- explicit proxy-aware startup
+- verifying the proxy environment
+
 - `scripts\windows\RunClientProxyAndDebug.bat`
-- `scripts\windows\RunClientProxyAndDebugAndWarpTrace.bat`
+  Same as `RunClientProxy.bat`, but enables the EVE debug console.
+
+Best for:
+
+- client-side debugging
+- checking launch-time errors
+- deeper troubleshooting sessions
+
+- `scripts\windows\RunClientNoDebug.bat`
+  Internal helper used by `StartClientOnly.bat`.
+
+- `scripts\windows\RunProxyOnly.bat`
+  Internal helper used by `StartClientProxyOnly.bat`.
+
+## Recommended Launch Combinations
+
+### Easiest everyday setup
+
+1. `scripts\windows\StartServerOnly.bat`
+2. `scripts\windows\StartClientOnly.bat`
+
+### Proxy in a separate window
+
+1. `scripts\windows\StartServerNoProxy.bat`
+2. `scripts\windows\StartClientProxyOnly.bat`
+3. `scripts\windows\StartClientOnly.bat`
+
+### Debug session
+
+1. `scripts\windows\StartServerNoProxy.bat`
+2. `scripts\windows\StartClientProxyOnly.bat`
+3. `scripts\windows\RunClientProxyAndDebug.bat`
+
+## Root npm Scripts
+
+These are useful if you prefer PowerShell over clicking batch files.
+
+- `npm run install:certs`
+  Runs `scripts\Install-EvEJSCerts.ps1`.
+
+- `npm run start:server`
+  Starts the Node server in `server/`.
+
+- `npm run sync:static-data`
+  Merges JSONL static-data inputs and exports asteroid belt data.
+
+- `npm run sync:cosmetics-data`
+  Merges local cosmetics data into the repo-local output.
+
+- `npm run verify:static-data`
+  Verifies local static-data inputs against expected output.
+
+- `npm run cleanup:invalid-fits`
+  Repairs or removes invalid fit data.
+
+- `npm run scrape:eve-survival-missions`
+  Downloads mission archive data into the local `data/` workspace.
+
+- `npm run parse:eve-survival-missions`
+  Parses the scraped mission archive data into a more structured form.
+
+- `npm run sync:reference-data`
+  Runs the main reference-data refresh flow.
+
+- `npm run zip:source`
+  Builds a clean source zip and skips local-only files.
+
+## Advanced Script Areas
+
+### `scripts\dev\`
+
+This folder is mostly for contributors working on:
+
+- static-data imports
+- cosmetics/reference-data sync
+- mission-data scraping
+- data cleanup jobs
+
+If you are just trying to boot the server and log in, you can safely ignore this folder for now.
+
+### `scripts\internal\`
+
+This folder is mostly for:
+
+- self-tests
+- parity checks
+- maintenance scripts
+- benchmarks
+- cert-building helpers
+
+Use these when you are validating a specific subsystem or following a contributor workflow.
+
+## Utility Scripts
+
 - `scripts\New-SourceZip.ps1`
+  Creates a shareable source archive without bundling clients, logs, or scratch data.
 
-## First-Time Setup
+- `scripts\SimulateCpuLoad.bat`
+  Starts a temporary CPU load test for roughly 40 seconds.
 
-1. Install Node.js.
-2. From the repo root, run:
+- `scripts\SimulateCpuLoad.js`
+  The Node script behind the CPU load helper.
 
-```powershell
-npm ci
-npm --prefix server ci
-```
+- `scripts\windows\OpenEveSurvivalMissionScrapeWindow.bat`
+  Opens a dedicated terminal window for the mission scraper.
 
-3. Edit `scripts\windows\EvEJSConfig.bat`.
-4. Set `EVEJS_CLIENT_PATH` to your EVE client copy.
-5. Run `scripts\windows\InstallCerts.bat` once.
+- `scripts\windows\RunEveSurvivalMissionScrape.bat`
+  Runs the EVE-Survival mission scrape from a Windows terminal with status output.
 
-`InstallCerts.bat` does two things:
+## Common Questions
 
-- trusts the shared `eve.js` CA in Windows for the current user
-- appends that CA to the client `cacert.pem` bundles used by chat and the ship-skin public gateway
+### Which script should I double-click first?
 
-If you move the client to a different folder later, update `EVEJS_CLIENT_PATH` and run `InstallCerts.bat` again.
+`scripts\windows\StartServerOnly.bat`
 
-## Daily Use
+Then:
 
-1. Start the server.
+`scripts\windows\StartClientOnly.bat`
 
-Combined server + proxy:
+### Which script should I edit first?
 
-```bat
-scripts\windows\StartServerOnly.bat
-```
+`scripts\windows\EvEJSConfig.bat`
 
-Split server and proxy into separate terminals:
+### Which script fixes certificate errors?
 
-```bat
-scripts\windows\StartServerNoProxy.bat
-scripts\windows\StartClientProxyOnly.bat
-```
+`scripts\windows\InstallCerts.bat`
 
-2. Start the client with one of:
+### Which script should I use when I need the debug console?
 
-```bat
-scripts\windows\StartClientOnly.bat
-scripts\windows\RunClientProxy.bat
-scripts\windows\RunClientProxyAndDebug.bat
-```
+`scripts\windows\RunClientProxyAndDebug.bat`
 
-`StartClientOnly.bat` is the explicit no-console launcher.
+### Which script builds a clean zip for sharing?
 
-`RunClientProxy.bat` remains the shared proxy-aware launcher and also runs without the debug console unless `EVEJS_DEBUG_CONSOLE=1`.
+`npm run zip:source`
 
-Use `RunClientProxyAndDebug.bat` if you want the EVE debug console.
+or:
 
-Use `RunClientProxyAndDebugAndWarpTrace.bat` if you want the EVE debug console plus the native warp tracer in a separate terminal window.
-
-## Client Patch Reminder
-
-These scripts handle proxying and certificates. They do not patch the client binaries for you.
-
-Your client copy still needs the normal EvEJS localhost setup:
-
-- `PATCHED_FILES\blue.dll` copied into the client `bin64` folder
-- `start.ini` pointing at `127.0.0.1` on port `26000`
-
-If your client copy already works with EvEJS, you do not need to redo that step.
-
-## Sharing The Repo
-
-To build a clean shareable source zip:
-
-```powershell
-npm run zip:source
-```
-
-That uses `scripts\New-SourceZip.ps1`.
+`scripts\New-SourceZip.ps1`

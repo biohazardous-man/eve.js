@@ -20,6 +20,9 @@ const { flushPendingCommandSessionEffects } = require(path.join(
 const debugLogPath = path.join(__dirname, "../../../logs/slash-debug.log");
 
 function appendSlashDebug(entry) {
+  if (!log.isVerboseDebugEnabled()) {
+    return;
+  }
   try {
     fs.mkdirSync(path.dirname(debugLogPath), { recursive: true });
     fs.appendFileSync(
@@ -140,6 +143,43 @@ function extractCommand(args, kwargs) {
   return "";
 }
 
+function extractKwarg(kwargs, key) {
+  if (!kwargs) {
+    return undefined;
+  }
+
+  if (kwargs.type === "dict" && Array.isArray(kwargs.entries)) {
+    const match = kwargs.entries.find((entry) => entry[0] === key);
+    return match ? match[1] : undefined;
+  }
+
+  if (typeof kwargs === "object") {
+    return kwargs[key];
+  }
+
+  return undefined;
+}
+
+function extractFeedbackChannel(args, kwargs) {
+  const fromKwargs = textValue(
+    extractKwarg(kwargs, "channelID") ??
+      extractKwarg(kwargs, "channelName") ??
+      extractKwarg(kwargs, "roomJid"),
+  ).trim();
+  if (fromKwargs) {
+    return fromKwargs;
+  }
+
+  if (Array.isArray(args) && args.length > 1) {
+    const fromArgs = textValue(args[1]).trim();
+    if (fromArgs) {
+      return fromArgs;
+    }
+  }
+
+  return null;
+}
+
 class SlashService extends BaseService {
   constructor() {
     super("slash");
@@ -164,6 +204,7 @@ class SlashService extends BaseService {
 
   Handle_SlashCmd(args, session, kwargs) {
     const command = extractCommand(args, kwargs).trim();
+    const feedbackChannel = extractFeedbackChannel(args, kwargs);
 
     log.debug(`[SlashService] SlashCmd: ${command}`);
     appendSlashDebug(
@@ -181,11 +222,13 @@ class SlashService extends BaseService {
 
       const result = executeChatCommand(session, command, chatHub, {
         emitChatFeedback: true,
+        feedbackChannel,
+        serviceManager: this.serviceManager,
       });
 
       if (!result.handled) {
         const message = `Unknown command: ${command}. Use /help.`;
-        chatHub.sendSystemMessage(session, message);
+        chatHub.sendSystemMessage(session, message, feedbackChannel);
         return message;
       }
 
@@ -196,7 +239,7 @@ class SlashService extends BaseService {
       appendSlashDebug(
         `SlashCmd error user=${session ? session.userid : "?"} char=${session ? session.characterID : "?"} command=${JSON.stringify(command)} args=${JSON.stringify(summarizeValue(args))} kwargs=${JSON.stringify(summarizeValue(kwargs))} error=${error.stack || error.message}`,
       );
-      chatHub.sendSystemMessage(session, message);
+      chatHub.sendSystemMessage(session, message, feedbackChannel);
       return message;
     }
   }

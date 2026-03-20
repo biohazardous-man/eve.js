@@ -15,7 +15,11 @@ const path = require("path");
 const BaseService = require(path.join(__dirname, "../baseService"));
 
 const log = require(path.join(__dirname, "../../utils/logger"));
-const database = require("../../database")
+const database = require("../../newDatabase")
+const { toClientSafeDisplayName } = require(path.join(
+  __dirname,
+  "../_shared/clientNameUtils",
+));
 const { getCharacterShips } = require(path.join(
   __dirname,
   "../character/characterState",
@@ -102,10 +106,15 @@ function buildLocationRow(
   locationName,
   solarSystemID = null,
   position = null,
+  fallbackName = null,
 ) {
   return [
     locationID,
-    locationName,
+    toClientSafeDisplayName(
+      locationName,
+      fallbackName || `Location ${locationID}`,
+    ),
+    normalizeSolarSystemID(solarSystemID, null),
     Number(position && position.x) || 0.0,
     Number(position && position.y) || 0.0,
     Number(position && position.z) || 0.0,
@@ -180,7 +189,10 @@ function buildShipItemOwnerRow(itemID) {
 
   return [
     Number(shipItem.itemID) || Number(itemID) || 0,
-    shipItem.shipName || shipItem.itemName || `Ship ${itemID}`,
+    toClientSafeDisplayName(
+      shipItem.shipName || shipItem.itemName || `Ship ${itemID}`,
+      `Ship ${itemID}`,
+    ),
     Number(shipItem.shipTypeID || shipItem.typeID) || 606,
     0,
     null,
@@ -261,8 +273,17 @@ class ConfigService extends BaseService {
         continue;
       }
 
-      // Unknown entities — return placeholder
-      rows.push([numericId, `Entity ${numericId}`, 1, 0, null]);
+      // Unknown entity — return a generic row so the client's cfg._Prime
+      // can unpack it and inspect the typeID (e.g. to rule out IsCharacter).
+      // Without this, the client gets an empty result and crashes with
+      // "ValueError: need more than 0 values to unpack".
+      rows.push([
+        numericId,
+        `Item ${numericId}`,
+        0, // typeID = 0 (not a character/corp/alliance)
+        0, // gender
+        null, // ownerNameID
+      ]);
     }
 
     if (rows.length === 0) {
@@ -276,8 +297,8 @@ class ConfigService extends BaseService {
 /**
  * GetMultiLocationsEx — fetch location info for a list of location IDs.
  *
- * Live client logs show this RPC still returns the classic 6-column tuple:
- * [locationID, locationName, x, y, z, locationNameID]
+ * cfg.evelocations uses:
+ * [locationID, locationName, solarSystemID, x, y, z, locationNameID]
  */
   Handle_GetMultiLocationsEx(args, session) {
     const rawArg = args && args.length > 0 ? args[0] : [];
@@ -372,6 +393,8 @@ class ConfigService extends BaseService {
             numericId,
             shipNameById.get(numericId),
             sessionSolarSystemID,
+            null,
+            `Ship ${numericId}`,
           ),
         );
       } else if (charNameById.has(numericId)) {
@@ -380,17 +403,39 @@ class ConfigService extends BaseService {
             numericId,
             charNameById.get(numericId),
             sessionSolarSystemID,
+            null,
+            `Character ${numericId}`,
           ),
         );
       } else if (numericId >= 60000000 && numericId < 64000000) {
         rows.push(
-          buildLocationRow(numericId, `Station ${numericId}`, sessionSolarSystemID),
+          buildLocationRow(
+            numericId,
+            `Station ${numericId}`,
+            sessionSolarSystemID,
+            null,
+            `Station ${numericId}`,
+          ),
         );
       } else if (numericId >= 30000000 && numericId < 40000000) {
-        rows.push(buildLocationRow(numericId, `System ${numericId}`, numericId));
+        rows.push(
+          buildLocationRow(
+            numericId,
+            `System ${numericId}`,
+            numericId,
+            null,
+            `System ${numericId}`,
+          ),
+        );
       } else {
         rows.push(
-          buildLocationRow(numericId, `Location ${numericId}`, sessionSolarSystemID),
+          buildLocationRow(
+            numericId,
+            `Location ${numericId}`,
+            sessionSolarSystemID,
+            null,
+            `Location ${numericId}`,
+          ),
         );
       }
     }
@@ -400,7 +445,7 @@ class ConfigService extends BaseService {
     }
 
     return [
-      ["locationID", "locationName", "x", "y", "z", "locationNameID"],
+      ["locationID", "locationName", "solarSystemID", "x", "y", "z", "locationNameID"],
       rows,
     ];
   }

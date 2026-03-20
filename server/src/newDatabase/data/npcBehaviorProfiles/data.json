@@ -1,0 +1,353 @@
+{
+  "behaviorProfiles": [
+    {
+      "behaviorProfileID": "npc_passive_idle",
+      "name": "NPC Passive Idle",
+      "thinkIntervalMs": 500,
+      "autoAggroTargetClasses": [],
+      "targetPreference": "none",
+      "autoAggro": false,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 4000,
+      "followRangeMeters": 2500,
+      "aggressionRangeMeters": 0,
+      "leashRangeMeters": 150000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 1500,
+      "autoActivateWeapons": false
+    },
+    {
+      "behaviorProfileID": "npc_auto_aggro_guard",
+      "name": "NPC Auto Aggro Guard",
+      "thinkIntervalMs": 250,
+      "autoAggroTargetClasses": [
+        "player"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 3500,
+      "followRangeMeters": 2200,
+      "aggressionRangeMeters": 150000,
+      "leashRangeMeters": 175000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 2000,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "npc_orbit_kiter",
+      "name": "NPC Orbit Kiter",
+      "thinkIntervalMs": 200,
+      "autoAggroTargetClasses": [
+        "player"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 9000,
+      "followRangeMeters": 7000,
+      "aggressionRangeMeters": 225000,
+      "leashRangeMeters": 250000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 2500,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "npc_brawler",
+      "name": "NPC Brawler",
+      "thinkIntervalMs": 175,
+      "autoAggroTargetClasses": [
+        "player"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 1750,
+      "followRangeMeters": 1200,
+      "aggressionRangeMeters": 175000,
+      "leashRangeMeters": 200000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 1800,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "npc_mining_response_fleet",
+      "name": "NPC Mining Response Fleet",
+      "thinkIntervalMs": 150,
+      "autoAggroTargetClasses": [
+        "player"
+      ],
+      "targetPreference": "nearestPlayer",
+      "autoAggro": true,
+      "movementMode": "follow",
+      "orbitDistanceMeters": 3000,
+      "followRangeMeters": 1200,
+      "aggressionRangeMeters": 250000,
+      "leashRangeMeters": 250000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 2000,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "npc_concord_police",
+      "name": "NPC CONCORD Police",
+      "thinkIntervalMs": 100,
+      "autoAggroTargetClasses": [
+        "player",
+        "npc"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 1500,
+      "followRangeMeters": 900,
+      "aggressionRangeMeters": 250000,
+      "leashRangeMeters": 500000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 1500,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "auto_aggro_orbit_laser",
+      "name": "Auto Aggro Orbit Laser",
+      "thinkIntervalMs": 250,
+      "autoAggroTargetClasses": [
+        "player"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 3500,
+      "followRangeMeters": 2500,
+      "aggressionRangeMeters": 150000,
+      "leashRangeMeters": 300000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 2500,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "concord_fast_response_laser",
+      "name": "CONCORD Fast Response Laser",
+      "thinkIntervalMs": 100,
+      "autoAggroTargetClasses": [
+        "player",
+        "npc"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 1500,
+      "followRangeMeters": 1000,
+      "aggressionRangeMeters": 250000,
+      "leashRangeMeters": 500000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 1500,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "blood_raider_destroyer_brawler",
+      "name": "Blood Raider Destroyer Brawler",
+      "thinkIntervalMs": 200,
+      "autoAggroTargetClasses": [
+        "player"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 3000,
+      "followRangeMeters": 1800,
+      "aggressionRangeMeters": 180000,
+      "leashRangeMeters": 300000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 2500,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "blood_raider_battlecruiser_line",
+      "name": "Blood Raider Battlecruiser Line",
+      "thinkIntervalMs": 225,
+      "autoAggroTargetClasses": [
+        "player"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 5500,
+      "followRangeMeters": 4000,
+      "aggressionRangeMeters": 225000,
+      "leashRangeMeters": 350000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 3000,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "blood_raider_battleship_line",
+      "name": "Blood Raider Battleship Line",
+      "thinkIntervalMs": 250,
+      "autoAggroTargetClasses": [
+        "player"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 7500,
+      "followRangeMeters": 6000,
+      "aggressionRangeMeters": 250000,
+      "leashRangeMeters": 400000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 3500,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "blood_raider_marauder",
+      "name": "Blood Raider Marauder",
+      "thinkIntervalMs": 200,
+      "autoAggroTargetClasses": [
+        "player"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 6500,
+      "followRangeMeters": 5500,
+      "aggressionRangeMeters": 250000,
+      "leashRangeMeters": 400000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 3500,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "concord_fast_response_beam",
+      "name": "CONCORD Fast Response Beam",
+      "thinkIntervalMs": 100,
+      "autoAggroTargetClasses": [
+        "player",
+        "npc"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 2200,
+      "followRangeMeters": 1400,
+      "aggressionRangeMeters": 250000,
+      "leashRangeMeters": 500000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 1500,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "concord_fast_response_pulse",
+      "name": "CONCORD Fast Response Pulse",
+      "thinkIntervalMs": 100,
+      "autoAggroTargetClasses": [
+        "player",
+        "npc"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 1200,
+      "followRangeMeters": 800,
+      "aggressionRangeMeters": 250000,
+      "leashRangeMeters": 500000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 1200,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "concord_police_cruiser_beam",
+      "name": "CONCORD Police Cruiser Beam",
+      "thinkIntervalMs": 125,
+      "autoAggroTargetClasses": [
+        "player",
+        "npc"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 4500,
+      "followRangeMeters": 3200,
+      "aggressionRangeMeters": 250000,
+      "leashRangeMeters": 500000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 2000,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "concord_police_battleship_beam",
+      "name": "CONCORD Police Battleship Beam",
+      "thinkIntervalMs": 125,
+      "autoAggroTargetClasses": [
+        "player",
+        "npc"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 6000,
+      "followRangeMeters": 4500,
+      "aggressionRangeMeters": 250000,
+      "leashRangeMeters": 500000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 2500,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "concord_special_ops_battleship_beam",
+      "name": "CONCORD Special Ops Battleship Beam",
+      "thinkIntervalMs": 100,
+      "autoAggroTargetClasses": [
+        "player",
+        "npc"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 5000,
+      "followRangeMeters": 3500,
+      "aggressionRangeMeters": 250000,
+      "leashRangeMeters": 500000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 2200,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "concord_swat_battleship_pulse",
+      "name": "CONCORD SWAT Battleship Pulse",
+      "thinkIntervalMs": 100,
+      "autoAggroTargetClasses": [
+        "player",
+        "npc"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 3000,
+      "followRangeMeters": 1800,
+      "aggressionRangeMeters": 250000,
+      "leashRangeMeters": 500000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 1800,
+      "autoActivateWeapons": true
+    },
+    {
+      "behaviorProfileID": "concord_army_battleship_pulse",
+      "name": "CONCORD Army Battleship Pulse",
+      "thinkIntervalMs": 110,
+      "autoAggroTargetClasses": [
+        "player",
+        "npc"
+      ],
+      "targetPreference": "preferredTargetThenNearestPlayer",
+      "autoAggro": true,
+      "movementMode": "orbit",
+      "orbitDistanceMeters": 3600,
+      "followRangeMeters": 2200,
+      "aggressionRangeMeters": 250000,
+      "leashRangeMeters": 500000,
+      "returnToHomeWhenIdle": true,
+      "homeArrivalMeters": 1800,
+      "autoActivateWeapons": true
+    }
+  ]
+}

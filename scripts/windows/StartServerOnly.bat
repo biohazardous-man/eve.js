@@ -3,8 +3,6 @@ setlocal
 
 call "%~dp0EvEJSConfig.bat"
 
-rem Force server-only behavior even if local config enables autoLaunch.
-set "EVEJS_AUTO_LAUNCH=0"
 set "EVEJS_PROXY_LOCAL_INTERCEPT=1"
 pushd "%EVEJS_REPO_ROOT%\server"
 echo [eve.js] Starting server only from "%EVEJS_REPO_ROOT%\server"

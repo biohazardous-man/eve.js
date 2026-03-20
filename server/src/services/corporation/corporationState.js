@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const database = require(path.join(__dirname, "../../database"));
+const database = require(path.join(__dirname, "../../newDatabase"));
 const {
   currentFileTime,
 } = require(path.join(__dirname, "../_shared/serviceHelpers"));

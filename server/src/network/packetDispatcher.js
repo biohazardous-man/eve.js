@@ -26,6 +26,9 @@ const slashDebugPath = path.join(__dirname, "../../logs/slash-debug.log");
 const spaceDebugPath = path.join(__dirname, "../../logs/space-undock-debug.log");
 
 function appendSlashDebug(entry) {
+  if (!log.isVerboseDebugEnabled()) {
+    return;
+  }
   try {
     fs.mkdirSync(path.dirname(slashDebugPath), { recursive: true });
     fs.appendFileSync(
@@ -39,6 +42,9 @@ function appendSlashDebug(entry) {
 }
 
 function appendSpaceDebug(entry) {
+  if (!log.isVerboseDebugEnabled()) {
+    return;
+  }
   try {
     fs.mkdirSync(path.dirname(spaceDebugPath), { recursive: true });
     fs.appendFileSync(
@@ -106,8 +112,9 @@ class PacketDispatcher {
       return false;
     }
 
-    log.debug(
-      `[Dispatch] ${pkt.typeName} → service=${pkt.service || "?"} src=${pkt.source.type} dst=${pkt.dest.type} src_raw=${JSON.stringify(pkt.source)}`,
+    log.pktIn(
+      pkt.service || pkt.typeName,
+      `${pkt.typeName} src=${pkt.source.type} dst=${pkt.dest.type}`,
     );
 
     switch (pkt.type) {
@@ -156,8 +163,9 @@ class PacketDispatcher {
     // The dest address might contain proxyNodeId at index 1 instead of callID.
     const callID = pkt.source.callID || pkt.dest.callID || 0;
 
-    log.debug(
-      `[CallReq] ${serviceName || "?"}::${call.method}() callID=${callID}`,
+    log.pktIn(
+      serviceName || "?",
+      `${call.method}() callID=${callID}`,
     );
     const lookedUpService =
       this.serviceManager && serviceName
@@ -233,8 +241,9 @@ class PacketDispatcher {
           }
           return true;
         } catch (err) {
-          log.err(
-            `[CallReq] Error in ${serviceName}::${call.method}: ${err.message}`,
+          log.pktErr(
+            serviceName || "?",
+            `${call.method}() ${err.message}`,
           );
           if (traceSpaceCall) {
             appendSpaceDebug(
@@ -253,12 +262,12 @@ class PacketDispatcher {
           }
         }
       } else {
-        log.warn(`[CallReq] No service registered for: ${serviceName}`);
+        log.pktErr(serviceName, "no service registered");
         // Send None response so client doesn't hang
         this._sendCallResponse(pkt, null, session);
       }
     } else {
-      log.warn(`[CallReq] No service name in packet`);
+      log.pktErr("CallReq", "no service name in packet");
       this._sendCallResponse(pkt, null, session);
     }
 
@@ -266,17 +275,18 @@ class PacketDispatcher {
   }
 
   _handleCallRsp(pkt, session) {
-    log.debug("[CallRsp] Received call response (client → server, unusual)");
+    log.pktIn("CallRsp", "client → server (unusual)");
     return true;
   }
 
   _handleNotification(pkt, session) {
-    log.debug(`[Notification] ${pkt.dest.broadcastID || "?"}`);
+    log.pktIn("Notification", pkt.dest.broadcastID || "?");
     return true;
   }
 
   _handlePingReq(pkt, session) {
-    log.debug("[PingReq] Responding to ping");
+    log.pktIn("Ping", "request received");
+    log.pktOut("Ping", "response sent");
 
     const now = BigInt(Date.now()) * 10000n + 116444736000000000n; // Win32 FILETIME
 
@@ -324,22 +334,22 @@ class PacketDispatcher {
   }
 
   _handlePingRsp(pkt, session) {
-    log.debug("[PingRsp] Received ping response");
+    log.pktIn("Ping", "response from client");
     return true;
   }
 
   _handleSessionChange(pkt, session) {
-    log.debug("[SessionChange] Session change notification from client");
+    log.pktIn("SessionChange", "notification from client");
     return true;
   }
 
   _handleErrorResponse(pkt, session) {
-    log.warn("[ErrorResponse] Received error from client");
+    log.pktErr("ErrorResponse", "received error from client");
     return true;
   }
 
   _handleOther(pkt, session) {
-    log.warn(`[Dispatch] Unhandled packet type: ${pkt.typeName} (${pkt.type})`);
+    log.pktErr("Dispatch", `unhandled packet type: ${pkt.typeName} (${pkt.type})`);
     return false;
   }
 
@@ -411,8 +421,9 @@ class PacketDispatcher {
       args: responseTuple,
     };
 
-    log.debug(
-      `[CallRsp] Sending response for callID=${callID} payload=${JSON.stringify(responseObj, (k, v) => (typeof v === "bigint" ? v.toString() : v))}`,
+    log.pktOut(
+      pkt.dest.service || pkt.service || "CallRsp",
+      `response callID=${callID}`,
     );
     session.sendPacket(responseObj);
   }
@@ -454,7 +465,10 @@ class PacketDispatcher {
       args: responseTuple,
     };
 
-    log.debug(`[ErrorRsp] Sending wrapped exception for callID=${callID}`);
+    log.pktErr(
+      pkt.dest.service || pkt.service || "ErrorRsp",
+      `wrapped exception callID=${callID}`,
+    );
     session.sendPacket(responseObj);
   }
   /**

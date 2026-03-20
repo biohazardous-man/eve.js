@@ -24,6 +24,30 @@ function parseArgs(argv) {
   return args;
 }
 
+function extractSnapshotBuild(name) {
+  const match = /^eve-online-static-data-(\d+)-jsonl$/.exec(name);
+  return match ? Number(match[1]) : null;
+}
+
+function findLatestJsonlSnapshotDir(repoRoot) {
+  const dataRoot = path.join(repoRoot, "data");
+  if (!fs.existsSync(dataRoot)) {
+    throw new Error(`Data directory not found: ${dataRoot}`);
+  }
+
+  const candidates = fs.readdirSync(dataRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((name) => extractSnapshotBuild(name) !== null)
+    .sort((left, right) => extractSnapshotBuild(left) - extractSnapshotBuild(right));
+
+  if (candidates.length === 0) {
+    throw new Error(`No JSONL snapshot directories found under: ${dataRoot}`);
+  }
+
+  return path.join(dataRoot, candidates[candidates.length - 1]);
+}
+
 function toNumber(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
@@ -133,13 +157,13 @@ function buildMaterialEntry(existingEntry, upstreamRow) {
         ? existingEntry.displayNameID
         : null,
     materialSetID:
-      existingEntry && Object.prototype.hasOwnProperty.call(existingEntry, "materialSetID")
-        ? existingEntry.materialSetID
-        : toNumber(upstreamRow && upstreamRow.materialSetID),
+      upstreamRow && Object.prototype.hasOwnProperty.call(upstreamRow, "materialSetID")
+        ? toNumber(upstreamRow.materialSetID)
+        : toNumber(existingEntry && existingEntry.materialSetID),
     displayName:
-      existingEntry && Object.prototype.hasOwnProperty.call(existingEntry, "displayName")
-        ? existingEntry.displayName
-        : (upstreamRow && upstreamRow.displayName) || null,
+      upstreamRow && Object.prototype.hasOwnProperty.call(upstreamRow, "displayName")
+        ? upstreamRow.displayName
+        : (existingEntry && existingEntry.displayName) || null,
     skinIDs: [],
     shipTypeIDs: [],
     licenseTypeIDs: [],
@@ -158,9 +182,9 @@ function buildSkinEntry(existingEntry, upstreamRow, materialEntry) {
     ...(existingEntry && typeof existingEntry === "object" ? existingEntry : {}),
     skinID: numericSkinID,
     internalName:
-      (existingEntry && existingEntry.internalName) ||
-      (upstreamRow && upstreamRow.internalName) ||
-      "",
+      upstreamRow && Object.prototype.hasOwnProperty.call(upstreamRow, "internalName")
+        ? upstreamRow.internalName || ""
+        : (existingEntry && existingEntry.internalName) || "",
     skinMaterialID: numericMaterialID || null,
     material: {
       ...(existingEntry && existingEntry.material && typeof existingEntry.material === "object"
@@ -174,22 +198,30 @@ function buildSkinEntry(existingEntry, upstreamRow, materialEntry) {
           ? existingEntry.material.displayNameID
           : (materialEntry ? materialEntry.displayNameID : null),
       materialSetID:
-        existingEntry &&
-        existingEntry.material &&
-        Object.prototype.hasOwnProperty.call(existingEntry.material, "materialSetID")
-          ? existingEntry.material.materialSetID
-          : (materialEntry ? materialEntry.materialSetID : null),
+        materialEntry && Object.prototype.hasOwnProperty.call(materialEntry, "materialSetID")
+          ? materialEntry.materialSetID
+          : (
+            existingEntry &&
+            existingEntry.material &&
+            Object.prototype.hasOwnProperty.call(existingEntry.material, "materialSetID")
+              ? existingEntry.material.materialSetID
+              : null
+          ),
       displayName:
-        existingEntry &&
-        existingEntry.material &&
-        Object.prototype.hasOwnProperty.call(existingEntry.material, "displayName")
-          ? existingEntry.material.displayName
-          : (materialEntry ? materialEntry.displayName : null),
+        materialEntry && Object.prototype.hasOwnProperty.call(materialEntry, "displayName")
+          ? materialEntry.displayName
+          : (
+            existingEntry &&
+            existingEntry.material &&
+            Object.prototype.hasOwnProperty.call(existingEntry.material, "displayName")
+              ? existingEntry.material.displayName
+              : null
+          ),
     },
-    shipTypeIDs: uniqueSortedNumbers([
-      ...((existingEntry && existingEntry.shipTypeIDs) || []),
-      ...(((upstreamRow && upstreamRow.types) || []).map((value) => toNumber(value))),
-    ]),
+    shipTypeIDs:
+      upstreamRow && Object.prototype.hasOwnProperty.call(upstreamRow, "types")
+        ? uniqueSortedNumbers(((upstreamRow && upstreamRow.types) || []).map((value) => toNumber(value)))
+        : uniqueSortedNumbers((existingEntry && existingEntry.shipTypeIDs) || []),
     licenseTypeIDs: [],
     licenseTypes: [],
     allowCCPDevs:
@@ -239,10 +271,9 @@ function buildLicenseEntry(existingEntry, upstreamRow, skinEntry, typesById, gro
     toNumber(upstreamRow && upstreamRow.skinID) ||
     toNumber(existingEntry && existingEntry.skinID);
   const metadata = buildLicenseMetadata(typesById, groupsById, numericLicenseTypeID);
-  const shipTypeIDs = uniqueSortedNumbers([
-    ...((existingEntry && existingEntry.shipTypeIDs) || []),
-    ...((skinEntry && skinEntry.shipTypeIDs) || []),
-  ]);
+  const shipTypeIDs = uniqueSortedNumbers(
+    (skinEntry && skinEntry.shipTypeIDs) || (existingEntry && existingEntry.shipTypeIDs) || [],
+  );
 
   return {
     ...(existingEntry && typeof existingEntry === "object" ? existingEntry : {}),
@@ -284,6 +315,10 @@ function buildLicenseEntry(existingEntry, upstreamRow, skinEntry, typesById, gro
       !Number.isInteger(toNumber(skinEntry.skinID)) ||
       toNumber(skinEntry.skinID) <= 0,
   };
+}
+
+function getJsonlAuthorityName(jsonlDir) {
+  return path.basename(path.resolve(jsonlDir));
 }
 
 function reindexCatalog(catalog) {
@@ -406,8 +441,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const repoRoot = path.resolve(__dirname, "..", "..");
   const jsonlDir = path.resolve(
-    args.jsonlDir ||
-      path.join(repoRoot, "data", "eve-online-static-data-3253748-jsonl"),
+    args.jsonlDir || findLatestJsonlSnapshotDir(repoRoot),
   );
   const localCatalogPath = path.resolve(
     args.localCatalog ||
@@ -415,7 +449,7 @@ async function main() {
         repoRoot,
         "server",
         "src",
-        "database",
+        "newDatabase",
         "data",
         "shipCosmeticsCatalog",
         "data.json",
@@ -539,7 +573,7 @@ async function main() {
   const nextMeta = {
     ...(localCatalog.meta && typeof localCatalog.meta === "object" ? localCatalog.meta : {}),
     provider: "EVE Static Data JSONL",
-    authority: "eve-online-static-data-3253748-jsonl",
+    authority: getJsonlAuthorityName(jsonlDir),
     sourceDir: jsonlDir,
     generatedAt: new Date().toISOString(),
     buildNumber: sdeRow ? sdeRow.buildNumber || null : null,

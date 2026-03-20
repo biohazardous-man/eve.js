@@ -82,6 +82,14 @@ function buildFiletimeLong(rawValue = null) {
   };
 }
 
+function buildMarshalReal(value, fallback = 0) {
+  const numericValue = normalizeNumber(value, fallback);
+  return {
+    type: "real",
+    value: Number.isFinite(numericValue) ? numericValue : fallback,
+  };
+}
+
 function normalizeText(value, fallback = "") {
   if (value === undefined || value === null) {
     return fallback;
@@ -235,6 +243,7 @@ module.exports = {
   currentFileTime,
   normalizeBigInt,
   buildFiletimeLong,
+  buildMarshalReal,
   normalizeText,
   normalizeNumber,
   extractList,

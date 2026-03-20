@@ -1,0 +1,9 @@
+{
+  "startupRuleOverrides": {
+    "jita_concord_gate_checkpoint_startup": {
+      "enabled": false
+    }
+  },
+  "characterFlags": {},
+  "systemGateControls": {}
+}

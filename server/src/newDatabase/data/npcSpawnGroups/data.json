@@ -1,0 +1,124 @@
+{
+  "spawnGroups": [
+    {
+      "spawnGroupID": "blood_raider_roaming_pair",
+      "name": "Blood Raider Roaming Pair",
+      "description": "Small roaming Blood Raider pair for patrol and belt-style authoring.",
+      "aliases": [
+        "blood pair",
+        "blood patrol"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "generic_hostile",
+          "count": 1
+        },
+        {
+          "spawnPoolID": "blood_raiders",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "spawnGroupID": "blood_raider_gate_ambush",
+      "name": "Blood Raider Gate Ambush",
+      "description": "Authorable gate ambush group with light tackle and heavier follow-up hulls.",
+      "aliases": [
+        "blood ambush",
+        "raider gate"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "generic_hostile",
+          "count": 2
+        },
+        {
+          "profileID": "blood_raider_prophecy",
+          "count": 1
+        },
+        {
+          "spawnPoolID": "blood_raiders",
+          "minCount": 0,
+          "maxCount": 1
+        }
+      ]
+    },
+    {
+      "spawnGroupID": "concord_police_screen",
+      "name": "CONCORD Police Screen",
+      "description": "Baseline police screen for stations and light response authoring.",
+      "aliases": [
+        "concord screen",
+        "police screen"
+      ],
+      "entityType": "concord",
+      "entries": [
+        {
+          "profileID": "concord_response",
+          "count": 2
+        },
+        {
+          "profileID": "concord_police_cruiser",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "spawnGroupID": "concord_gate_checkpoint",
+      "name": "CONCORD Gate Checkpoint",
+      "description": "Checkpoint-style CONCORD gate presence with frigates and a random specialist escort.",
+      "aliases": [
+        "concord checkpoint",
+        "gate checkpoint"
+      ],
+      "entityType": "concord",
+      "entries": [
+        {
+          "profileID": "concord_response",
+          "count": 2
+        },
+        {
+          "spawnPoolID": "concord_special_ops",
+          "minCount": 0,
+          "maxCount": 1
+        },
+        {
+          "spawnPoolID": "concord_swat",
+          "minCount": 0,
+          "maxCount": 1
+        }
+      ]
+    },
+    {
+      "spawnGroupID": "concord_heavy_response",
+      "name": "CONCORD Heavy Response",
+      "description": "Heavy manual response composition for high-visibility stations and escalations.",
+      "aliases": [
+        "concord heavy",
+        "heavy response"
+      ],
+      "entityType": "concord",
+      "entries": [
+        {
+          "profileID": "concord_response",
+          "count": 2
+        },
+        {
+          "profileID": "concord_police_cruiser",
+          "count": 1
+        },
+        {
+          "profileID": "concord_police_battleship",
+          "count": 1
+        },
+        {
+          "spawnPoolID": "concord_special_ops",
+          "minCount": 0,
+          "maxCount": 1
+        }
+      ]
+    }
+  ]
+}

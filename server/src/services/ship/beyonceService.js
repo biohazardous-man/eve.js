@@ -21,6 +21,10 @@ const {
 const {
   flushPendingCommandSessionEffects,
 } = require(path.join(__dirname, "../chat/commandSessionEffects"));
+const USER_ERROR_LOCALIZATION_LABEL = 101;
+const STARGATE_CLOSED_LABEL = "UI/GateIcons/GateClosed";
+const STARGATE_TOO_FAR_LABEL = "UI/Menusvc/MenuHints/NotWithingMaxJumpDist";
+const CRIMEWATCH_WARP_BLOCKED_MESSAGE = "Warp is disabled while the criminal timer is active.";
 
 function getKwargValue(kwargs, key) {
   const entries = extractDictEntries(kwargs);
@@ -47,8 +51,50 @@ class BeyonceService extends BaseService {
     super("beyonce");
   }
 
+  _throwStargateJumpUserError(errorMsg = "") {
+    switch (String(errorMsg || "").trim()) {
+      case "NOT_IN_SPACE":
+      case "SHIP_NOT_FOUND":
+      case "WRONG_SOLAR_SYSTEM":
+        throwWrappedUserError("DeniedShipChanged");
+        break;
+      case "STARGATE_NOT_FOUND":
+      case "STARGATE_DESTINATION_MISMATCH":
+        throwWrappedUserError("TargetingAttemptCancelled");
+        break;
+      case "TOO_FAR_FROM_STARGATE":
+        throwWrappedUserError("CustomInfo", {
+          info: [USER_ERROR_LOCALIZATION_LABEL, STARGATE_TOO_FAR_LABEL],
+        });
+        break;
+      case "STARGATE_NOT_ACTIVE":
+        throwWrappedUserError("CustomInfo", {
+          info: [USER_ERROR_LOCALIZATION_LABEL, STARGATE_CLOSED_LABEL],
+        });
+        break;
+      case "STARGATE_JUMP_IN_PROGRESS":
+        throwWrappedUserError("CustomInfo", {
+          info: "Stargate jump already in progress.",
+        });
+        break;
+      default:
+        throwWrappedUserError("CustomInfo", {
+          info: "The stargate jump could not be completed.",
+        });
+        break;
+    }
+  }
+
   Handle_GetFormations(args, session) {
     spaceRuntime.markBeyonceBound(session);
+    // The client asks for formations as soon as the destination ballpark
+    // exists, before the heavier MachoBindObject round-trip. Seeding the
+    // early AddBalls2 visuals here removes the "empty system" gap on login/jump.
+    // Cross-system jumps still defer SetState until MachoBindObject so Michelle
+    // does not establish destination history before the scene swap completes.
+    spaceRuntime.ensureInitialBallpark(session, {
+      allowDeferredJumpBootstrapVisuals: true,
+    });
 
     return [
       [
@@ -77,7 +123,9 @@ class BeyonceService extends BaseService {
     // The client probes this repeatedly while already in space; forcing a
     // full AddBalls2/SetState replay causes scene-object churn and visible
     // respawn flicker.
-    spaceRuntime.ensureInitialBallpark(session);
+    spaceRuntime.ensureInitialBallpark(session, {
+      allowDeferredJumpBootstrapVisuals: true,
+    });
     return null;
   }
 
@@ -190,6 +238,11 @@ class BeyonceService extends BaseService {
       log.warn(
         `[Beyonce] CmdWarpToStuff failed for char=${session && session.characterID}: ${(result && result.errorMsg) || "UNKNOWN_ERROR"}`,
       );
+      if (result && result.errorMsg === "CRIMINAL_TIMER_ACTIVE") {
+        throwWrappedUserError("CustomInfo", {
+          info: CRIMEWATCH_WARP_BLOCKED_MESSAGE,
+        });
+      }
     }
 
     return null;
@@ -200,7 +253,17 @@ class BeyonceService extends BaseService {
     log.info(
       `[Beyonce] CmdWarpToStuffAutopilot char=${session && session.characterID} target=${targetID}`,
     );
-    spaceRuntime.warpToEntity(session, targetID, { minimumRange: 10000 });
+    const result = spaceRuntime.warpToEntity(session, targetID, { minimumRange: 10000 });
+    if (!result || !result.success) {
+      log.warn(
+        `[Beyonce] CmdWarpToStuffAutopilot failed for char=${session && session.characterID}: ${(result && result.errorMsg) || "UNKNOWN_ERROR"}`,
+      );
+      if (result && result.errorMsg === "CRIMINAL_TIMER_ACTIVE") {
+        throwWrappedUserError("CustomInfo", {
+          info: CRIMEWATCH_WARP_BLOCKED_MESSAGE,
+        });
+      }
+    }
     return null;
   }
 
@@ -252,7 +315,7 @@ class BeyonceService extends BaseService {
       log.warn(
         `[Beyonce] CmdStargateJump failed for char=${session && session.characterID}: ${result.errorMsg}`,
       );
-      return null;
+      this._throwStargateJumpUserError(result.errorMsg);
     }
 
     return result.data.boundResult || null;
@@ -264,12 +327,17 @@ class BeyonceService extends BaseService {
 
   Handle_MachoBindObject(args, session, kwargs) {
     spaceRuntime.markBeyonceBound(session);
-    return buildBoundObjectResponse(this, args, session, kwargs);
+    const response = buildBoundObjectResponse(this, args, session, kwargs);
+    // Space login is race-sensitive: if the bind reply reaches the client
+    // before the first AddBalls2/SetState bootstrap, the inflight HUD can open
+    // against an empty ego-ball state and only recover later via Michelle's
+    // missing-module redraw path.
+    spaceRuntime.ensureInitialBallpark(session);
+    return response;
   }
 
   afterCallResponse(methodName, session) {
     if (methodName === "MachoBindObject") {
-      spaceRuntime.ensureInitialBallpark(session);
       flushPendingCommandSessionEffects(session);
       return;
     }

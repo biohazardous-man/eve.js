@@ -8,11 +8,11 @@ const expressProxyService = require(path.join(
 ));
 
 log.logAsciiLogo();
-console.log();
+log.spacer();
 log.info("starting eve.js proxy only...");
-console.log();
+log.spacer();
 log.debug(`microservices redirect: ${config.microservicesRedirectUrl}`);
-console.log();
+log.line();
 
 if (expressProxyService.enabled !== true) {
   log.err(

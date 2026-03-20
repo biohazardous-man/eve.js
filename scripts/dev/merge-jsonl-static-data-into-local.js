@@ -9,6 +9,21 @@ const MOVEMENT_ATTRIBUTE_IDS = Object.freeze({
   signatureRadius: 552,
   warpSpeedMultiplier: 600,
 });
+const CHARACTER_CREATION_RACE_IDS = Object.freeze([1, 2, 4, 8]);
+const CHARACTER_CREATION_BLOODLINE_IDS = Object.freeze([
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  11,
+  12,
+  13,
+  14,
+]);
 
 function parseArgs(argv) {
   const args = {};
@@ -30,6 +45,30 @@ function parseArgs(argv) {
   }
 
   return args;
+}
+
+function extractSnapshotBuild(name) {
+  const match = /^eve-online-static-data-(\d+)-jsonl$/.exec(name);
+  return match ? Number(match[1]) : null;
+}
+
+function findLatestJsonlSnapshotDir(repoRoot) {
+  const dataRoot = path.join(repoRoot, "data");
+  if (!fs.existsSync(dataRoot)) {
+    throw new Error(`Data directory not found: ${dataRoot}`);
+  }
+
+  const candidates = fs.readdirSync(dataRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((name) => extractSnapshotBuild(name) !== null)
+    .sort((left, right) => extractSnapshotBuild(left) - extractSnapshotBuild(right));
+
+  if (candidates.length === 0) {
+    throw new Error(`No JSONL snapshot directories found under: ${dataRoot}`);
+  }
+
+  return path.join(dataRoot, candidates[candidates.length - 1]);
 }
 
 function toNumber(value) {
@@ -132,7 +171,7 @@ function buildTypeRecord(typeRow, groupRow) {
     typeID: toNumber(typeRow._key),
     groupID: toNumber(typeRow.groupID),
     categoryID: toNumber(groupRow && groupRow.categoryID) || null,
-    groupName: englishText(groupRow && groupRow.name),
+    groupName: englishText(groupRow && groupRow.name) || null,
     name: englishText(typeRow.name),
     mass: toNumber(typeRow.mass),
     volume: toNumber(typeRow.volume),
@@ -145,6 +184,7 @@ function buildTypeRecord(typeRow, groupRow) {
     soundID: toNumber(typeRow.soundID),
     graphicID: toNumber(typeRow.graphicID),
     radius: toNumber(typeRow.radius),
+    published: Boolean(typeRow.published),
   };
 }
 
@@ -162,6 +202,46 @@ function buildSkillRecord(typeRow, groupRow) {
     iconID: toNumber(typeRow.iconID),
     soundID: toNumber(typeRow.soundID),
     graphicID: toNumber(typeRow.graphicID),
+  };
+}
+
+function buildCharacterCreationRaceRecord(raceRow, typesById) {
+  if (!raceRow || typeof raceRow !== "object") {
+    return null;
+  }
+
+  const shipTypeID = toNumber(raceRow.shipTypeID);
+  const shipTypeRow = Number.isInteger(shipTypeID) ? typesById.get(shipTypeID) || null : null;
+  return {
+    raceID: toNumber(raceRow._key),
+    name: englishText(raceRow.name),
+    shipTypeID: shipTypeID || null,
+    shipName: englishText(shipTypeRow && shipTypeRow.name) || null,
+    skills: (Array.isArray(raceRow.skills) ? raceRow.skills : [])
+      .map((entry) => ({
+        typeID: toNumber(entry && entry._key),
+        level: toNumber(entry && entry._value) || 0,
+      }))
+      .filter(
+        (entry) =>
+          Number.isInteger(entry.typeID) &&
+          entry.typeID > 0 &&
+          Number.isInteger(entry.level) &&
+          entry.level >= 0,
+      ),
+  };
+}
+
+function buildCharacterCreationBloodlineRecord(bloodlineRow) {
+  if (!bloodlineRow || typeof bloodlineRow !== "object") {
+    return null;
+  }
+
+  return {
+    bloodlineID: toNumber(bloodlineRow._key),
+    name: englishText(bloodlineRow.name),
+    raceID: toNumber(bloodlineRow.raceID),
+    corporationID: toNumber(bloodlineRow.corporationID),
   };
 }
 
@@ -260,6 +340,61 @@ function buildPlanetRecord(planetRow, systemRow, typeRow, groupRow) {
     celestialIndex,
     orbitIndex: null,
     kind: "planet",
+  };
+}
+
+function buildMoonRecord(moonRow, systemRow, typeRow, groupRow, mapSolarSystemsById, orbitLookups) {
+  return {
+    itemID: toNumber(moonRow._key),
+    typeID: toNumber(moonRow.typeID),
+    groupID: toNumber(typeRow && typeRow.groupID) || 8,
+    categoryID: toNumber(groupRow && groupRow.categoryID) || 2,
+    groupName: englishText(groupRow && groupRow.name) || "Moon",
+    solarSystemID: toNumber(moonRow.solarSystemID) || 0,
+    constellationID: toNumber(systemRow && systemRow.constellationID) || 0,
+    regionID: toNumber(systemRow && systemRow.regionID) || 0,
+    orbitID: toNumber(moonRow.orbitID),
+    position: buildVector(moonRow.position),
+    radius: toNumber(moonRow.radius),
+    itemName:
+      buildOrbitName({ kind: "moon", row: moonRow }, mapSolarSystemsById, orbitLookups) || "Moon",
+    security: Number(toNumber(systemRow && systemRow.securityStatus) || 0),
+    celestialIndex: toNumber(moonRow.celestialIndex),
+    orbitIndex: toNumber(moonRow.orbitIndex),
+    kind: "moon",
+  };
+}
+
+function buildAsteroidBeltRecord(
+  beltRow,
+  systemRow,
+  typeRow,
+  groupRow,
+  mapSolarSystemsById,
+  orbitLookups,
+) {
+  return {
+    itemID: toNumber(beltRow._key),
+    typeID: toNumber(beltRow.typeID),
+    groupID: toNumber(typeRow && typeRow.groupID) || 9,
+    categoryID: toNumber(groupRow && groupRow.categoryID) || 2,
+    groupName: englishText(groupRow && groupRow.name) || "Asteroid Belt",
+    solarSystemID: toNumber(beltRow.solarSystemID) || 0,
+    constellationID: toNumber(systemRow && systemRow.constellationID) || 0,
+    regionID: toNumber(systemRow && systemRow.regionID) || 0,
+    orbitID: toNumber(beltRow.orbitID),
+    position: buildVector(beltRow.position),
+    radius: toNumber(beltRow.radius),
+    itemName:
+      buildOrbitName(
+        { kind: "asteroidBelt", row: beltRow },
+        mapSolarSystemsById,
+        orbitLookups,
+      ) || "Asteroid Belt",
+    security: Number(toNumber(systemRow && systemRow.securityStatus) || 0),
+    celestialIndex: toNumber(beltRow.celestialIndex),
+    orbitIndex: toNumber(beltRow.orbitIndex),
+    kind: "asteroidBelt",
   };
 }
 
@@ -543,6 +678,10 @@ function ensureJsonlSync(target) {
   return source.jsonlSync;
 }
 
+function getJsonlAuthorityName(jsonlDir) {
+  return path.basename(path.resolve(jsonlDir));
+}
+
 function markJsonlAuthority(target, jsonlDir, sdeRow) {
   if (!target || typeof target !== "object") {
     return;
@@ -552,7 +691,7 @@ function markJsonlAuthority(target, jsonlDir, sdeRow) {
     ? target.source
     : {};
   source.provider = "EVE Static Data JSONL";
-  source.authority = "eve-online-static-data-3253748-jsonl";
+  source.authority = getJsonlAuthorityName(jsonlDir);
   source.sourceDir = jsonlDir;
   source.generatedAt = new Date().toISOString();
   source.buildNumber = sdeRow ? sdeRow.buildNumber || null : null;
@@ -567,12 +706,11 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const repoRoot = path.resolve(__dirname, "..", "..");
   const jsonlDir = path.resolve(
-    args.jsonlDir ||
-      path.join(repoRoot, "data", "eve-online-static-data-3253748-jsonl"),
+    args.jsonlDir || findLatestJsonlSnapshotDir(repoRoot),
   );
   const localDbRoot = path.resolve(
     args.localDbRoot ||
-      path.join(repoRoot, "server", "src", "database", "data"),
+      path.join(repoRoot, "server", "src", "newDatabase", "data"),
   );
 
   const [
@@ -591,8 +729,13 @@ async function main() {
     npcCorporationsById,
     stationOperationsById,
     dogmaAttributesById,
+    racesById,
+    bloodlinesById,
+    itemTypesRoot,
     shipTypesRoot,
     skillTypesRoot,
+    characterCreationRacesRoot,
+    characterCreationBloodlinesRoot,
     solarSystemsRoot,
     stationsRoot,
     stationTypesRoot,
@@ -617,8 +760,13 @@ async function main() {
     loadJsonlMap(path.join(jsonlDir, "npcCorporations.jsonl"), (row) => row._key),
     loadJsonlMap(path.join(jsonlDir, "stationOperations.jsonl"), (row) => row._key),
     loadJsonlMap(path.join(jsonlDir, "dogmaAttributes.jsonl"), (row) => row._key),
+    loadJsonlMap(path.join(jsonlDir, "races.jsonl"), (row) => row._key),
+    loadJsonlMap(path.join(jsonlDir, "bloodlines.jsonl"), (row) => row._key),
+    readJson(path.join(localDbRoot, "itemTypes", "data.json")),
     readJson(path.join(localDbRoot, "shipTypes", "data.json")),
     readJson(path.join(localDbRoot, "skillTypes", "data.json")),
+    readJson(path.join(localDbRoot, "characterCreationRaces", "data.json")),
+    readJson(path.join(localDbRoot, "characterCreationBloodlines", "data.json")),
     readJson(path.join(localDbRoot, "solarSystems", "data.json")),
     readJson(path.join(localDbRoot, "stations", "data.json")),
     readJson(path.join(localDbRoot, "stationTypes", "data.json")),
@@ -629,22 +777,32 @@ async function main() {
     readJson(path.join(localDbRoot, "shipDogmaAttributes", "data.json")),
   ]);
 
-  const publishedShipTypeIDs = [];
-  const publishedSkillTypeIDs = [];
+  const itemTypeIDs = [...typesById.keys()]
+    .map((value) => toNumber(value))
+    .filter((value) => Number.isInteger(value) && value > 0)
+    .sort((left, right) => left - right);
+  const shipTypeIDs = [];
+  const skillTypeIDs = [];
   for (const [typeID, typeRow] of typesById.entries()) {
     const groupRow = getGroupRow(groupsById, toNumber(typeRow.groupID));
     const categoryID = toNumber(groupRow && groupRow.categoryID);
-    const groupPublished = groupRow ? Boolean(groupRow.published) : false;
-    if (categoryID === 6 && Boolean(typeRow.published)) {
-      publishedShipTypeIDs.push(typeID);
+    if (categoryID === 6) {
+      shipTypeIDs.push(typeID);
     }
-    if (categoryID === 16 && groupPublished && Boolean(typeRow.published)) {
-      publishedSkillTypeIDs.push(typeID);
+    if (categoryID === 16) {
+      skillTypeIDs.push(typeID);
     }
   }
 
+  const localItemTypeIDs = new Set((itemTypesRoot.types || []).map((row) => Number(row.typeID)));
   const localShipTypeIDs = new Set((shipTypesRoot.ships || []).map((row) => Number(row.typeID)));
   const localSkillTypeIDs = new Set((skillTypesRoot.skills || []).map((row) => Number(row.typeID)));
+  const localCharacterCreationRaceIDs = new Set(
+    (characterCreationRacesRoot.races || []).map((row) => Number(row.raceID)),
+  );
+  const localCharacterCreationBloodlineIDs = new Set(
+    (characterCreationBloodlinesRoot.bloodlines || []).map((row) => Number(row.bloodlineID)),
+  );
   const localSolarSystemIDs = new Set((solarSystemsRoot.solarSystems || []).map((row) => Number(row.solarSystemID)));
   const localStationIDs = new Set((stationsRoot.stations || []).map((row) => Number(row.stationID)));
   const localStationTypeIDs = new Set((stationTypesRoot.stationTypes || []).map((row) => Number(row.stationTypeID)));
@@ -660,8 +818,11 @@ async function main() {
   const stargateTypeIDs = uniqueSortedNumbers(
     [...mapStargatesById.values()].map((row) => row.typeID),
   );
+  const stationOrbitIDs = uniqueSortedNumbers(
+    [...npcStationsById.values()].map((row) => row.orbitID),
+  );
   const relevantMovementTypeIDs = new Set([
-    ...publishedShipTypeIDs,
+    ...shipTypeIDs,
     ...stationTypeIDs,
     ...[...mapStarsById.values()].map((row) => row.typeID),
     ...[...mapPlanetsById.values()].map((row) => row.typeID),
@@ -669,23 +830,36 @@ async function main() {
     ...[...mapAsteroidBeltsById.values()].map((row) => row.typeID),
     ...[...mapStargatesById.values()].map((row) => row.typeID),
   ].map((value) => toNumber(value)).filter((value) => Number.isInteger(value) && value > 0));
+  const derivedCelestialIDs = uniqueSortedNumbers([
+    ...mapStarsById.keys(),
+    ...mapPlanetsById.keys(),
+    ...stationOrbitIDs.filter((orbitID) =>
+      mapMoonsById.has(orbitID) || mapAsteroidBeltsById.has(orbitID),
+    ),
+  ]);
 
-  const missingShipTypeIDs = publishedShipTypeIDs.filter((id) => !localShipTypeIDs.has(id));
-  const missingSkillTypeIDs = publishedSkillTypeIDs.filter((id) => !localSkillTypeIDs.has(id));
+  const missingItemTypeIDs = itemTypeIDs.filter((id) => !localItemTypeIDs.has(id));
+  const missingShipTypeIDs = shipTypeIDs.filter((id) => !localShipTypeIDs.has(id));
+  const missingSkillTypeIDs = skillTypeIDs.filter((id) => !localSkillTypeIDs.has(id));
+  const missingCharacterCreationRaceIDs = CHARACTER_CREATION_RACE_IDS.filter(
+    (id) => !localCharacterCreationRaceIDs.has(id),
+  );
+  const missingCharacterCreationBloodlineIDs = CHARACTER_CREATION_BLOODLINE_IDS.filter(
+    (id) => !localCharacterCreationBloodlineIDs.has(id),
+  );
   const missingSolarSystemIDs = [...mapSolarSystemsById.keys()].filter((id) => !localSolarSystemIDs.has(id));
   const missingStationIDs = [...npcStationsById.keys()].filter((id) => !localStationIDs.has(id));
   const missingStationTypeIDs = stationTypeIDs.filter((id) => !localStationTypeIDs.has(id));
   const missingStargateTypeIDs = stargateTypeIDs.filter((id) => !localStargateTypeIDs.has(id));
   const missingStargateIDs = [...mapStargatesById.keys()].filter((id) => !localStargateIDs.has(id));
-  const missingStarIDs = [...mapStarsById.keys()].filter((id) => !localCelestialIDs.has(id));
-  const missingPlanetIDs = [...mapPlanetsById.keys()].filter((id) => !localCelestialIDs.has(id));
+  const missingCelestialIDs = derivedCelestialIDs.filter((id) => !localCelestialIDs.has(id));
   const missingMovementTypeIDs = [...relevantMovementTypeIDs].filter((id) => !localMovementTypeIDs.has(id));
   const missingDogmaAttributeIDs = [...dogmaAttributesById.keys()].filter((id) => !localDogmaAttributeIDs.has(id));
-  const missingDogmaShipTypeIDs = publishedShipTypeIDs.filter((id) => !localDogmaShipTypeIDs.has(id));
+  const missingDogmaShipTypeIDs = shipTypeIDs.filter((id) => !localDogmaShipTypeIDs.has(id));
 
-  const allDogmaTypeIds = new Set(publishedShipTypeIDs);
+  const allDogmaTypeIds = new Set(shipTypeIDs);
   const missingDogmaTypeIds = new Set([
-    ...publishedShipTypeIDs,
+    ...shipTypeIDs,
     ...relevantMovementTypeIDs,
   ]);
   const typeDogmaById = new Map();
@@ -705,44 +879,84 @@ async function main() {
     }
   }
 
-  for (const typeID of missingShipTypeIDs) {
-    const typeRow = typesById.get(typeID);
-    const groupRow = getGroupRow(groupsById, toNumber(typeRow && typeRow.groupID));
-    if (!typeRow || !groupRow) {
-      continue;
-    }
-    shipTypesRoot.ships.push(buildTypeRecord(typeRow, groupRow));
-  }
-  shipTypesRoot.ships.sort(
-    (left, right) => left.name.localeCompare(right.name) || left.typeID - right.typeID,
-  );
-  shipTypesRoot.count = shipTypesRoot.ships.length;
-  ensureJsonlSync(shipTypesRoot).updatedTypeIDs = uniqueSortedNumbers(missingShipTypeIDs);
+  itemTypesRoot.types = itemTypeIDs
+    .map((typeID) => {
+      const typeRow = typesById.get(typeID);
+      const groupRow = getGroupRow(groupsById, toNumber(typeRow && typeRow.groupID));
+      if (!typeRow) {
+        return null;
+      }
+      return buildTypeRecord(typeRow, groupRow);
+    })
+    .filter(Boolean)
+    .sort(
+      (left, right) =>
+        String(left.name || "").localeCompare(String(right.name || "")) ||
+        left.typeID - right.typeID,
+    );
+  itemTypesRoot.count = itemTypesRoot.types.length;
+  ensureJsonlSync(itemTypesRoot).updatedTypeIDs = uniqueSortedNumbers(itemTypeIDs);
 
-  for (const typeID of missingSkillTypeIDs) {
-    const typeRow = typesById.get(typeID);
-    const groupRow = getGroupRow(groupsById, toNumber(typeRow && typeRow.groupID));
-    if (!typeRow || !groupRow) {
-      continue;
-    }
-    skillTypesRoot.skills.push(buildSkillRecord(typeRow, groupRow));
-  }
-  skillTypesRoot.skills.sort(
+  shipTypesRoot.ships = shipTypeIDs
+    .map((typeID) => {
+      const typeRow = typesById.get(typeID);
+      const groupRow = getGroupRow(groupsById, toNumber(typeRow && typeRow.groupID));
+      if (!typeRow || !groupRow) {
+        return null;
+      }
+      return buildTypeRecord(typeRow, groupRow);
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.name.localeCompare(right.name) || left.typeID - right.typeID);
+  shipTypesRoot.count = shipTypesRoot.ships.length;
+  ensureJsonlSync(shipTypesRoot).updatedTypeIDs = uniqueSortedNumbers(shipTypeIDs);
+
+  skillTypesRoot.skills = skillTypeIDs
+    .map((typeID) => {
+      const typeRow = typesById.get(typeID);
+      const groupRow = getGroupRow(groupsById, toNumber(typeRow && typeRow.groupID));
+      if (!typeRow || !groupRow) {
+        return null;
+      }
+      return buildSkillRecord(typeRow, groupRow);
+    })
+    .filter(Boolean)
+    .sort(
     (left, right) => left.name.localeCompare(right.name) || left.typeID - right.typeID,
   );
   skillTypesRoot.count = skillTypesRoot.skills.length;
-  ensureJsonlSync(skillTypesRoot).updatedTypeIDs = uniqueSortedNumbers(missingSkillTypeIDs);
+  ensureJsonlSync(skillTypesRoot).updatedTypeIDs = uniqueSortedNumbers(skillTypeIDs);
 
-  for (const systemID of missingSolarSystemIDs) {
-    const row = mapSolarSystemsById.get(systemID);
-    if (!row) {
-      continue;
-    }
-    solarSystemsRoot.solarSystems.push(buildSolarSystemRecord(row, mapStarsById));
-  }
-  solarSystemsRoot.solarSystems.sort((left, right) => left.solarSystemID - right.solarSystemID);
+  characterCreationRacesRoot.races = CHARACTER_CREATION_RACE_IDS
+    .map((raceID) => buildCharacterCreationRaceRecord(racesById.get(raceID), typesById))
+    .filter(Boolean)
+    .sort((left, right) => left.raceID - right.raceID);
+  characterCreationRacesRoot.count = characterCreationRacesRoot.races.length;
+  ensureJsonlSync(characterCreationRacesRoot).updatedRaceIDs = uniqueSortedNumbers(
+    CHARACTER_CREATION_RACE_IDS,
+  );
+
+  characterCreationBloodlinesRoot.bloodlines = CHARACTER_CREATION_BLOODLINE_IDS
+    .map((bloodlineID) =>
+      buildCharacterCreationBloodlineRecord(bloodlinesById.get(bloodlineID)),
+    )
+    .filter(Boolean)
+    .sort((left, right) => left.bloodlineID - right.bloodlineID);
+  characterCreationBloodlinesRoot.count = characterCreationBloodlinesRoot.bloodlines.length;
+  ensureJsonlSync(characterCreationBloodlinesRoot).updatedBloodlineIDs =
+    uniqueSortedNumbers(CHARACTER_CREATION_BLOODLINE_IDS);
+
+  solarSystemsRoot.solarSystems = [...mapSolarSystemsById.keys()]
+    .sort((left, right) => left - right)
+    .map((systemID) => {
+      const row = mapSolarSystemsById.get(systemID);
+      return row ? buildSolarSystemRecord(row, mapStarsById) : null;
+    })
+    .filter(Boolean);
   solarSystemsRoot.count = solarSystemsRoot.solarSystems.length;
-  ensureJsonlSync(solarSystemsRoot).updatedSolarSystemIDs = uniqueSortedNumbers(missingSolarSystemIDs);
+  ensureJsonlSync(solarSystemsRoot).updatedSolarSystemIDs = uniqueSortedNumbers(
+    [...mapSolarSystemsById.keys()],
+  );
 
   const existingStationsById = new Map(
     (Array.isArray(stationsRoot.stations) ? stationsRoot.stations : [])
@@ -841,43 +1055,86 @@ async function main() {
     [...npcStationsById.keys()],
   );
 
-  for (const gateID of missingStargateIDs) {
-    const row = mapStargatesById.get(gateID);
-    if (!row) {
-      continue;
-    }
-    stargatesRoot.stargates.push(buildStargateRecord(row, mapSolarSystemsById));
-  }
-  stargatesRoot.stargates.sort((left, right) => left.itemID - right.itemID);
+  stargatesRoot.stargates = [...mapStargatesById.keys()]
+    .sort((left, right) => left - right)
+    .map((gateID) => {
+      const row = mapStargatesById.get(gateID);
+      return row ? buildStargateRecord(row, mapSolarSystemsById) : null;
+    })
+    .filter(Boolean);
   stargatesRoot.count = stargatesRoot.stargates.length;
-  ensureJsonlSync(stargatesRoot).updatedStargateIDs = uniqueSortedNumbers(missingStargateIDs);
+  ensureJsonlSync(stargatesRoot).updatedStargateIDs = uniqueSortedNumbers(
+    [...mapStargatesById.keys()],
+  );
 
-  for (const starID of missingStarIDs) {
-    const row = mapStarsById.get(starID);
-    const systemRow = mapSolarSystemsById.get(toNumber(row && row.solarSystemID)) || null;
-    const typeRow = typesById.get(toNumber(row && row.typeID)) || null;
-    const groupRow = getGroupRow(groupsById, toNumber(typeRow && typeRow.groupID));
-    if (!row || !systemRow) {
-      continue;
-    }
-    celestialsRoot.celestials.push(buildStarRecord(row, systemRow, typeRow, groupRow));
-  }
-  for (const planetID of missingPlanetIDs) {
-    const row = mapPlanetsById.get(planetID);
-    const systemRow = mapSolarSystemsById.get(toNumber(row && row.solarSystemID)) || null;
-    const typeRow = typesById.get(toNumber(row && row.typeID)) || null;
-    const groupRow = getGroupRow(groupsById, toNumber(typeRow && typeRow.groupID));
-    if (!row || !systemRow) {
-      continue;
-    }
-    celestialsRoot.celestials.push(buildPlanetRecord(row, systemRow, typeRow, groupRow));
-  }
-  celestialsRoot.celestials.sort((left, right) => left.itemID - right.itemID);
+  celestialsRoot.celestials = derivedCelestialIDs
+    .map((celestialID) => {
+      if (mapStarsById.has(celestialID)) {
+        const row = mapStarsById.get(celestialID);
+        const systemRow = mapSolarSystemsById.get(toNumber(row && row.solarSystemID)) || null;
+        const typeRow = typesById.get(toNumber(row && row.typeID)) || null;
+        const groupRow = getGroupRow(groupsById, toNumber(typeRow && typeRow.groupID));
+        if (!row || !systemRow) {
+          return null;
+        }
+        return buildStarRecord(row, systemRow, typeRow, groupRow);
+      }
+
+      if (mapPlanetsById.has(celestialID)) {
+        const row = mapPlanetsById.get(celestialID);
+        const systemRow = mapSolarSystemsById.get(toNumber(row && row.solarSystemID)) || null;
+        const typeRow = typesById.get(toNumber(row && row.typeID)) || null;
+        const groupRow = getGroupRow(groupsById, toNumber(typeRow && typeRow.groupID));
+        if (!row || !systemRow) {
+          return null;
+        }
+        return buildPlanetRecord(row, systemRow, typeRow, groupRow);
+      }
+
+      if (mapMoonsById.has(celestialID)) {
+        const row = mapMoonsById.get(celestialID);
+        const systemRow = mapSolarSystemsById.get(toNumber(row && row.solarSystemID)) || null;
+        const typeRow = typesById.get(toNumber(row && row.typeID)) || null;
+        const groupRow = getGroupRow(groupsById, toNumber(typeRow && typeRow.groupID));
+        if (!row || !systemRow) {
+          return null;
+        }
+        return buildMoonRecord(
+          row,
+          systemRow,
+          typeRow,
+          groupRow,
+          mapSolarSystemsById,
+          orbitLookups,
+        );
+      }
+
+      if (mapAsteroidBeltsById.has(celestialID)) {
+        const row = mapAsteroidBeltsById.get(celestialID);
+        const systemRow = mapSolarSystemsById.get(toNumber(row && row.solarSystemID)) || null;
+        const typeRow = typesById.get(toNumber(row && row.typeID)) || null;
+        const groupRow = getGroupRow(groupsById, toNumber(typeRow && typeRow.groupID));
+        if (!row || !systemRow) {
+          return null;
+        }
+        return buildAsteroidBeltRecord(
+          row,
+          systemRow,
+          typeRow,
+          groupRow,
+          mapSolarSystemsById,
+          orbitLookups,
+        );
+      }
+
+      return null;
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.itemID - right.itemID);
   celestialsRoot.count = celestialsRoot.celestials.length;
-  ensureJsonlSync(celestialsRoot).updatedCelestialIDs = uniqueSortedNumbers([
-    ...missingStarIDs,
-    ...missingPlanetIDs,
-  ]);
+  ensureJsonlSync(celestialsRoot).updatedCelestialIDs = uniqueSortedNumbers(
+    derivedCelestialIDs,
+  );
 
   const movementTypeIDs = uniqueSortedNumbers([...relevantMovementTypeIDs]);
   const movementRecords = [];
@@ -903,7 +1160,7 @@ async function main() {
       ]),
   );
   shipDogmaRoot.shipAttributesByTypeID = Object.fromEntries(
-    publishedShipTypeIDs
+    shipTypeIDs
       .filter((typeID) => allDogmaTypeIds.has(typeID) && typeDogmaById.has(typeID))
       .sort((left, right) => left - right)
       .map((typeID) => [
@@ -920,12 +1177,15 @@ async function main() {
     ),
   };
   ensureJsonlSync(shipDogmaRoot).updatedAttributeIDs = uniqueSortedNumbers(missingDogmaAttributeIDs);
-  ensureJsonlSync(shipDogmaRoot).updatedShipTypeIDs = uniqueSortedNumbers(missingDogmaShipTypeIDs);
+  ensureJsonlSync(shipDogmaRoot).updatedShipTypeIDs = uniqueSortedNumbers(shipTypeIDs);
 
   const sdeRow = sdeMeta.get(1) || null;
   for (const root of [
+    itemTypesRoot,
     shipTypesRoot,
     skillTypesRoot,
+    characterCreationRacesRoot,
+    characterCreationBloodlinesRoot,
     solarSystemsRoot,
     stationsRoot,
     stationTypesRoot,
@@ -963,8 +1223,14 @@ async function main() {
     note: "These fields are preserved from local station geometry data because the JSONL SDE does not include dock transforms.",
   };
 
+  writeJson(path.join(localDbRoot, "itemTypes", "data.json"), itemTypesRoot);
   writeJson(path.join(localDbRoot, "shipTypes", "data.json"), shipTypesRoot);
   writeJson(path.join(localDbRoot, "skillTypes", "data.json"), skillTypesRoot);
+  writeJson(path.join(localDbRoot, "characterCreationRaces", "data.json"), characterCreationRacesRoot);
+  writeJson(
+    path.join(localDbRoot, "characterCreationBloodlines", "data.json"),
+    characterCreationBloodlinesRoot,
+  );
   writeJson(path.join(localDbRoot, "solarSystems", "data.json"), solarSystemsRoot);
   writeJson(path.join(localDbRoot, "stations", "data.json"), stationsRoot);
   writeJson(path.join(localDbRoot, "stationTypes", "data.json"), stationTypesRoot);
@@ -975,13 +1241,16 @@ async function main() {
   writeJson(path.join(localDbRoot, "shipDogmaAttributes", "data.json"), shipDogmaRoot);
 
   console.log(JSON.stringify({
+    itemTypesAdded: missingItemTypeIDs.length,
     shipTypesAdded: missingShipTypeIDs.length,
     skillTypesAdded: missingSkillTypeIDs.length,
+    characterCreationRacesAdded: missingCharacterCreationRaceIDs.length,
+    characterCreationBloodlinesAdded: missingCharacterCreationBloodlineIDs.length,
     solarSystemsAdded: missingSolarSystemIDs.length,
     stationsAdded: missingStationIDs.length,
     stationTypesAdded: missingStationTypeIDs.length,
     stargatesAdded: missingStargateIDs.length,
-    celestialsAdded: missingStarIDs.length + missingPlanetIDs.length,
+    celestialsAdded: missingCelestialIDs.length,
     movementAttributesAdded: missingMovementTypeIDs.length,
     shipDogmaShipTypesAdded: missingDogmaShipTypeIDs.length,
     shipDogmaAttributeTypesAdded: missingDogmaAttributeIDs.length,

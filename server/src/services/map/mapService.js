@@ -62,7 +62,7 @@ class MapService extends BaseService {
     );
   }
 
-    Handle_GetTriglavianMinorVictorySystems(args, session, kwargs) {
+  Handle_GetTriglavianMinorVictorySystems(args, session, kwargs) {
     log.debug("[MapService] GetTriglavianMinorVictorySystems called");
 
     return {

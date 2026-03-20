@@ -2,10 +2,7 @@
 for %%I in ("%~dp0..\..") do set "EVEJS_REPO_ROOT=%%~fI"
 
 rem Edit this path if your EVE client copy lives somewhere else.
-set "EVEJS_CLIENT_PATH=D:\GAMES\EveOnline\localhost"
-
-rem Enable dev mode to bypass passwords on accounts.
-set "EVEJS_DEV_MODE=true"
+set "EVEJS_CLIENT_PATH=C:\Users\yumyy\Documents\EVE\_GAME\localhost"
 
 rem Leave this blank unless you want to point directly at exefile.exe.
 set "EVEJS_CLIENT_EXE="

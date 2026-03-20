@@ -20,11 +20,6 @@ const { buildKeyVal } = require(path.join(
   "../_shared/serviceHelpers",
 ));
 
-const { listOnlineGuestsInStation } = require(path.join(
-  __dirname,
-  "./stationPresence",
-));
-
 class StationService extends BaseService {
   constructor(name = "station") {
     super(name);
@@ -95,16 +90,18 @@ class StationService extends BaseService {
   // right now we are just retuning one user (the current user)
   Handle_GetGuests(args, session) {
     log.debug("[StationSvc] GetGuests");
-    const stationID =
-      Number(
-        (session && (session.stationid || session.stationID || session.locationid)) ||
-        0,
-      ) || 60003760;
-    const guests = listOnlineGuestsInStation(stationID);
+    const charId = session && session.characterID ? session.characterID : 1;
+    const corpId =
+      session && session.corporationID ? session.corporationID : 0;
+    const allianceId = session && session.allianceID ? session.allianceID : 0;
+    const warFactionId =
+      session && session.warFactionID ? session.warFactionID : 0;
 
+    // Return a list containing at least the current user's guest tuple
+    // The python client expects: for charID, corpID, allianceID, warFactionID in guests:
     return {
       type: "list",
-      items: guests,
+      items: [[charId, corpId, allianceId, warFactionId]],
     };
   }
 

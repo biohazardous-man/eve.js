@@ -16,18 +16,6 @@ function buildFakeEntity(mode) {
   };
 }
 
-function countScheduledDispatches(intervalMs, totalMs) {
-  let lastDispatchAt = 0;
-  let count = 0;
-  for (let now = 0; now <= totalMs; now += 50) {
-    if ((now - lastDispatchAt) >= intervalMs) {
-      count += 1;
-      lastDispatchAt = now;
-    }
-  }
-  return count;
-}
-
 function createFakeSession(clientID, characterID, systemID) {
   const notifications = [];
   return {
@@ -149,15 +137,15 @@ function runDeferredAnchorIntegrationCheck() {
       observerSession.notifications,
     );
     assert(!firstTickObserverPayloadNames.includes("SetBallPosition"));
-    assert(firstTickObserverPayloadNames.includes("SetBallVelocity"));
+    assert(!firstTickObserverPayloadNames.includes("SetBallVelocity"));
 
     observerSession.notifications.length = 0;
     scene.tick(commandNow + 1100);
     const laterObserverPayloadNames = flattenDestinyPayloadNames(
       observerSession.notifications,
     );
-    assert(laterObserverPayloadNames.includes("SetBallPosition"));
-    assert(laterObserverPayloadNames.includes("SetBallVelocity"));
+    assert(!laterObserverPayloadNames.includes("SetBallPosition"));
+    assert(!laterObserverPayloadNames.includes("SetBallVelocity"));
 
     return {
       success,
@@ -320,7 +308,7 @@ function runDynamicVisibilityCheck() {
   const systemID = 30000142;
   const leftSession = createFakeSession(912001, 922001, systemID);
   const rightSession = createFakeSession(912002, 922002, systemID);
-  const farDistance = testing.BUBBLE_RADIUS_METERS * 4;
+  const farDistance = testing.PUBLIC_GRID_BOX_METERS * 2;
   const leftShip = {
     itemID: 932001,
     typeID: 1,
@@ -404,6 +392,7 @@ function runDynamicVisibilityCheck() {
     return {
       farDistance,
       bubbleRadius: testing.BUBBLE_RADIUS_METERS,
+      publicGridBoxMeters: testing.PUBLIC_GRID_BOX_METERS,
       bubbleHysteresis: testing.BUBBLE_HYSTERESIS_METERS,
       initialVisibleLeft: 0,
       initialVisibleRight: 0,
@@ -421,7 +410,7 @@ function runWarpMidflightVisibilityCheck() {
   const systemID = 30000142;
   const pilotSession = createFakeSession(913001, 923001, systemID);
   const destinationObserverSession = createFakeSession(913002, 923002, systemID);
-  const warpTarget = { x: 3.0e12, y: 0, z: 0 };
+  const warpTarget = { x: testing.PUBLIC_GRID_BOX_METERS * 2.5, y: 0, z: 0 };
   const pilotShip = {
     itemID: 933001,
     typeID: 1,
@@ -500,37 +489,156 @@ function runWarpMidflightVisibilityCheck() {
       [],
     );
 
-    destinationObserverSession.notifications.length = 0;
-    const midWarpNow =
-      pilotEntity.warpState.startTimeMs +
-      Math.floor(pilotEntity.warpState.durationMs / 2);
-    scene.tick(midWarpNow);
-    const midWarpNames = flattenDestinyPayloadNames(
-      destinationObserverSession.notifications,
-    );
-    assert(!midWarpNames.includes("AddBalls2"));
-    assert(!midWarpNames.includes("WarpTo"));
-
+    let firstWarpInNames = [];
+    let firstWarpInAt = null;
     destinationObserverSession.notifications.length = 0;
     const completionNow = Math.ceil(
       pilotEntity.warpState.startTimeMs + pilotEntity.warpState.durationMs + 50,
     );
+    for (
+      let tickNow = baseNow + 250;
+      tickNow < completionNow;
+      tickNow += 250
+    ) {
+      scene.tick(tickNow);
+      const names = flattenDestinyPayloadNames(
+        destinationObserverSession.notifications,
+      );
+      if (names.includes("AddBalls2")) {
+        firstWarpInNames = names;
+        firstWarpInAt = tickNow;
+        break;
+      }
+    }
+    assert(firstWarpInAt !== null, "Destination observer should gain visibility before completion");
+    assert(firstWarpInNames.includes("AddBalls2"));
+    assert(firstWarpInNames.includes("EntityWarpIn"));
+    assert(
+      !firstWarpInNames.includes("WarpTo"),
+      "Destination observer should not receive WarpTo when first acquiring a ship already in warp",
+    );
+    assert.strictEqual(pilotEntity.mode, "WARP", "Pilot should still be in warp when destination grid acquires the ship");
+
+    destinationObserverSession.notifications.length = 0;
     scene.tick(completionNow);
     const completionNames = flattenDestinyPayloadNames(
       destinationObserverSession.notifications,
     );
-    assert(completionNames.includes("AddBalls2"));
-    assert(!completionNames.includes("WarpTo"));
+    assert(!completionNames.includes("AddBalls2"));
     assert(completionNames.includes("SetBallPosition"));
     assert(completionNames.includes("Stop"));
 
     return {
-      midWarpNames,
+      firstWarpInAt,
+      firstWarpInNames,
       completionNames,
     };
   } finally {
     runtime.detachSession(pilotSession, { broadcast: false });
     runtime.detachSession(destinationObserverSession, { broadcast: false });
+    runtime.scenes.delete(systemID);
+  }
+}
+
+function runSameGridWarpContinuityCheck() {
+  const systemID = 30000142;
+  const pilotSession = createFakeSession(914001, 924001, systemID);
+  const observerSession = createFakeSession(914002, 924002, systemID);
+  const pilotShip = {
+    itemID: 934001,
+    typeID: 1,
+    groupID: 25,
+    categoryID: 6,
+    radius: 50,
+    spaceState: {
+      position: { x: 0, y: 1000, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+      direction: { x: 1, y: 0, z: 0 },
+      mode: "STOP",
+      speedFraction: 0,
+    },
+  };
+  const observerShip = {
+    itemID: 934002,
+    typeID: 1,
+    groupID: 25,
+    categoryID: 6,
+    radius: 50,
+    spaceState: {
+      position: { x: 1000, y: 1000, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+      direction: { x: -1, y: 0, z: 0 },
+      mode: "STOP",
+      speedFraction: 0,
+    },
+  };
+
+  runtime.attachSession(pilotSession, pilotShip, {
+    systemID,
+    broadcast: false,
+    spawnStopped: true,
+  });
+  runtime.attachSession(observerSession, observerShip, {
+    systemID,
+    broadcast: false,
+    spawnStopped: true,
+  });
+
+  try {
+    assert.strictEqual(runtime.ensureInitialBallpark(pilotSession), true);
+    assert.strictEqual(runtime.ensureInitialBallpark(observerSession), true);
+    pilotSession._space.visibleDynamicEntityIDs = new Set([observerShip.itemID]);
+    observerSession._space.visibleDynamicEntityIDs = new Set([pilotShip.itemID]);
+    pilotSession.notifications.length = 0;
+    observerSession.notifications.length = 0;
+
+    const baseNow = Math.floor(Date.now() / 1000) * 1000 + 50;
+    const scene = runtime.getSceneForSession(pilotSession);
+    assert(scene, "Pilot scene should exist");
+    scene.lastTickAt = baseNow - 50;
+    const pilotEntity = scene.getShipEntityForSession(pilotSession);
+    assert(pilotEntity, "Pilot entity should exist");
+    pilotEntity.direction = { x: 1, y: 0, z: 0 };
+    pilotEntity.targetPoint = { x: 3_000_000, y: 1000, z: 0 };
+    pilotEntity.speedFraction = 1;
+    pilotEntity.velocity = { x: pilotEntity.maxVelocity, y: 0, z: 0 };
+    pilotEntity.mode = "GOTO";
+
+    const warpResult = runtime.warpToPoint(
+      pilotSession,
+      { x: 3_000_000, y: 1000, z: 0 },
+      { targetEntityID: 40009117, stopDistance: 0, warpSpeedAU: 3 },
+    );
+    assert.strictEqual(warpResult.success, true);
+    assert(pilotEntity.pendingWarp, "Pending warp should exist");
+    pilotEntity.pendingWarp.requestedAtMs = baseNow - 30000;
+
+    observerSession.notifications.length = 0;
+    scene.tick(baseNow);
+    assert.strictEqual(pilotEntity.mode, "WARP");
+
+    observerSession.notifications.length = 0;
+    scene.tick(baseNow + 2500);
+    const afterGraceNames = flattenDestinyPayloadNames(
+      observerSession.notifications,
+    );
+    assert(
+      !afterGraceNames.includes("RemoveBalls"),
+      "Same-grid warp should not remove the ship from the observer mid-warp",
+    );
+    assert(
+      scene.canSessionSeeDynamicEntity(observerSession, pilotEntity, baseNow + 2500),
+      "Observer should still see the ship while both ships remain in the same public grid",
+    );
+
+    return {
+      publicGridBoxMeters: testing.PUBLIC_GRID_BOX_METERS,
+      afterGraceNames,
+      stillVisibleAfter2500ms: true,
+    };
+  } finally {
+    runtime.detachSession(pilotSession, { broadcast: false });
+    runtime.detachSession(observerSession, { broadcast: false });
     runtime.scenes.delete(systemID);
   }
 }
@@ -542,34 +650,15 @@ function main() {
   const before = {
     correctionMs: testing.WATCHER_CORRECTION_INTERVAL_MS,
     positionMs: testing.WATCHER_POSITION_CORRECTION_INTERVAL_MS,
-    positionAnchorsInFirstSecond: countScheduledDispatches(
-      testing.WATCHER_POSITION_CORRECTION_INTERVAL_MS,
-      1000,
-    ),
-    velocityCorrectionsInFirstSecond: countScheduledDispatches(
-      testing.WATCHER_CORRECTION_INTERVAL_MS,
-      1000,
-    ),
-    commandAnchorPayloads: [],
+    activeSubwarpWatcherCorrections: true,
   };
 
   const after = {
     correctionMs: testing.getWatcherCorrectionIntervalMs(activeEntity),
     positionMs: testing.getWatcherPositionCorrectionIntervalMs(activeEntity),
-    positionAnchorsInFirstSecond: countScheduledDispatches(
-      testing.getWatcherPositionCorrectionIntervalMs(activeEntity),
-      1000,
+    activeSubwarpUsesLocalCommandSim: testing.usesActiveSubwarpWatcherCorrections(
+      activeEntity,
     ),
-    velocityCorrectionsInFirstSecond: countScheduledDispatches(
-      testing.getWatcherCorrectionIntervalMs(activeEntity),
-      1000,
-    ),
-    correctionPayloads: testing
-      .buildPositionVelocityCorrectionUpdates(activeEntity, {
-        stamp: 123,
-        includePosition: true,
-      })
-      .map((update) => update.payload[0]),
   };
 
   const idle = {
@@ -580,17 +669,13 @@ function main() {
   const warpObserver = runWarpObserverCadenceCheck();
   const dynamicVisibility = runDynamicVisibilityCheck();
   const warpMidflightVisibility = runWarpMidflightVisibilityCheck();
+  const sameGridWarpContinuity = runSameGridWarpContinuityCheck();
 
   assert.strictEqual(after.correctionMs, 250);
   assert.strictEqual(after.positionMs, 1000);
-  assert.deepStrictEqual(after.correctionPayloads, [
-    "SetBallPosition",
-    "SetBallVelocity",
-  ]);
+  assert.strictEqual(after.activeSubwarpUsesLocalCommandSim, true);
   assert.strictEqual(idle.correctionMs, before.correctionMs);
   assert.strictEqual(idle.positionMs, before.positionMs);
-  assert.strictEqual(after.positionAnchorsInFirstSecond, before.positionAnchorsInFirstSecond);
-  assert(after.velocityCorrectionsInFirstSecond > before.velocityCorrectionsInFirstSecond);
 
   console.log(JSON.stringify({
     status: "ok",
@@ -601,6 +686,7 @@ function main() {
     warpObserver,
     dynamicVisibility,
     warpMidflightVisibility,
+    sameGridWarpContinuity,
   }, null, 2));
 }
 

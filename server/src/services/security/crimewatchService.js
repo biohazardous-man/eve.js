@@ -5,10 +5,28 @@ const config = require(path.join(__dirname, "../../config"));
 const {
   getCharacterRecord,
 } = require(path.join(__dirname, "../character/characterState"));
+const crimewatchState = require(path.join(__dirname, "./crimewatchState"));
 
 class CrimewatchService extends BaseService {
   constructor() {
     super("crimewatch");
+  }
+
+  _resolveReferenceMs(session, fallback = Date.now()) {
+    return (
+      session &&
+      session._space &&
+      Number.isFinite(Number(session._space.simTimeMs))
+    )
+      ? Number(session._space.simTimeMs)
+      : fallback;
+  }
+
+  _resolveSessionCharacterID(session) {
+    return (
+      session &&
+      (session.characterID || session.charID || session.charid || session.userid)
+    ) || 0;
   }
 
   Handle_MachoResolveObject(args, session, kwargs) {
@@ -70,34 +88,28 @@ class CrimewatchService extends BaseService {
 
   Handle_GetClientStates(args, session, kwargs) {
     log.debug("[CrimewatchService] GetClientStates called");
-    // crimewatchSvc.py:
-    // myCombatTimers, myEngagements, flaggedCharacters, safetyLevel = eveMoniker.CharGetCrimewatchLocation().GetClientStates()
-    //
-    // myCombatTimers = (weaponTimerState, pvpTimerState, npcTimerState, criminalTimerState, disapprovalTimerState)
-    // each timerState = (state, expiryTime)
-    //
-    // flaggedCharacters = (criminals, suspects)
+    const now = this._resolveReferenceMs(session, Date.now());
+    return crimewatchState.buildClientStatesForSession(session, now);
+  }
 
-    // JS Arrays are encoded as PyTuple by the marshaler automatically
-    // all Timer states idle = 0, expiryTime = None
-    const idleTimer = [0, null];
-    const myCombatTimers = [
-      idleTimer,
-      idleTimer,
-      idleTimer,
-      idleTimer,
-      idleTimer,
-    ];
+  Handle_GetSafetyLevel(args, session) {
+    const characterID = this._resolveSessionCharacterID(session);
+    return crimewatchState.getSafetyLevel(characterID);
+  }
 
-    const flaggedCharacters = [
-      { type: "list", items: [] }, // criminals
-      { type: "list", items: [] }, // suspects
-    ];
-
-    const myEngagements = { type: "dict", entries: [] };
-    const safetyLevel = 1; // const.shipSafetyLevelFull = 1
-
-    return [myCombatTimers, myEngagements, flaggedCharacters, safetyLevel];
+  Handle_SetSafetyLevel(args, session) {
+    const characterID = this._resolveSessionCharacterID(session);
+    const rawSafetyLevel = Array.isArray(args) && args.length > 0
+      ? Number(args[0])
+      : crimewatchState.SAFETY_LEVEL_FULL;
+    const requestedSafetyLevel = Number.isFinite(rawSafetyLevel)
+      ? rawSafetyLevel
+      : crimewatchState.SAFETY_LEVEL_FULL;
+    const result = crimewatchState.setSafetyLevel(
+      characterID,
+      requestedSafetyLevel,
+    );
+    return result.success ? result.data.safetyLevel : crimewatchState.SAFETY_LEVEL_FULL;
   }
 
   Handle_GetMySecurityStatus(args, session) {
