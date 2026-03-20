@@ -25,6 +25,7 @@ function buildMaps() {
   const stationTypesById = new Map();
   const stargateTypesById = new Map();
   const stationsBySystem = new Map();
+  const celestialsById = new Map();
   const celestialsBySystem = new Map();
   const stargatesById = new Map();
   const stargatesBySystem = new Map();
@@ -51,6 +52,7 @@ function buildMaps() {
   }
 
   for (const celestial of celestials) {
+    celestialsById.set(celestial.itemID, celestial);
     if (!celestialsBySystem.has(celestial.solarSystemID)) {
       celestialsBySystem.set(celestial.solarSystemID, []);
     }
@@ -93,6 +95,7 @@ function buildMaps() {
     stationTypesById,
     stargateTypesById,
     stationsBySystem,
+    celestialsById,
     celestialsBySystem,
     stargatesById,
     stargatesBySystem,
