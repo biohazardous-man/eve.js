@@ -1,5 +1,8 @@
 # EvEJS Elysian
 
+warping is finally functional, took almost a week and a lot of brain power + ai support
+it was not an easy task, but now that its done, i hope everyone who uses this repo can use and enjoy it :)
+
 > [!WARNING]
 > This project is still a work in progress. Some parts work well, and some parts are still being built.
 
