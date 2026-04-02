@@ -1,0 +1,868 @@
+// Proof-of-authorship note: Primary authorship and project direction for this research note belong to John Elysian.
+// This file is kept here as part of the EveJS proof-of-authorship record after repeated misattribution of the underlying work and claims that it was trivial.
+// If you reuse, discuss, or share this file, please credit it accurately.
+
+Warp Fix Notes 2026 Final
+
+Date
+- 2026-03-12
+
+Root cause
+
+1. The server's Rubicon warp curve was not the active problem.
+- `docs/warpofficial.txt` and the server warp diagnostics already matched.
+- The failure was on the piloting client's local warp-state handoff.
+
+2. The current preactivation branch was poisoning the visible warp sequence.
+- It sent pilot `SetMaxSpeed + WarpTo` at request/align time.
+- That started local distance burn before the official warp-start FX.
+- By the time the tunnel/effect began, the client had already spent a chunk of its own local warp budget and then pinned on the remainder.
+
+3. Camera shake and tunnel progression depend on different client-side inputs.
+- Shake depends on raw ball velocity relative to `ball.maxVelocity`.
+- Full visible warp progression depends on the local warp-speed path (`shipModel.speed.value`) plus the effect/tunnel lifecycle.
+- Raising pilot `SetMaxSpeed` too high too early removes shake headroom.
+- Removing all pilot self `SetBallVelocity` updates removes the only input that ever previously woke the shake path.
+
+Exact fix implemented
+
+1. Removed pilot preactivation from warp request time.
+- No more pilot-only `WarpTo` or pilot-only warp seed during align/request.
+- Warp entry is now driven from the official warp-start tick again.
+
+2. Restored the pilot's warp-start FX to the official start stamp.
+- Pilot start order is now:
+  - seed `SetMaxSpeed`
+  - `WarpTo`
+  - immediate `effects.Warping`
+  - `SetBallMassive(false)`
+- This is intended to put the tunnel at warp entry instead of after the local motion budget is already half spent.
+
+3. Lowered the pilot warp-speed seed to restore shake headroom.
+- seed scale floor: `0.6`
+- seed scale default/ceiling: `0.7`
+- this avoids the earlier `0.85-0.9` range that left almost no room for shake.
+
+4. Restored one controlled cruise ceiling handoff.
+- exactly one pilot cruise `SetMaxSpeed`
+- only when the warp actually has a real cruise leg
+- no repeated pilot max-speed rebases
+
+5. Kept the known-bad paths disabled.
+- no pilot warp-start `SetState`
+- no pilot in-warp `SetBallPosition`
+- no pilot startup-guidance `SetBallVelocity`
+- no pilot preactivation warp branch
+
+Files changed
+
+- `server/src/space/runtime.js`
+
+Why this fix is different
+
+- It stops mixing two incompatible models:
+  - "fake early local warp before FX"
+  - "official start-time tunnel and cruise handoff"
+- It removes the one pilot self velocity path that `warplogs61.txt` proved could only rebase history on a 1 Hz destiny schedule.
+- It leaves the pilot on the simplest non-poisoning path still supported by the current evidence:
+  - lower max-speed seed for local warp entry
+  - one immediate warp effect
+  - one later cruise max-speed handoff for sustained warp progression
+
+What to verify in the next warp log
+
+1. There should be no pilot `WarpTo` before the official warp-start stamp.
+2. `Action: WarpTo` and `Action: OnSpecialFX ... effects.Warping` should occur together at warp start.
+3. No pilot `Action: SetBallVeloc` should appear before the landing batch.
+4. A single pilot cruise `Action: SetMaxSpeed` should appear later if the warp is long enough.
+5. Tunnel should begin at entry instead of after most of the trip is already over.
+6. The flat pinned remainder should move materially later or disappear.
+7. If shake still does not return, the next thing to inspect is the client's local speed/model path, not another pilot self velocity nudge.
+
+2026-03-12 addendum after `warplogs61.txt`
+
+8. The one-shot late-accel pilot `SetBallVelocity` was removed again.
+- `warplogs61.txt` showed that packet landing at `1773287884`.
+- It immediately caused `State history rebased at 1773287885`.
+- The displayed warp distance jumped backward from `33.20 AU` to `34.48 AU`.
+- It did not restore shake or a clean active-warp transition.
+
+9. Why that packet was structurally wrong
+- On the same run, the startup seed had already set pilot `ball.maxVelocity` to about `3.5 AU/s`.
+- The one-shot late-accel authoritative velocity was only about `0.556 AU/s`.
+- The client shake formula requires raw velocity above `ball.maxVelocity`.
+- Therefore that startup-guidance packet could never create shake on a 1 Hz destiny schedule for this profile.
+
+10. Current safest pilot warp model
+- no pilot preactivation
+- no pilot startup-guidance `SetBallVelocity`
+- one pilot warp-start seed `SetMaxSpeed`
+- one pilot warp-start `WarpTo`
+- immediate pilot warp effect
+- one later pilot cruise `SetMaxSpeed` bump only when the warp has a real cruise leg
+- no pilot in-warp `SetBallPosition`
+
+11. What to watch in the next run
+- confirm the pilot receives no self `SetBallVelocity` before landing
+- confirm the `33.20 -> 34.48 AU` snapback seen in `warplogs61` disappears
+- then evaluate the pure `WarpTo + seed + immediate FX + cruise bump` path in isolation before adding any other pilot-side packets back
+
+Future watch items
+
+- If the pure `seed + WarpTo + immediate FX + cruise bump` model still pins, the next target is the client's local speed/model path, not another pilot self velocity nudge.
+- If tunnel timing is fixed but arrival still snaps, the next target is the landing envelope and completion batch timing, not warp entry sequencing.
+- Do not reintroduce pilot warp-start `SetState`, pilot preactivation, or pilot in-warp `SetBallPosition` / `SetBallVelocity` without native proof, because those were the highest-confidence regressions.
+
+2026-03-12 addendum after `warplogs62.txt`
+
+Revised assessment
+
+- We were partly going about this wrong.
+- `warplogs62.txt` proves the remaining failure is no longer the server warp curve or another simple packet-order issue.
+- On that run the pilot already had the clean branch:
+  - warp-start seed `SetMaxSpeed`
+  - warp-start `WarpTo`
+  - immediate `effects.Warping`
+  - one later cruise `SetMaxSpeed`
+  - no pilot self `SetBallVelocity` before landing
+- The client still stalled at `5.22 AU` and then hard-landed on the final stop batch.
+
+New hard findings
+
+1. The server curve is still correct on the same run.
+- Server warp diagnostics show the authoritative ship already down near:
+  - `2.187711 AU` at stamp `1773288381`
+  - `0.426499 AU` at `1773288382`
+  - `0.003108 AU` at `1773288385`
+- The client staying pinned at `5.22 AU` is therefore fully client-side.
+
+2. No current log has ever entered the full native active-warp path.
+- Cross-log sweep result:
+  - no `OnWarpStarted2`
+  - no `OnWarpDecelerate`
+  - no `TravelTunnelProgress`
+- That means all prior experiments only changed how much local motion happened before the native path failed, not whether the native path actually activated.
+
+3. Native ball metadata is now verified from `_destiny.dll`.
+- Real property descriptors match the recovered ball layout:
+  - `effectStamp` -> `0x88`
+  - `speedFraction` -> `0xf4`
+  - `gotoX` -> `0x1a8`
+  - `gotoY` -> `0x1b0`
+  - `gotoZ` -> `0x1b8`
+- So the `ball.effectStamp > 0` gate in the decompiled `WarpLoop()` is checking a real native field.
+
+4. Pilot `SetState` is likely touching the correct activation layer, but our WARP-mode payload is still untrusted.
+- `warplogs54.txt` showed pilot `SetState` immediately forced:
+  - `IsWarping=True`
+  - `WarpState=1`
+  on the warp-start tick.
+- The no-`SetState` branches do not do that.
+- But the old pilot `SetState` runs also degraded local progression, so the current server WARP-mode `SetState` layout should still be treated as unproven.
+
+Rule going forward
+
+- Stop iterating on pilot sequencing alone.
+- Do not add more `SetMaxSpeed`, FX-delay, or self-velocity heuristics until the native WARP state decode is mapped properly.
+- The next correct fix target is:
+  - the exact WARP-mode `SetState` wire layout the client expects
+  - and the native path that cleanly initializes the piloting client's active warp state
+
+2026-03-12 activation-gate correction
+
+New native root cause
+
+1. The pilot warp-start seed `SetMaxSpeed` was structurally wrong.
+- `_destiny.dll` warp activation (`0x180036a20`) requires the current ball speed to be at least `75%` of the current `maxVelocity` before it calls `OnActivatingWarp`.
+- If that check fails, the client stays in the pre-activation align path and only forces warp after more than `180` ticks.
+- The same function also logs:
+  - `AlignForWarp: Forcing warp as %I64d has been aligning for %d ticks.`
+
+2. Our previous pilot model guaranteed that activation check would fail.
+- `warplogs62.txt` shows the pilot was already aligned and at `SetSpeedFraction(1)` before warp start.
+- But on the warp-start tick we also sent a warp-speed `SetMaxSpeed`.
+- That instantly raised native `maxVelocity` from subwarp speed to several AU/s before `WarpTo` activation was evaluated.
+- So the client compared subwarp velocity against `0.75 * warp-speed maxVelocity`, which cannot pass.
+- The observed late `WarpState -> 2` delays in `warplogs60/62` fit the forced-warp fallback, not a clean immediate activation.
+
+Current fix
+
+- Removed the pilot warp-start `SetMaxSpeed` override from the live warp-start batch in `server/src/space/runtime.js`.
+- The pilot now gets:
+  - warp-start `WarpTo`
+  - immediate `effects.Warping`
+  - `SetBallMassive(false)`
+  - later cruise `SetMaxSpeed` only
+- This keeps the pilot's native pre-activation gate on the real subwarp `maxVelocity`, which is the only state that can satisfy the `75%` activation test on entry.
+
+2026-03-12 native WARP SetState decode correction after `warplogs63.txt`
+
+18. The mode-3 `SetState` tail we had been sending was wrong.
+- `_destiny.dll` parser stub `0x1800928f0` feeds the richer warp initializer `0x180043140`.
+- That initializer does two extra things the plain `WarpTo` path does not:
+  - seeds the ball's internal warp-start tick at `currentTick - 5`
+  - seeds the ball's in-warp velocity vector at `+0x178/+0x180/+0x188`
+- The important detail is the call it makes into `0x1800425e0`:
+  - it passes the three `goto` coordinates
+  - it hardcodes stop distance to `0.0`
+  - it passes only the warp factor as an integer
+- So the native mode-3 `SetState` tail is not:
+  - `goto + effectStamp + warpDistance + stopDistance + warpFactor`
+- It is instead:
+  - `goto(24) + warpFactor(4)`
+
+19. Why that matters for the broken pilot path.
+- The old server WARP `SetState` encoder was appending:
+  - `effectStamp`
+  - `warpDistance`
+  - `stopDistance`
+  - `warpFactor`
+- That means the client was almost certainly decoding the wrong integer/double fields into the richer native initializer.
+- This cleanly explains why the earlier pilot `SetState` experiments changed controller state and local motion, but still never produced a stable active warp.
+
+20. Corrected implementation now in the server.
+- `server/src/space/destiny.js`
+  - WARP-mode `SetState` tail now encodes only:
+    - stop-adjusted `gotoX/Y/Z`
+    - `warpFactor` as an `int32`
+- `server/src/space/runtime.js`
+  - the piloting client now gets the corrected WARP `SetState` at warp start instead of another pilot-side plain `WarpTo`
+  - watchers still receive the normal `WarpTo` command path
+  - pilot still gets immediate `effects.Warping`
+  - pilot still gets `SetBallMassive(false)`
+  - the bad same-stamp pilot warp-speed `SetMaxSpeed` remains disabled
+
+21. What the next log should prove.
+- The pilot should no longer rely on the plain `WarpTo` initializer alone.
+- If the corrected native mode-3 `SetState` path is the missing piece, the next warp should show:
+  - real tunnel progression during travel
+  - distance continuing past the old fixed-budget pin
+  - no need for pilot self `SetBallVelocity`
+- If it still fails, the next reverse-engineering target is no longer packet order:
+  - it is the exact mode-3 `SetState` common-ball field set that `0x180043140` expects around the corrected `goto + warpFactor` tail.
+
+2026-03-12 correction after `warplogs64.txt`
+
+22. The live pilot `SetState` experiment was conceptually wrong.
+- `warplogs64.txt` shows the pilot received one live full `SetState` packet on the warp-start tick, then immediately logged:
+  - `Ship stuck in extended warp 140000136: warpFactor:0.000000 warpDistance:-1.000000 ...`
+  - `IsWarping to False`
+  - `DoBallsAdded_ - Starting to add 25 balls. lazy = 1`
+- That is a scene/bootstrap reset, not a normal live warp activation path.
+
+23. What this changes.
+- `buildSetStatePayload()` is a full ballpark snapshot transport.
+- It may still be relevant to initial/bootstrap decoding.
+- It is not a safe live warp control packet for the piloting client.
+
+24. Correct rollback now implemented.
+- Removed the pilot live `SetState` injection from the warp-start branch.
+- Restored plain pilot `WarpTo` on the warp-start tick.
+- Kept:
+  - immediate pilot `effects.Warping`
+  - pilot `SetBallMassive(false)`
+  - later cruise `SetMaxSpeed` only
+
+25. Updated rule going forward.
+- Do not use full `SetState` as a live warp packet again.
+- The richer native initializer at `0x1800928f0 -> 0x180043140` should now be treated as a snapshot/bootstrap path unless proven otherwise.
+- The next real reverse-engineering target is a live destiny update path that seeds the pilot's missing in-warp state without rebuilding the ballpark.
+
+2026-03-12 correction after revisiting early shake logs
+
+26. Early shake was real, but it came from raw ego velocity only.
+- `warplogs4`, `warplogs6`, and `warplogs19` only showed inferred shake on branches where the pilot received self `SetBallVelocity` during warp startup.
+- Those same runs still never logged:
+  - `OnWarpStarted2`
+  - `OnWarpActive`
+  - `TravelTunnelProgress`
+- So shake is not proof of a fully-correct warp.
+- It is proof that the recent no-seed / no-self-velocity branches removed the only packet family capable of waking the client's `ShakeCamera()` path.
+
+27. Best historical baseline.
+- `warplogs19.txt` remains the strongest overlap case:
+  - pilot warp-start `SetMaxSpeed` seed at about `70%` of full warp
+  - immediate `WarpTo`
+  - immediate `effects.Warping`
+  - two delayed self `SetBallVelocity` nudges late in accel
+  - no pilot cruise `SetMaxSpeed` bump
+- That branch produced both:
+  - meaningful distance drop
+  - inferred shake
+
+28. Runtime moved back toward that baseline.
+- Restored pilot warp-start `SetMaxSpeed(seed)` using the historical `70%` scale.
+- Restored a hard-capped late-accel pilot self `SetBallVelocity` window:
+  - starts at `85%` of accel time
+  - lasts at most `2` destiny stamps
+- Disabled the pilot cruise `SetMaxSpeed` bump again for this branch.
+
+29. What to watch in the next warp log.
+- The pilot should again receive:
+  - warp-start `SetMaxSpeed(seed)`
+  - warp-start `WarpTo`
+  - warp-start `effects.Warping`
+  - one or two late-accel self `SetBallVelocity` updates
+- If shake returns and distance stops being flat from the start, that confirms the recent regressions were caused by removing the historical seed/velocity handshake.
+
+2026-03-12 correction after `warplogs65.txt`
+
+30. `warplogs65.txt` showed that the restored late-accel startup-guidance branch still was not the real fix.
+- The pilot received:
+  - warp-start `SetMaxSpeed(seed)`
+  - warp-start `WarpTo`
+  - warp-start `effects.Warping`
+  - two delayed self `SetBallVelocity` packets in late accel
+- The client still never logged:
+  - `OnWarpActive`
+  - `OnWarpStarted2`
+  - `TravelTunnelProgress`
+
+31. Sharper server-side bug.
+- `activatePendingWarp()` was clearing `entity.velocity` immediately at the align-to-warp handoff.
+- So the pilot was losing the real align momentum at the exact instant the native client needed it.
+- The only self velocities we then sent were several seconds later and already at warp-scale magnitudes, which matched the old rebase regressions.
+
+32. Runtime correction now.
+- Preserve the pre-warp align velocity in `warpState.startupGuidanceVelocity`.
+- Send that preserved velocity once on the warp-start stamp as a carryover packet.
+- Remove the late-accel startup-guidance self-velocity rebases from this branch.
+
+33. Next-log expectation.
+- The pilot should now receive exactly one non-zero self `SetBallVelocity` at warp start.
+- If the native activation gate was missing because the handoff lost current momentum, this is the first branch that preserves the right state at the right time.
+
+2026-03-12 correction after `warplogs66.txt`
+
+34. `warplogs66.txt` proved the carryover align velocity was landing, but it still did not unlock the active-warp path.
+- The pilot received on the same warp-start stamp:
+  - `SetMaxSpeed(seed)`
+  - `WarpTo`
+  - `effects.Warping`
+  - one carryover self `SetBallVelocity`
+- The client still only reached:
+  - `WarpState -> 1` on entry
+  - `IsWarping -> True` / `WarpState -> 2` several seconds later
+- The client still never logged:
+  - `OnWarpActive`
+  - `OnWarpStarted2`
+  - `TravelTunnelProgress`
+
+35. Narrowed conclusion.
+- `warplogs63.txt` already showed that removing the start seed entirely kills local motion.
+- `warplogs66.txt` now shows that leaving that same seed on the exact warp-start stamp still correlates with missing native activation.
+- The only clean remaining split is:
+  - keep `WarpTo` on entry
+  - keep immediate `effects.Warping`
+  - keep the carryover align velocity on entry
+  - move only the pilot seed `SetMaxSpeed` one destiny stamp later
+
+36. Runtime correction now.
+- Removed the pilot seed `SetMaxSpeed` from the warp-start packet batch.
+- Reused the startup-guidance slot as a one-shot delayed pilot seed send on the next destiny stamp.
+- Left the rest of the branch unchanged so the next log isolates seed timing instead of changing multiple variables again.
+- Important quantization fix:
+  - `startTimeMs + 1000 ms` can still floor back onto the same destiny stamp as `warpStartStamp`
+  - force `startupGuidanceStamp >= warpStartStamp + 1` so the delayed seed cannot collapse back onto the entry tick
+- Important send-stamp fix:
+  - if the threshold is crossed late inside the previous real-time second, the outgoing update still has to be stamped with `startupGuidanceStamp`
+  - otherwise the seed can still be emitted as a same-stamp packet even though it was scheduled for `+1`
+
+2026-03-12 correction after `warplogs67.txt`
+
+37. The delayed-seed branch is dead.
+- `warplogs67.txt` showed:
+  - `WarpTo` on `1773292491`
+  - immediate `effects.Warping` on `1773292491`
+  - delayed pilot seed `SetMaxSpeed` on `1773292492`
+- The client then pinned at `44.90 AU` immediately and never advanced locally.
+- That makes the delayed-seed branch strictly worse than the earlier same-tick seed branches.
+
+38. Crucible backs the same conclusion.
+- `C:\\evemu_Crucible\\src\\eve-server\\system\\DestinyManager.cpp` uses a minimal live warp-start family:
+  - `WarpTo`
+  - `OnSpecialFX('effects.Warping')`
+  - `SetBallMassive(false)`
+- It does not rely on live warp-start `SetState`.
+- It does not rely on delayed seed timing.
+- This lines up with the modern-client evidence: the full `SetState` branch rebuilt the ballpark, and the delayed-seed branch killed movement from the first sample.
+
+39. Runtime direction now.
+- Restore the pilot seed to the same official warp-start stamp as `WarpTo`.
+- Remove the carryover/startup-guidance self `SetBallVelocity` from the live pilot start path.
+- Keep pilot cruise bump disabled.
+- Add a separate late pilot position-only anchor path:
+  - only inside the last `5 AU`
+  - no pilot self `SetBallVelocity`
+  - at most once per second
+
+40. Current fix strategy.
+- Entry:
+  - same-tick pilot `SetMaxSpeed(seed)`
+  - same-tick pilot `WarpTo`
+  - same-tick pilot `effects.Warping`
+  - same-tick pilot `SetBallMassive(false)`
+- Mid-warp:
+  - no pilot self velocity rebases
+  - no delayed pilot seed
+  - no live full `SetState`
+- Arrival:
+  - late position-only pilot anchors to reduce the final hard teleport
+
+2026-03-12 update after `warplogs68.txt`
+
+41. The late pilot anchor branch is now ruled out.
+- `warplogs68.txt` showed the pilot reaching `15.84 AU`, then receiving repeated pilot-only `SetBallPosition` updates.
+- Each one caused `State history rebased`, while the displayed distance stayed pinned flat.
+- That means late pilot position-only anchors are not a smoother arrival path. They are a confirmed local-history poison branch.
+
+42. New concrete mismatch found in the pre-warp align phase.
+- Crucible `DestinyManager::WarpTo()` pre-aligns with `GotoPoint(where)`.
+- EvEJS was still sending `GotoDirection(unit heading)` during the warp-request phase.
+- That gives the client only a heading vector during align, not a concrete destination point.
+
+43. Runtime correction now.
+- Added a live `GotoPoint` destiny payload builder.
+- Changed the warp-request phase to send:
+  - `GotoPoint(rawDestination)`
+  - `SetSpeedFraction(1)`
+  instead of `GotoDirection(...)`.
+- Removed the late pilot position-anchor branch completely.
+
+44. Native trail to keep.
+- `_destiny.dll` still points at a missing live activation/countdown family around:
+  - mode `12` helper `0x180042400`
+  - mode `10` helper `0x180043f20` (`DST_WARPACTIVATION` in Crucible enums)
+  - `OnActivatingWarp` logger at `0x18003755a`
+- If the `GotoPoint` correction still does not restore proper activation, those native mode-10/mode-12 handlers are the next valid target. Do not go back to late pilot anchors or live full `SetState`.
+
+2026-03-12 update after `warplogs71.txt`
+
+45. New confirmed mismatch: the pilot never gets a final authoritative align sync before warp.
+- Watchers keep receiving normal non-warp `SetBallPosition + SetBallVelocity` corrections.
+- The piloting client does not; it is explicitly excluded from those non-warp corrections.
+- So the ego ball reaches warp entry using only its own local align simulation.
+- That makes the pilot uniquely vulnerable to the native activation countdown path in `_destiny.dll`, even while the server align math says "ready".
+
+46. Why this matters more than another warp-start timing tweak.
+- The native helper at `0x1800374ed` still shows a `180`-count fallback before it seeds the real warp fields through `0x180042850`.
+- If the pilot enters warp from a slightly wrong local align position/velocity, that client can miss the native activation window even though watchers and the server stay on the correct path.
+- This explains why the current branch can still show:
+  - real early distance movement
+  - FX/tunnel start
+  - late `WarpState -> 2`
+  - then a fixed-distance pin
+
+47. Runtime correction now.
+- Added a pilot-only authoritative subwarp align sync one destiny tick before live warp start.
+- First ready tick:
+  - send pilot `SetBallPosition`
+  - send pilot `SetBallVelocity`
+  - do not send `WarpTo` yet
+- Next destiny tick:
+  - start warp normally with the existing live warp-start batch
+- This is deliberately not another in-warp rebase branch:
+  - it happens before `WarpTo`
+  - while the ship is still in subwarp mode
+  - using the same correction family that is already safe for watchers
+
+2026-03-12 protocol audit after the raw packaged-action suggestion
+
+48. Why the proposed raw mode-sector branch is still unproven.
+- `DoDestinyUpdate` absolutely carries raw substreams, but the verified transport surface still resolves them through named destiny actions.
+- Crucible collector `DestinyHandler.cpp` expects each `DoDestinyAction` to decode to a tuple whose first item is a string command name.
+- `PackagedAction` is only a wrapper around normal destiny actions inside a `PySubStream`; the packet docs show it wrapping `AddBalls2`, not arbitrary anonymous ball sectors.
+- The only verified raw-buffer destiny actions currently on the table are still:
+  - `AddBalls`
+  - `AddBalls2`
+  - `SetState`
+- In our local logs those are bootstrap-style paths, not clean live per-ball warp updates:
+  - `SetState` -> Michelle clears history / scene rebuild
+  - `AddBalls2` -> `DoBallsAdded_`
+- Conclusion:
+  - do not assume a safe "send corrected mode-3 tail raw on the existing ego ball" path exists until a non-bootstrap one-ball add/update route is actually identified
+
+49. Runtime branch now: persisted pilot-only accel max-speed ramp.
+- Kept the stable pilot warp-start family:
+  - pre-warp align sync
+  - same-tick seed `SetMaxSpeed`
+  - same-tick `WarpTo`
+  - same-tick `effects.Warping`
+  - same-tick `SetBallMassive(false)`
+- Added a persisted `pilotMaxSpeedRamp` to `warpState`.
+- The pilot now receives extra `SetMaxSpeed` steps across the official accel leg at:
+  - `35%` accel -> `~80%` peak
+  - `70%` accel -> `~90%` peak
+  - `100%` accel -> `100%` peak
+- Safety rule:
+  - only the highest due ramp step is emitted on a given tick
+  - no pilot self `SetBallVelocity` or `SetBallPosition` is reintroduced during warp
+- Why this branch is meaningfully different from the old seed/cruise experiments:
+  - previous runs only tested one warp-start seed and, at most, one later full-speed bump
+  - this branch changes only the pilot's max-speed ceiling progression over the official accel window, which is the one live command family the client has kept responding to without history poison
+
+50. `warplogs73.txt` shows why the first ramp variant is still ordered wrong.
+- The pilot still received a warp-speed ceiling on the exact warp activation tick:
+  - `1773327588`: `SetMaxSpeed(523592547449.99994)`, `WarpTo`, `OnSpecialFX('effects.Warping')`, `SetBallMassive(false)`
+- The later ramp steps then arrived at:
+  - `1773327589`: `SetMaxSpeed(598391482800)`
+  - `1773327591`: `SetMaxSpeed(673190418150)`
+  - `1773327593`: `SetMaxSpeed(747989353500)`
+- The client moved locally until the last ramp step:
+  - `39.35 -> 38.06 -> 36.08 -> 33.53 -> 30.49 -> 27.02 -> 23.16 AU`
+- But the native active-warp markers were still absent:
+  - no `OnWarpStarted2`
+  - no `OnWarpActive`
+  - no `TravelTunnelProgress`
+  - `WarpState -> 2` did not happen until `1773327595`
+  - the visible distance froze at `23.16 AU` on that same transition
+- Final rule after `warplogs73`:
+  - keep the pre-warp align sync
+  - keep same-tick `WarpTo`
+  - keep same-tick `effects.Warping`
+  - keep same-tick `SetBallMassive(false)`
+  - remove the pilot same-tick warp-start `SetMaxSpeed`
+  - let the persisted accel ramp become the only pilot `SetMaxSpeed` source, on later stamps only
+
+51. Framing audit after the "send each packet in its own frame" warning.
+- The low-level network framing is already correct:
+  - `clientSession.sendPacket()` writes one Macho packet as `[4-byte size][packet]`
+  - the server does not concatenate Macho notifications as `[size][packet][packet]`
+- But there was still a higher-level batching issue:
+  - `sendDestinyUpdates()` groups same-stamp destiny actions into one `DoDestinyUpdate`
+  - so the pilot warp-start path was still sending `WarpTo` and `OnSpecialFX('effects.Warping')` inside the same framed notification
+- New correction:
+  - keep the same stamp and the same verified command family
+  - send the pilot warp-start actions as separate `DoDestinyUpdate` notifications (`splitUpdates`)
+  - watcher updates remain unchanged
+- Why this matters:
+  - if the client performs reconciliation after each framed `DoDestinyUpdate`, the pilot can now process:
+    - `WarpTo`
+    - then `OnSpecialFX`
+    - then `SetBallMassive`
+    in distinct notification frames instead of one shared body
+
+52. `warplogs74.txt` and `warplogs75.txt` close the "no same-tick seed" branch.
+- With the pilot same-tick seed removed:
+  - the pilot still received `WarpTo`, `OnSpecialFX('effects.Warping')`, and `SetBallMassive(false)`
+  - `Space::OnSpecialFX - effects.Warping` still fired
+  - `warptunnel.red` still loaded
+  - `WarpState -> 1`, `IsWarping=True`, and `WarpState -> 2` all happened immediately
+  - but the visible distance never moved off the entry value (`51.42 AU`)
+  - later accel-ramp `SetMaxSpeed` bumps only caused history rebases
+- That proves two things at once:
+  - the old warp-scale same-tick seed was too high and poisoned activation ordering
+  - but removing the same-tick seed entirely also kills all local warp motion
+- New rule after `warplogs74/75`:
+  - keep a same-tick pilot `SetMaxSpeed`, but make it an activation seed near the ship's align speed
+  - do not jump directly to a warp-scale ceiling on the warp-start tick
+- New runtime branch:
+  - same-tick activation seed restored at `entity.maxVelocity * 1.1`
+  - same-tick `WarpTo`
+  - same-tick `effects.Warping`
+  - same-tick `SetBallMassive(false)`
+  - later accel ramp retained for the real climb toward warp
+- Why this branch is new:
+  - earlier runs only tested either:
+    - no same-tick seed
+    - or warp-scale same-tick seeds (`~0.7 * peak`, several AU/s)
+  - no earlier branch used a same-tick activation seed anchored to subwarp speed
+
+53. Native registration audit after `warplogs76.txt`: `EntityWarpIn` is the first verified live named action into the richer warp initializer.
+- `warplogs76.txt` still matched the degraded fallback pattern even with the subwarp-scale same-tick seed:
+  - `1773328477`: `SetMaxSpeed(390.50000000000006)`, `WarpTo`, `OnSpecialFX('effects.Warping')`, `SetBallMassive(false)`
+  - tunnel FX and `warptunnel.red` loaded immediately
+  - visible distance fell for a while, then froze when `WarpState -> 2` / `IsWarping=True` arrived
+  - there was still no `OnWarpStarted2`, `OnWarpActive`, or `TravelTunnelProgress`
+- `_destiny.dll` registration/decompile result:
+  - `SetMaxSpeed -> 0x18006ed10 -> 0x180092f20`
+  - `SetBallVelocity -> 0x18006eef0 -> 0x180093510`
+  - `SetBallMassive -> 0x18006edd0 -> 0x180093f90`
+  - `EntityWarpIn -> 0x180070150 -> 0x1800928f0`
+- `0x1800928f0` parses the live action format string `"Ldddi"` and calls the richer warp initializer at `0x180043140`.
+- That path then feeds:
+  - `0x1800425e0` warp-mode initialization
+  - `0x180042850` internal warp-distance initialization
+  - the richer native in-warp setup without using bootstrap `SetState`
+- Important negative result from the same audit:
+  - `SetMaxSpeed` only writes ball field `+0xe0` and refreshes the ball
+  - it does not directly write hidden warp fields (`+0x88`, `+0x90`, `+0x98`, `+0x110`)
+  - so "SetMaxSpeed itself seeds effectStamp/mode-3" is not supported by the native handler
+- New runtime branch after this audit:
+  - keep watcher warp start on plain `WarpTo`
+  - switch the pilot warp-start command from `WarpTo` to live `EntityWarpIn(entityID, targetX, targetY, targetZ, warpFactor)`
+  - use the stop-adjusted `targetPoint`, because `EntityWarpIn` does not carry a separate stop-distance
+  - keep the same-tick activation seed, `effects.Warping`, and `SetBallMassive(false)` unchanged in the same test
+  - do not add any other packet family in the same patch
+
+54. `warplogs77.txt` rules out `EntityWarpIn` as the ego warp command and shifts the next fix back onto the pilot max-speed ceiling.
+- The pilot received:
+  - `1773329931`: `SetMaxSpeed(390.5)`, `EntityWarpIn`, `OnSpecialFX('effects.Warping')`, `SetBallMassive(false)`
+  - later accel-ramp `SetMaxSpeed` steps up to `5.0 AU/s`
+- Result:
+  - no distance progression at all
+  - no `WarpState` / `IsWarping` controller lines
+  - no `OnWarpStarted2`, `OnWarpActive`, or `TravelTunnelProgress`
+- The client also threw a concrete warp-loop exception:
+  - `Warp.py(559) WarpLoop -> spaceMgr.py(736) StartWarpIndication -> spaceMgr.py(666) CheckWarpDestination`
+  - `warpPoint = None`
+- That proves `EntityWarpIn` is semantically the wrong live action for the piloting client:
+  - it seeds native velocity and starts the tunnel FX
+  - but it does not satisfy the ego warp destination/warp-point contract used by the UI/effect loop
+- The best live baseline therefore remains the `warplogs76.txt` branch:
+  - same-tick subwarp-scale seed
+  - same-tick `WarpTo`
+  - same-tick `effects.Warping`
+  - same-tick `SetBallMassive(false)`
+  - staged accel ramp
+- New runtime rule after `warplogs77`:
+  - revert the pilot command back to plain `WarpTo`
+  - keep `EntityWarpIn` only as a documented native dead end
+  - cap the pilot accel ramp below full peak warp speed
+- Why that cap is now the next honest fix:
+  - `warplogs76` only hit the hard flatline after the final `5.0 AU/s` ramp step landed
+  - earlier ramp steps up to `4.5 AU/s` still progressed the distance display
+  - preserving some headroom is the only remaining untried adjustment on the best live branch that does not introduce new packet families
+
+55. `warplogs78.txt` finally put numbers under the native activation miss.
+- `_destiny.dll` metadata mapping now confirms:
+  - `effectStamp -> +0x88`
+  - `gotoX/Y/Z -> +0x1a8 / +0x1b0 / +0x1b8`
+- Native live-path split now verified:
+  - `WarpTo -> 0x180092830 -> 0x1800425e0`
+  - plain `WarpTo` leaves `effectStamp(+0x88) = -1`
+  - the internal `OnActivatingWarp` helper at `0x18003755a` is what calls `0x180042850` and turns `+0x88` positive while initializing `warpDistance(+0x110)`
+- Why the current same-tick seed still fails in `warplogs78`:
+  - pilot pre-warp sync velocity at `1773330389` is `(243.29, 42.50, 104.83)` m/s
+  - that magnitude is only `~268.31 m/s`
+  - same-tick pilot `SetMaxSpeed` at `1773330390` is `390.5 m/s`
+  - native activation gate is `currentSpeed >= 0.75 * maxVelocity`
+  - threshold is therefore `~292.88 m/s`, so the client is guaranteed to miss immediate activation
+- That matches the observed behavior exactly:
+  - tunnel FX starts from `OnSpecialFX('effects.Warping')`
+  - visible distance drops under the fallback path
+  - `WarpState -> 2` arrives only later, exactly when the visible distance flatlines
+- Runtime fix after `warplogs78`:
+  - remove the fixed `1.1x` activation seed heuristic
+  - derive the same-tick pilot seed from the actual stored align velocity (`startupGuidanceVelocity`)
+  - cap fallback at `0.99 * entity.maxVelocity` so the seed stays under the native `0.75 * maxVelocity` gate with a small margin
+
+56. `warplogs79.txt` plus the native `SetMaxSpeed` parser exposed a wire-type bug in the pilot accel ramp.
+- `_destiny.dll` `SetMaxSpeed` handler `0x180092f20` uses the parse signature `"Lf"` and immediately writes a float speed to `ball.maxVelocity (+0xe0)`.
+- Our same-tick pilot seed already matched that contract because it was fractional (`390.5`, then `351.45`), but the later ramp steps were still going over the wire as integer longs:
+  - `448793612100L`
+  - `560992015125L`
+  - `673190418150L`
+  - `710589885825L`
+- That means the current staged ramp was not actually testing the native float path after the first seed. Even if the client coerces the longs successfully, the wire type is still wrong for the documented live action contract.
+- Permanent protocol fix:
+  - add an explicit marshal `real` type that always emits `PyReal`
+  - make `destiny.buildSetMaxSpeedPayload()` always use that `real` type
+  - keep the rest of the `warplogs79` branch unchanged so the next log isolates the float-vs-long correction cleanly
+
+57. `warplogs81.txt` proved the float-wire fix was real and closed the staged pilot ramp branch.
+- The later pilot `SetMaxSpeed` steps now arrive as proper floating-point values (`448793612100.0`, `560992015125.0`, `673190418150.0`, `710589885825.0`), so the marshal-layer `real` fix is definitely live.
+- Once those in-warp ramp steps started hitting the native float path, the piloting client lost all local warp motion:
+  - `WarpState -> 1`, `IsWarping=True`, and `WarpState -> 2` all happen almost immediately
+  - `effects.Warping` still fires and `warptunnel.red` still loads
+  - but `Space::IndicateWarp` stays pinned at `51.42 AU` for the entire warp
+- That means the float fix did not fail; it exposed the actual bug:
+  - the later pilot in-warp `SetMaxSpeed` ramp itself is toxic
+  - it must not be kept as the ego warp driver
+- New runtime rule after `warplogs81`:
+  - remove all later pilot in-warp `SetMaxSpeed` ramp steps
+  - keep only the same-tick activation seed whose job is to satisfy the native `0.75 * maxVelocity` gate
+  - do not reopen staged pilot in-warp `SetMaxSpeed` without a new native justification
+
+58. `warplogs83.txt` leaves the pilot on the same sparse warp-start branch, so the next honest fix is live named `AddBall`.
+- `warplogs83.txt` still shows:
+  - one pre-warp sync (`SetBallPosition + SetBallVelocity`)
+  - same-tick `SetMaxSpeed(351.45)`
+  - same-tick `WarpTo`
+  - same-tick `OnSpecialFX('effects.Warping')`
+  - same-tick `SetBallMassive(false)`
+- Result is unchanged:
+  - `WarpState -> 1`, `IsWarping=True`, `WarpState -> 2`
+  - `warptunnel.red` loads
+  - no `OnWarpStarted2`, `OnWarpActive`, or `TravelTunnelProgress`
+  - distance pins at the entry remainder for the whole warp
+- `_destiny.dll` finally gives one genuinely new live action to test:
+  - `AddBall` named action string at `0x1800aa4e0`
+  - wrapper `0x18006e5b0`
+  - parser `0x180091ca0`
+- This is explicitly not the same thing as Michelle bootstrap `AddBalls` / `AddBalls2`:
+  - full `SetState` / `AddBalls2` are already proven toxic because they rebuild the ballpark / scene
+  - named `AddBall` is a live action and did not appear in any previous local warp log
+- Live `AddBall` parser signatures:
+  - simple: `"Ldffiiiiiddddddff"`
+  - extended: `"Ldffiiiiiddddddffff"`
+- Simple constructor path (`0x180091ca0 -> 0x180040370`) writes:
+  - position `+0x28/+0x30/+0x38`
+  - velocity `+0x178/+0x180/+0x188`
+  - maxVelocity `+0xe0`
+  - inertia `+0xe4`
+  - speedFraction `+0xf4`
+  - mass `+0x100`
+  - radius `+0xdc`
+  - then forces mode `STOP`
+- That makes `AddBall` the one remaining live packet that can refresh the pilot ball's full physical base state on the warp-start tick without touching the toxic bootstrap path.
+- Current runtime change:
+  - replace the pilot same-tick `SetMaxSpeed(seed)` with same-tick named `AddBall(...)`
+  - feed it the stored pre-warp velocity (`startupGuidanceVelocity`) plus the activation seed ceiling
+  - keep same-tick `WarpTo`, `OnSpecialFX`, and `SetBallMassive(false)` unchanged for the first test
+
+59. `warplogs84.txt` proves live `AddBall` was accepted but irrelevant, and the real regression boundary is still the low seed.
+- `warplogs84.txt` shows:
+  - `Action: AddBall ...`
+  - no `DoBallsAdded_`
+  - no scene reset / bootstrap rebuild
+  - but still no `OnWarpStarted2`, `OnWarpActive`, or `TravelTunnelProgress`
+  - distance remains pinned at `51.42 AU`
+- The stronger comparison is against `warplogs76` / `warplogs78`:
+  - those older runs still had same-tick `SetMaxSpeed(390.5)` and produced real local motion before the late plateau
+  - `warplogs83` had already cut the seed to `351.45` and lost all local motion before `AddBall` was added
+  - so `AddBall` did not create the no-motion regression; it sat on top of an already-dead low-seed branch
+- Runtime correction after this comparison:
+  - revert the align-speed-derived low seed
+  - revert live `AddBall`
+  - return to the last motion-producing same-tick `SetMaxSpeed(seed)` baseline
+
+60. `PackagedAction` is now the first genuinely new warp-start wire shape left.
+- Crucible packet docs and server code confirm `PackagedAction` is a real `DoDestinyAction` envelope:
+  - outer update is `("PackagedAction", PySubStream(...))`
+  - inner substream is a list of stamped updates
+  - Crucible used `QueueDestinyUpdate(..., DoPackage=true)` to wrap multiple destiny actions this way
+- This is materially different from our existing top-level batching:
+  - current EvEJS `DoDestinyUpdate` sends multiple sibling `[stamp, update]` entries
+  - `PackagedAction` nests those updates under one stamped action, which can change Michelle reconciliation behavior
+- New runtime change:
+  - keep the pilot warp-start same-tick seed / `WarpTo` / `OnSpecialFX` / `SetBallMassive(false)` family
+  - wrap that family inside one `PackagedAction` substream for the piloting client only
+  - leave watcher warp-start updates on the normal path
+- This is the first untried wire shape since the AddBall audit that stays inside documented destiny protocol and does not touch bootstrap `SetState` / `AddBalls2`.
+
+61. `warplogs85.txt` proved `PackagedAction` is valid but useless for warp activation.
+- The client accepted the envelope and flattened it into the expected same-stamp inner actions:
+  - `SetMaxSpeed(390.5)`
+  - `WarpTo`
+  - `OnSpecialFX('effects.Warping')`
+  - `SetBallMassive(false)`
+- So the branch failed semantically, not structurally.
+- Result:
+  - `WarpState -> 1`
+  - `IsWarping=True`
+  - `WarpState -> 2`
+  - `warptunnel.red` loads
+  - no `OnWarpStarted2`
+  - no `OnWarpActive`
+  - no `TravelTunnelProgress`
+  - distance stays pinned at `51.42 AU`
+- Permanent rule:
+  - do not revisit `PackagedAction` as a pilot warp-start fix
+
+62. Current live branch after `warplogs85.txt`: targeted same-tick activation velocity bump.
+- Native gate from `_destiny.dll` still rules this problem:
+  - richer warp activation requires `currentSpeed >= 0.75 * maxVelocity` when `WarpTo` is processed
+- The previous motion-producing branches were still only fallback local motion:
+  - they moved the distance display
+  - but never produced `OnWarpStarted2`, `OnWarpActive`, or `TravelTunnelProgress`
+- The current same-tick seed alone still misses the gate:
+  - pre-warp sync velocity is about `242.2 m/s`
+  - same-tick seed is `390.5 m/s`
+  - gate threshold is therefore about `292.9 m/s`
+- Current runtime fix:
+  - keep the last motion-producing same-tick seed baseline (`390.5 m/s`)
+  - remove `PackagedAction`
+  - add one same-tick pilot-only `SetBallVelocity` immediately before the seed / `WarpTo`
+  - target that bump just above the gate (`>= 0.8 * seedSpeed`)
+- Why this branch is materially new:
+  - it is not the old raw carryover velocity, which stayed below threshold
+  - it is not the old late-accel or warp-scale self-velocity, which caused rebases
+  - it is the first modest same-tick velocity correction aimed only at satisfying the native activation gate on the `WarpTo` tick
+
+63. `warplogs86.txt` closes the same-tick activation-velocity bump branch too.
+- The pilot received the intended start sequence:
+  - align-time sync `SetBallVelocity`
+  - one extra same-tick pilot `SetBallVelocity`
+  - same-tick `SetMaxSpeed(390.5)`
+  - same-tick `WarpTo`
+  - same-tick `OnSpecialFX('effects.Warping')`
+- `WarpState -> 2` now flipped immediately on the warp-start tick and `warptunnel.red` still loaded.
+- But the core failure stayed unchanged:
+  - no `OnWarpStarted2`
+  - no `OnWarpActive`
+  - no `TravelTunnelProgress`
+  - distance pinned flat at `44.90 AU`
+- Conclusion:
+  - changing same-tick velocity timing can change the visible `WarpState -> 2` handoff
+  - it still does **not** enter the true native active-warp path
+
+64. Native call-graph audit after `warplogs86.txt`: the named live warp surface is nearly exhausted.
+- Direct `_destiny.dll` xrefs now show the warp handlers more clearly than the packet experiments:
+  - `0x1800425e0` (plain warp destination handler) has only **two** direct callers:
+    - `0x1800928d2` from parser `0x180092830`
+    - `0x1800431ca` from richer initializer `0x180043140`
+  - `0x180043140` (the richer live warp initializer) has only **one** direct caller:
+    - `0x180092968` from parser `0x1800928f0`
+- Recovered parser signatures:
+  - plain warp parser `0x180092830`: `'Lddd|di'`
+  - richer parser `0x1800928f0`: `'Ldddi'`
+  - `SetMaxSpeed` parser `0x180092f20`: `'Lf'`
+  - live `AddBall` parser `0x180091ca0`: `'Ldffiiiiiddddddffff'`
+- Practical meaning:
+  - plain `WarpTo` only reaches the simple handler
+  - the richer initializer is only reachable through the separate `0x1800928f0` parser path
+  - the named action already proven to route there is `EntityWarpIn`, and `warplogs77.txt` proved that is wrong for the piloting ship (`warpPoint = None` in `Warp.py`)
+- Strong current conclusion:
+  - repeated named-command timing experiments are now low-value
+  - unless a second live action name is found to bind to `0x1800928f0`, the named destiny surface is effectively exhausted
+  - any remaining fix likely has to reproduce the richer path through an existing bootstrap/state mechanism without triggering a ballpark rebuild
+- Local tooling added for repeatable verification:
+  - `tools/dump_destiny_warp_registry.py`
+  - prints the current `_destiny.dll` parser signatures and direct caller graph for the plain warp parser, richer warp parser, `SetMaxSpeed`, `AddBall`, and the two native warp handlers
+
+65. Crucible does not contain a hidden manual-warp fix we forgot to copy.
+- Normal Crucible manual warp is still just:
+  - `GotoPoint(where)`
+  - `WarpTo + effects.Warping`
+  - self-only `SetBallMassive(false)`
+- Its `SetState` / `AddBalls2` logic is used for ballpark/bootstrap or explicit recovery (`UpdateStateRequest`), not for ordinary warp start.
+- So the current gap is not “missing the Crucible packet”.
+- The actual gap is that the modern pilot client expects richer native warp initialization than the older Crucible-era client did.
+
+66. One serious server-side avenue remains: bootstrap-lite ego refresh.
+- Current implementation branch:
+  - pilot-only ego `AddBalls2`
+  - pilot-only ego `SetState`
+  - then normal pilot warp-start updates
+- Important constraints:
+  - ego-only, not full visible-entity replay
+  - separate same-stamp `DoDestinyUpdate` frames to preserve order
+  - no watcher bootstrap replay
+- Purpose:
+  - test whether the modern client only needs a narrow bootstrap/state refresh for the ego ball to seed the richer native warp path
+  - without triggering the full scene rebuild / extended-warp failure seen in `warplogs64`
+
+67. `warplogs88.txt` closes the last serious server-side avenue.
+- Ego-only `AddBalls2 -> SetState` did arrive and did **not** cause a full `DoBallsAdded_` scene rebuild.
+- But it still caused Michelle to clear out-of-date entries and rebase history on the warp-start tick.
+- Result remained the same:
+  - tunnel resources could load
+  - `WarpState` still reached `1/2`
+  - distance pinned flat
+  - no `OnWarpStarted2`
+  - no `OnWarpActive`
+  - no `TravelTunnelProgress`
+- Honest conclusion:
+  - server-only sequencing/state injection is exhausted for this client family
+  - a correct pilot warp now likely requires a client patch or some client-side hook/change, not another server protocol experiment
+
+68. If client patching is rejected, freeze on the least-bad server-only branch.
+- Recommended compromise baseline:
+  - same-tick subwarp-scale seed
+  - same-tick `WarpTo`
+  - same-tick `effects.Warping`
+  - same-tick `SetBallMassive(false)`
+  - staged accel ramp
+- Current implementation keeps the final ramp step capped at `0.95` of peak warp instead of `1.0`.
+- This is not a correct fix. It is the best remaining no-client-patch fallback.

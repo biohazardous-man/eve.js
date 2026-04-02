@@ -100,6 +100,8 @@ const DBTYPE = {
  *   number (float)           → PyReal
  *   string                   → PyStringTableItem / PyLongString (UTF-8)
  *   Buffer                   → PyBuffer
+ *   { type: 'bytes', value: Buffer|Uint8Array } → PyString/PyLongString raw bytes
+ *   { type: 'rawstr', value: '...' }            → PyString/PyLongString UTF-8, bypass string table
  *   Array                    → PyTuple
  *   { type: 'dict', entries: [[k,v], ...] }  → PyDict
  *   { type: 'wstring', value: '...' }        → PyWStringUTF8
@@ -239,6 +241,52 @@ function encodeValue(value, chunks) {
       case "list":
         encodeList(value.items, chunks);
         return;
+      case "bytes": {
+        const rawBytes = Buffer.isBuffer(value.value)
+          ? value.value
+          : Buffer.from(value.value || []);
+        if (rawBytes.length === 0) {
+          chunks.push(Buffer.from([Op.PyEmptyString]));
+        } else if (rawBytes.length === 1) {
+          const buf = Buffer.alloc(2);
+          buf[0] = Op.PyCharString;
+          rawBytes.copy(buf, 1, 0, 1);
+          chunks.push(buf);
+        } else if (rawBytes.length < 0x100) {
+          const header = Buffer.alloc(2);
+          header[0] = Op.PyShortString;
+          header[1] = rawBytes.length;
+          chunks.push(header);
+          chunks.push(rawBytes);
+        } else {
+          chunks.push(Buffer.from([Op.PyLongString]));
+          putSizeEx(rawBytes.length, chunks);
+          chunks.push(rawBytes);
+        }
+        return;
+      }
+      case "rawstr": {
+        const rawStringBytes = Buffer.from(String(value.value ?? ""), "utf8");
+        if (rawStringBytes.length === 0) {
+          chunks.push(Buffer.from([Op.PyEmptyString]));
+        } else if (rawStringBytes.length === 1) {
+          const buf = Buffer.alloc(2);
+          buf[0] = Op.PyCharString;
+          rawStringBytes.copy(buf, 1, 0, 1);
+          chunks.push(buf);
+        } else if (rawStringBytes.length < 0x100) {
+          const header = Buffer.alloc(2);
+          header[0] = Op.PyShortString;
+          header[1] = rawStringBytes.length;
+          chunks.push(header);
+          chunks.push(rawStringBytes);
+        } else {
+          chunks.push(Buffer.from([Op.PyLongString]));
+          putSizeEx(rawStringBytes.length, chunks);
+          chunks.push(rawStringBytes);
+        }
+        return;
+      }
       case "object":
         encodeObject(value, chunks);
         return;
@@ -493,6 +541,109 @@ function normalizePackedRowValueMap(packedRow, columns) {
   throw new Error("Packed row is missing values or fields");
 }
 
+function unwrapPackedScalarValue(value) {
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  if (
+    value.type === "int" ||
+    value.type === "long" ||
+    value.type === "float" ||
+    value.type === "double" ||
+    value.type === "bool" ||
+    value.type === "wstring" ||
+    value.type === "token" ||
+    value.type === "rawstr"
+  ) {
+    return unwrapPackedScalarValue(value.value);
+  }
+
+  return value;
+}
+
+function normalizePackedBigInt(value, fallback = 0n) {
+  const normalized = unwrapPackedScalarValue(value);
+
+  try {
+    if (typeof normalized === "bigint") {
+      return normalized;
+    }
+
+    if (normalized === null || normalized === undefined) {
+      return fallback;
+    }
+
+    if (typeof normalized === "number") {
+      return Number.isFinite(normalized) ? BigInt(Math.trunc(normalized)) : fallback;
+    }
+
+    if (typeof normalized === "boolean") {
+      return normalized ? 1n : 0n;
+    }
+
+    if (Buffer.isBuffer(normalized)) {
+      const text = normalized.toString("utf8").trim();
+      return text ? BigInt(text) : fallback;
+    }
+
+    if (typeof normalized === "string") {
+      const text = normalized.trim();
+      return text ? BigInt(text) : fallback;
+    }
+  } catch (error) {
+    return fallback;
+  }
+
+  return fallback;
+}
+
+function normalizePackedNumber(value, fallback = 0) {
+  const normalized = unwrapPackedScalarValue(value);
+
+  if (normalized === null || normalized === undefined) {
+    return fallback;
+  }
+
+  if (typeof normalized === "number") {
+    return Number.isFinite(normalized) ? normalized : fallback;
+  }
+
+  if (typeof normalized === "bigint") {
+    const coerced = Number(normalized);
+    return Number.isFinite(coerced) ? coerced : fallback;
+  }
+
+  if (typeof normalized === "boolean") {
+    return normalized ? 1 : 0;
+  }
+
+  if (Buffer.isBuffer(normalized)) {
+    return normalizePackedNumber(normalized.toString("utf8"), fallback);
+  }
+
+  if (typeof normalized === "string") {
+    const numericValue = Number(normalized);
+    return Number.isFinite(numericValue) ? numericValue : fallback;
+  }
+
+  return fallback;
+}
+
+function normalizePackedBoolean(value) {
+  const normalized = unwrapPackedScalarValue(value);
+
+  if (typeof normalized === "boolean") {
+    return normalized;
+  }
+
+  if (normalized === null || normalized === undefined) {
+    return false;
+  }
+
+  return Boolean(normalizePackedNumber(normalized, 0));
+}
+
 function encodePackedNumericValue(type, value) {
   switch (type) {
     case DBTYPE.CY:
@@ -500,20 +651,14 @@ function encodePackedNumericValue(type, value) {
     case DBTYPE.UI8:
     case DBTYPE.FILETIME: {
       const buf = Buffer.alloc(8);
-      const bigValue =
-        typeof value === "bigint"
-          ? value
-          : value === null || value === undefined
-            ? 0n
-            : BigInt(Math.trunc(Number(value)));
+      const bigValue = normalizePackedBigInt(value, 0n);
       buf.writeBigInt64LE(bigValue, 0);
       return buf;
     }
     case DBTYPE.I4:
     case DBTYPE.UI4: {
       const buf = Buffer.alloc(4);
-      const intValue =
-        value === null || value === undefined ? 0 : Math.trunc(Number(value));
+      const intValue = Math.trunc(normalizePackedNumber(value, 0));
       if (type === DBTYPE.UI4) {
         buf.writeUInt32LE(intValue >>> 0, 0);
       } else {
@@ -523,19 +668,18 @@ function encodePackedNumericValue(type, value) {
     }
     case DBTYPE.R4: {
       const buf = Buffer.alloc(4);
-      buf.writeFloatLE(value === null || value === undefined ? 0.0 : Number(value), 0);
+      buf.writeFloatLE(normalizePackedNumber(value, 0.0), 0);
       return buf;
     }
     case DBTYPE.R8: {
       const buf = Buffer.alloc(8);
-      buf.writeDoubleLE(value === null || value === undefined ? 0.0 : Number(value), 0);
+      buf.writeDoubleLE(normalizePackedNumber(value, 0.0), 0);
       return buf;
     }
     case DBTYPE.I2:
     case DBTYPE.UI2: {
       const buf = Buffer.alloc(2);
-      const intValue =
-        value === null || value === undefined ? 0 : Math.trunc(Number(value));
+      const intValue = Math.trunc(normalizePackedNumber(value, 0));
       if (type === DBTYPE.UI2) {
         buf.writeUInt16LE(intValue & 0xffff, 0);
       } else {
@@ -546,8 +690,7 @@ function encodePackedNumericValue(type, value) {
     case DBTYPE.I1:
     case DBTYPE.UI1: {
       const buf = Buffer.alloc(1);
-      const intValue =
-        value === null || value === undefined ? 0 : Math.trunc(Number(value));
+      const intValue = Math.trunc(normalizePackedNumber(value, 0));
       if (type === DBTYPE.UI1) {
         buf.writeUInt8(intValue & 0xff, 0);
       } else {
@@ -676,7 +819,7 @@ function encodePackedRow(packedRow, chunks) {
       continue;
     }
 
-    if (values[entry.index]) {
+    if (normalizePackedBoolean(values[entry.index])) {
       const boolBit = booleanColumns.get(entry.index);
       const boolByte = boolBit >> 3;
       bitData[boolByte] |= 1 << (boolBit & 0x7);
@@ -1117,6 +1260,15 @@ function decodeValue(state) {
       break;
     }
 
+    case Op.cPicked: {
+      const len = readSizeEx(state);
+      result = {
+        type: "cpicked",
+        data: readBytes(state, len),
+      };
+      break;
+    }
+
     case Op.PySavedStreamElement: {
       const index = readSizeEx(state);
       if (
@@ -1207,6 +1359,7 @@ function strVal(v) {
   if (Buffer.isBuffer(v)) return v.toString("utf8");
   if (v && typeof v === "object" && v.type === "wstring") return v.value;
   if (v && typeof v === "object" && v.type === "token") return v.value;
+  if (v && typeof v === "object" && v.type === "rawstr") return v.value;
   return String(v);
 }
 

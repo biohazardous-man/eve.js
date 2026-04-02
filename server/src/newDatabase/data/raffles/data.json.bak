@@ -1,0 +1,2544 @@
+{
+  "980000001": {
+    "runningId": 980000001,
+    "raffleId": 980000001,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000321,
+    "typeId": 48648,
+    "groupId": 2001,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 3130000,
+    "restrictionId": null,
+    "creationTime": "134187823107060000",
+    "expirationTime": "134190415107060000",
+    "soldTickets": [
+      {
+        "runningId": 980000001,
+        "raffleId": 980000001,
+        "ownerId": 140000002,
+        "number": 6
+      },
+      {
+        "runningId": 980000001,
+        "raffleId": 980000001,
+        "ownerId": 140000002,
+        "number": 9
+      }
+    ],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134190415107560000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000321,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {
+        "140000002": 6260000
+      },
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000002": {
+    "runningId": 980000002,
+    "raffleId": 980000002,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000387,
+    "typeId": 33641,
+    "groupId": 26,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 3130000,
+    "restrictionId": null,
+    "creationTime": "134187823107060000",
+    "expirationTime": "134190415107060000",
+    "soldTickets": [
+      {
+        "runningId": 980000002,
+        "raffleId": 980000002,
+        "ownerId": 140000002,
+        "number": 0
+      },
+      {
+        "runningId": 980000002,
+        "raffleId": 980000002,
+        "ownerId": 140000002,
+        "number": 1
+      },
+      {
+        "runningId": 980000002,
+        "raffleId": 980000002,
+        "ownerId": 140000002,
+        "number": 2
+      },
+      {
+        "runningId": 980000002,
+        "raffleId": 980000002,
+        "ownerId": 140000002,
+        "number": 3
+      },
+      {
+        "runningId": 980000002,
+        "raffleId": 980000002,
+        "ownerId": 140000002,
+        "number": 5
+      },
+      {
+        "runningId": 980000002,
+        "raffleId": 980000002,
+        "ownerId": 140000002,
+        "number": 6
+      },
+      {
+        "runningId": 980000002,
+        "raffleId": 980000002,
+        "ownerId": 140000002,
+        "number": 7
+      },
+      {
+        "runningId": 980000002,
+        "raffleId": 980000002,
+        "ownerId": 140000002,
+        "number": 8
+      },
+      {
+        "runningId": 980000002,
+        "raffleId": 980000002,
+        "ownerId": 140000002,
+        "number": 9
+      },
+      {
+        "runningId": 980000002,
+        "raffleId": 980000002,
+        "ownerId": 140000002,
+        "number": 10
+      },
+      {
+        "runningId": 980000002,
+        "raffleId": 980000002,
+        "ownerId": 140000002,
+        "number": 11
+      },
+      {
+        "runningId": 980000002,
+        "raffleId": 980000002,
+        "ownerId": 140000002,
+        "number": 12
+      },
+      {
+        "runningId": 980000002,
+        "raffleId": 980000002,
+        "ownerId": 140000002,
+        "number": 13
+      },
+      {
+        "runningId": 980000002,
+        "raffleId": 980000002,
+        "ownerId": 140000002,
+        "number": 14
+      },
+      {
+        "runningId": 980000002,
+        "raffleId": 980000002,
+        "ownerId": 140000002,
+        "number": 15
+      }
+    ],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134190415107400000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000387,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {
+        "140000002": 46950000
+      },
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000003": {
+    "runningId": 980000003,
+    "raffleId": 980000003,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000421,
+    "typeId": 619,
+    "groupId": 25,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 3130000,
+    "restrictionId": null,
+    "creationTime": "134187772000000000",
+    "expirationTime": "134190364000000000",
+    "soldTickets": [
+      {
+        "runningId": 980000003,
+        "raffleId": 980000003,
+        "ownerId": 140000002,
+        "number": 0
+      },
+      {
+        "runningId": 980000003,
+        "raffleId": 980000003,
+        "ownerId": 140000002,
+        "number": 1
+      },
+      {
+        "runningId": 980000003,
+        "raffleId": 980000003,
+        "ownerId": 140000002,
+        "number": 2
+      },
+      {
+        "runningId": 980000003,
+        "raffleId": 980000003,
+        "ownerId": 140000002,
+        "number": 3
+      },
+      {
+        "runningId": 980000003,
+        "raffleId": 980000003,
+        "ownerId": 140000002,
+        "number": 4
+      },
+      {
+        "runningId": 980000003,
+        "raffleId": 980000003,
+        "ownerId": 140000002,
+        "number": 5
+      },
+      {
+        "runningId": 980000003,
+        "raffleId": 980000003,
+        "ownerId": 140000002,
+        "number": 6
+      },
+      {
+        "runningId": 980000003,
+        "raffleId": 980000003,
+        "ownerId": 140000002,
+        "number": 7
+      },
+      {
+        "runningId": 980000003,
+        "raffleId": 980000003,
+        "ownerId": 140000002,
+        "number": 8
+      },
+      {
+        "runningId": 980000003,
+        "raffleId": 980000003,
+        "ownerId": 140000003,
+        "number": 9
+      },
+      {
+        "runningId": 980000003,
+        "raffleId": 980000003,
+        "ownerId": 140000003,
+        "number": 10
+      },
+      {
+        "runningId": 980000003,
+        "raffleId": 980000003,
+        "ownerId": 140000003,
+        "number": 11
+      },
+      {
+        "runningId": 980000003,
+        "raffleId": 980000003,
+        "ownerId": 140000003,
+        "number": 12
+      },
+      {
+        "runningId": 980000003,
+        "raffleId": 980000003,
+        "ownerId": 140000003,
+        "number": 13
+      },
+      {
+        "runningId": 980000003,
+        "raffleId": 980000003,
+        "ownerId": 140000003,
+        "number": 14
+      },
+      {
+        "runningId": 980000003,
+        "raffleId": 980000003,
+        "ownerId": 140000003,
+        "number": 15
+      }
+    ],
+    "winningTicket": {
+      "runningId": 980000003,
+      "raffleId": 980000003,
+      "ownerId": 140000002,
+      "number": 0
+    },
+    "raffleStatus": 8,
+    "endDate": "134187773086230000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000421,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": true,
+      "refundedOwners": {},
+      "itemRestored": false,
+      "itemDelivered": true
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000004": {
+    "runningId": 980000004,
+    "raffleId": 980000004,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000347,
+    "typeId": 11383,
+    "groupId": 324,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 3130000,
+    "restrictionId": null,
+    "creationTime": "134187823107060000",
+    "expirationTime": "134190415107060000",
+    "soldTickets": [
+      {
+        "runningId": 980000004,
+        "raffleId": 980000004,
+        "ownerId": 140000002,
+        "number": 0
+      },
+      {
+        "runningId": 980000004,
+        "raffleId": 980000004,
+        "ownerId": 140000002,
+        "number": 1
+      },
+      {
+        "runningId": 980000004,
+        "raffleId": 980000004,
+        "ownerId": 140000002,
+        "number": 2
+      },
+      {
+        "runningId": 980000004,
+        "raffleId": 980000004,
+        "ownerId": 140000002,
+        "number": 3
+      },
+      {
+        "runningId": 980000004,
+        "raffleId": 980000004,
+        "ownerId": 140000002,
+        "number": 4
+      },
+      {
+        "runningId": 980000004,
+        "raffleId": 980000004,
+        "ownerId": 140000002,
+        "number": 5
+      },
+      {
+        "runningId": 980000004,
+        "raffleId": 980000004,
+        "ownerId": 140000002,
+        "number": 6
+      },
+      {
+        "runningId": 980000004,
+        "raffleId": 980000004,
+        "ownerId": 140000002,
+        "number": 7
+      },
+      {
+        "runningId": 980000004,
+        "raffleId": 980000004,
+        "ownerId": 140000002,
+        "number": 8
+      },
+      {
+        "runningId": 980000004,
+        "raffleId": 980000004,
+        "ownerId": 140000002,
+        "number": 9
+      },
+      {
+        "runningId": 980000004,
+        "raffleId": 980000004,
+        "ownerId": 140000002,
+        "number": 10
+      },
+      {
+        "runningId": 980000004,
+        "raffleId": 980000004,
+        "ownerId": 140000002,
+        "number": 11
+      },
+      {
+        "runningId": 980000004,
+        "raffleId": 980000004,
+        "ownerId": 140000002,
+        "number": 12
+      },
+      {
+        "runningId": 980000004,
+        "raffleId": 980000004,
+        "ownerId": 140000002,
+        "number": 13
+      },
+      {
+        "runningId": 980000004,
+        "raffleId": 980000004,
+        "ownerId": 140000002,
+        "number": 14
+      },
+      {
+        "runningId": 980000004,
+        "raffleId": 980000004,
+        "ownerId": 140000002,
+        "number": 15
+      }
+    ],
+    "winningTicket": {
+      "runningId": 980000004,
+      "raffleId": 980000004,
+      "ownerId": 140000002,
+      "number": 14
+    },
+    "raffleStatus": 8,
+    "endDate": "134188281369680000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000347,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": true,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": true
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000005": {
+    "runningId": 980000005,
+    "raffleId": 980000005,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990101396,
+    "typeId": 32311,
+    "groupId": 27,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 27480000,
+    "restrictionId": null,
+    "creationTime": "134187823107060000",
+    "expirationTime": "134190415107060000",
+    "soldTickets": [
+      {
+        "runningId": 980000005,
+        "raffleId": 980000005,
+        "ownerId": 140000002,
+        "number": 1
+      },
+      {
+        "runningId": 980000005,
+        "raffleId": 980000005,
+        "ownerId": 140000002,
+        "number": 2
+      },
+      {
+        "runningId": 980000005,
+        "raffleId": 980000005,
+        "ownerId": 140000002,
+        "number": 5
+      },
+      {
+        "runningId": 980000005,
+        "raffleId": 980000005,
+        "ownerId": 140000002,
+        "number": 6
+      },
+      {
+        "runningId": 980000005,
+        "raffleId": 980000005,
+        "ownerId": 140000002,
+        "number": 7
+      }
+    ],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134190415107140000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 990101396,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {
+        "140000002": 137400000
+      },
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000006": {
+    "runningId": 980000006,
+    "raffleId": 980000006,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040025,
+    "typeId": 20601,
+    "groupId": 506,
+    "categoryId": 7,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 501000,
+    "restrictionId": null,
+    "creationTime": "134187823107070000",
+    "expirationTime": "134190415107070000",
+    "soldTickets": [
+      {
+        "runningId": 980000006,
+        "raffleId": 980000006,
+        "ownerId": 140000002,
+        "number": 0
+      },
+      {
+        "runningId": 980000006,
+        "raffleId": 980000006,
+        "ownerId": 140000002,
+        "number": 1
+      },
+      {
+        "runningId": 980000006,
+        "raffleId": 980000006,
+        "ownerId": 140000002,
+        "number": 2
+      },
+      {
+        "runningId": 980000006,
+        "raffleId": 980000006,
+        "ownerId": 140000002,
+        "number": 4
+      },
+      {
+        "runningId": 980000006,
+        "raffleId": 980000006,
+        "ownerId": 140000002,
+        "number": 5
+      },
+      {
+        "runningId": 980000006,
+        "raffleId": 980000006,
+        "ownerId": 140000002,
+        "number": 6
+      },
+      {
+        "runningId": 980000006,
+        "raffleId": 980000006,
+        "ownerId": 140000002,
+        "number": 7
+      },
+      {
+        "runningId": 980000006,
+        "raffleId": 980000006,
+        "ownerId": 140000002,
+        "number": 9
+      },
+      {
+        "runningId": 980000006,
+        "raffleId": 980000006,
+        "ownerId": 140000002,
+        "number": 10
+      },
+      {
+        "runningId": 980000006,
+        "raffleId": 980000006,
+        "ownerId": 140000002,
+        "number": 11
+      },
+      {
+        "runningId": 980000006,
+        "raffleId": 980000006,
+        "ownerId": 140000002,
+        "number": 12
+      },
+      {
+        "runningId": 980000006,
+        "raffleId": 980000006,
+        "ownerId": 140000002,
+        "number": 13
+      },
+      {
+        "runningId": 980000006,
+        "raffleId": 980000006,
+        "ownerId": 140000002,
+        "number": 14
+      },
+      {
+        "runningId": 980000006,
+        "raffleId": 980000006,
+        "ownerId": 140000002,
+        "number": 15
+      }
+    ],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134190415107920000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990040025,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {
+        "140000002": 7014000
+      },
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000007": {
+    "runningId": 980000007,
+    "raffleId": 980000007,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040391,
+    "typeId": 13824,
+    "groupId": 53,
+    "categoryId": 7,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 1570000,
+    "restrictionId": null,
+    "creationTime": "134187771500000000",
+    "expirationTime": "134190363500000000",
+    "soldTickets": [
+      {
+        "runningId": 980000007,
+        "raffleId": 980000007,
+        "ownerId": 140000002,
+        "number": 0
+      },
+      {
+        "runningId": 980000007,
+        "raffleId": 980000007,
+        "ownerId": 140000002,
+        "number": 1
+      },
+      {
+        "runningId": 980000007,
+        "raffleId": 980000007,
+        "ownerId": 140000002,
+        "number": 2
+      },
+      {
+        "runningId": 980000007,
+        "raffleId": 980000007,
+        "ownerId": 140000002,
+        "number": 3
+      },
+      {
+        "runningId": 980000007,
+        "raffleId": 980000007,
+        "ownerId": 140000002,
+        "number": 4
+      },
+      {
+        "runningId": 980000007,
+        "raffleId": 980000007,
+        "ownerId": 140000002,
+        "number": 5
+      },
+      {
+        "runningId": 980000007,
+        "raffleId": 980000007,
+        "ownerId": 140000002,
+        "number": 6
+      },
+      {
+        "runningId": 980000007,
+        "raffleId": 980000007,
+        "ownerId": 140000002,
+        "number": 7
+      },
+      {
+        "runningId": 980000007,
+        "raffleId": 980000007,
+        "ownerId": 140000002,
+        "number": 8
+      },
+      {
+        "runningId": 980000007,
+        "raffleId": 980000007,
+        "ownerId": 140000002,
+        "number": 9
+      },
+      {
+        "runningId": 980000007,
+        "raffleId": 980000007,
+        "ownerId": 140000003,
+        "number": 10
+      },
+      {
+        "runningId": 980000007,
+        "raffleId": 980000007,
+        "ownerId": 140000003,
+        "number": 11
+      },
+      {
+        "runningId": 980000007,
+        "raffleId": 980000007,
+        "ownerId": 140000003,
+        "number": 12
+      },
+      {
+        "runningId": 980000007,
+        "raffleId": 980000007,
+        "ownerId": 140000003,
+        "number": 13
+      },
+      {
+        "runningId": 980000007,
+        "raffleId": 980000007,
+        "ownerId": 140000003,
+        "number": 14
+      },
+      {
+        "runningId": 980000007,
+        "raffleId": 980000007,
+        "ownerId": 140000003,
+        "number": 15
+      }
+    ],
+    "winningTicket": {
+      "runningId": 980000007,
+      "raffleId": 980000007,
+      "ownerId": 140000002,
+      "number": 0
+    },
+    "raffleStatus": 8,
+    "endDate": "134187772644690000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990040391,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": true,
+      "refundedOwners": {},
+      "itemRestored": false,
+      "itemDelivered": true
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000008": {
+    "runningId": 980000008,
+    "raffleId": 980000008,
+    "ownerId": 140000003,
+    "locationId": 60002953,
+    "solarSystemId": 30000142,
+    "itemId": 990114206,
+    "typeId": 77283,
+    "groupId": 4594,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 758345000,
+    "restrictionId": null,
+    "creationTime": "134187768150000000",
+    "expirationTime": "134190360150000000",
+    "soldTickets": [
+      {
+        "runningId": 980000008,
+        "raffleId": 980000008,
+        "ownerId": 140000003,
+        "number": 0
+      }
+    ],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134190362358340000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false
+    },
+    "inventory": {
+      "escrowItemId": 990114206,
+      "originalLocationId": 60002953,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {
+        "140000003": 758345000
+      },
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "player"
+  },
+  "980000009": {
+    "runningId": 980000009,
+    "raffleId": 980000009,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990041049,
+    "typeId": 20911,
+    "groupId": 86,
+    "categoryId": 8,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 78130000,
+    "restrictionId": null,
+    "creationTime": "134187823107070000",
+    "expirationTime": "134190415107070000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134190415107920000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990041049,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000010": {
+    "runningId": 980000010,
+    "raffleId": 980000010,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140002530,
+    "typeId": 85031,
+    "groupId": 46,
+    "categoryId": 7,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 500,
+    "restrictionId": null,
+    "creationTime": "134187823107070000",
+    "expirationTime": "134190415107070000",
+    "soldTickets": [
+      {
+        "runningId": 980000010,
+        "raffleId": 980000010,
+        "ownerId": 140000002,
+        "number": 0
+      },
+      {
+        "runningId": 980000010,
+        "raffleId": 980000010,
+        "ownerId": 140000002,
+        "number": 1
+      },
+      {
+        "runningId": 980000010,
+        "raffleId": 980000010,
+        "ownerId": 140000002,
+        "number": 2
+      },
+      {
+        "runningId": 980000010,
+        "raffleId": 980000010,
+        "ownerId": 140000002,
+        "number": 3
+      },
+      {
+        "runningId": 980000010,
+        "raffleId": 980000010,
+        "ownerId": 140000002,
+        "number": 4
+      },
+      {
+        "runningId": 980000010,
+        "raffleId": 980000010,
+        "ownerId": 140000002,
+        "number": 5
+      },
+      {
+        "runningId": 980000010,
+        "raffleId": 980000010,
+        "ownerId": 140000002,
+        "number": 6
+      },
+      {
+        "runningId": 980000010,
+        "raffleId": 980000010,
+        "ownerId": 140000002,
+        "number": 7
+      },
+      {
+        "runningId": 980000010,
+        "raffleId": 980000010,
+        "ownerId": 140000002,
+        "number": 8
+      },
+      {
+        "runningId": 980000010,
+        "raffleId": 980000010,
+        "ownerId": 140000002,
+        "number": 9
+      },
+      {
+        "runningId": 980000010,
+        "raffleId": 980000010,
+        "ownerId": 140000002,
+        "number": 11
+      },
+      {
+        "runningId": 980000010,
+        "raffleId": 980000010,
+        "ownerId": 140000002,
+        "number": 12
+      },
+      {
+        "runningId": 980000010,
+        "raffleId": 980000010,
+        "ownerId": 140000002,
+        "number": 13
+      },
+      {
+        "runningId": 980000010,
+        "raffleId": 980000010,
+        "ownerId": 140000002,
+        "number": 14
+      },
+      {
+        "runningId": 980000010,
+        "raffleId": 980000010,
+        "ownerId": 140000002,
+        "number": 15
+      }
+    ],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134190415107750000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 140002530,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {
+        "140000002": 7500
+      },
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000011": {
+    "runningId": 980000011,
+    "raffleId": 980000011,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990041045,
+    "typeId": 20899,
+    "groupId": 86,
+    "categoryId": 8,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 78130000,
+    "restrictionId": null,
+    "creationTime": "134187847791970000",
+    "expirationTime": "134190439791970000",
+    "soldTickets": [
+      {
+        "runningId": 980000011,
+        "raffleId": 980000011,
+        "ownerId": 140000002,
+        "number": 3
+      },
+      {
+        "runningId": 980000011,
+        "raffleId": 980000011,
+        "ownerId": 140000002,
+        "number": 11
+      }
+    ],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134190439792140000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990041045,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {
+        "140000002": 156260000
+      },
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000012": {
+    "runningId": 980000012,
+    "raffleId": 980000012,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040031,
+    "typeId": 20599,
+    "groupId": 510,
+    "categoryId": 7,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 182000,
+    "restrictionId": null,
+    "creationTime": "134187847791980000",
+    "expirationTime": "134190439791980000",
+    "soldTickets": [
+      {
+        "runningId": 980000012,
+        "raffleId": 980000012,
+        "ownerId": 140000002,
+        "number": 0
+      },
+      {
+        "runningId": 980000012,
+        "raffleId": 980000012,
+        "ownerId": 140000002,
+        "number": 1
+      },
+      {
+        "runningId": 980000012,
+        "raffleId": 980000012,
+        "ownerId": 140000002,
+        "number": 5
+      },
+      {
+        "runningId": 980000012,
+        "raffleId": 980000012,
+        "ownerId": 140000002,
+        "number": 8
+      },
+      {
+        "runningId": 980000012,
+        "raffleId": 980000012,
+        "ownerId": 140000002,
+        "number": 10
+      },
+      {
+        "runningId": 980000012,
+        "raffleId": 980000012,
+        "ownerId": 140000002,
+        "number": 12
+      },
+      {
+        "runningId": 980000012,
+        "raffleId": 980000012,
+        "ownerId": 140000002,
+        "number": 13
+      },
+      {
+        "runningId": 980000012,
+        "raffleId": 980000012,
+        "ownerId": 140000002,
+        "number": 14
+      },
+      {
+        "runningId": 980000012,
+        "raffleId": 980000012,
+        "ownerId": 140000002,
+        "number": 15
+      }
+    ],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134190439792280000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990040031,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {
+        "140000002": 1638000
+      },
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000013": {
+    "runningId": 980000013,
+    "raffleId": 980000013,
+    "ownerId": 140000002,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990112596,
+    "typeId": 1541,
+    "groupId": 766,
+    "categoryId": 7,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 125,
+    "restrictionId": null,
+    "creationTime": "134187853225330000",
+    "expirationTime": "134190445225330000",
+    "soldTickets": [
+      {
+        "runningId": 980000013,
+        "raffleId": 980000013,
+        "ownerId": 140000002,
+        "number": 0
+      },
+      {
+        "runningId": 980000013,
+        "raffleId": 980000013,
+        "ownerId": 140000002,
+        "number": 3
+      },
+      {
+        "runningId": 980000013,
+        "raffleId": 980000013,
+        "ownerId": 140000002,
+        "number": 5
+      },
+      {
+        "runningId": 980000013,
+        "raffleId": 980000013,
+        "ownerId": 140000002,
+        "number": 6
+      }
+    ],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134190445225430000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false
+    },
+    "inventory": {
+      "escrowItemId": 990112596,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4,
+      "tokenItemId": 990114300,
+      "tokenCount": 1
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {
+        "140000002": 500
+      },
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "player"
+  },
+  "980000014": {
+    "runningId": 980000014,
+    "raffleId": 980000014,
+    "ownerId": 140000002,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040391,
+    "typeId": 13824,
+    "groupId": 53,
+    "categoryId": 7,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 125,
+    "restrictionId": null,
+    "creationTime": "134187853849520000",
+    "expirationTime": "134190445849520000",
+    "soldTickets": [
+      {
+        "runningId": 980000014,
+        "raffleId": 980000014,
+        "ownerId": 140000008,
+        "number": 0
+      },
+      {
+        "runningId": 980000014,
+        "raffleId": 980000014,
+        "ownerId": 140000008,
+        "number": 1
+      },
+      {
+        "runningId": 980000014,
+        "raffleId": 980000014,
+        "ownerId": 140000002,
+        "number": 2
+      },
+      {
+        "runningId": 980000014,
+        "raffleId": 980000014,
+        "ownerId": 140000008,
+        "number": 3
+      },
+      {
+        "runningId": 980000014,
+        "raffleId": 980000014,
+        "ownerId": 140000002,
+        "number": 4
+      },
+      {
+        "runningId": 980000014,
+        "raffleId": 980000014,
+        "ownerId": 140000008,
+        "number": 5
+      },
+      {
+        "runningId": 980000014,
+        "raffleId": 980000014,
+        "ownerId": 140000008,
+        "number": 6
+      },
+      {
+        "runningId": 980000014,
+        "raffleId": 980000014,
+        "ownerId": 140000008,
+        "number": 7
+      }
+    ],
+    "winningTicket": {
+      "runningId": 980000014,
+      "raffleId": 980000014,
+      "ownerId": 140000002,
+      "number": 2
+    },
+    "raffleStatus": 7,
+    "endDate": "134189271605600000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false
+    },
+    "inventory": {
+      "escrowItemId": 990040391,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4,
+      "tokenItemId": 990114300,
+      "tokenCount": 1
+    },
+    "settlement": {
+      "sellerPayoutApplied": true,
+      "refundedOwners": {},
+      "itemRestored": false,
+      "itemDelivered": false
+    },
+    "source": "player"
+  },
+  "980000015": {
+    "runningId": 980000015,
+    "raffleId": 980000015,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000401,
+    "typeId": 33655,
+    "groupId": 25,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 6250000,
+    "restrictionId": null,
+    "creationTime": "134187900739860000",
+    "expirationTime": "134190492739860000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134190696877340000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000401,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000016": {
+    "runningId": 980000016,
+    "raffleId": 980000016,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000394,
+    "typeId": 9862,
+    "groupId": 237,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 6250000,
+    "restrictionId": null,
+    "creationTime": "134188296255990000",
+    "expirationTime": "134190888255990000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134190888256110000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000394,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000017": {
+    "runningId": 980000017,
+    "raffleId": 980000017,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000351,
+    "typeId": 34233,
+    "groupId": 900,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 17800000,
+    "restrictionId": null,
+    "creationTime": "134190696877770000",
+    "expirationTime": "134193288877770000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134193288877820000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000351,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000018": {
+    "runningId": 980000018,
+    "raffleId": 980000018,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140002499,
+    "typeId": 84965,
+    "groupId": 46,
+    "categoryId": 7,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 19800,
+    "restrictionId": null,
+    "creationTime": "134190696877770000",
+    "expirationTime": "134193288877770000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134193288877820000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 140002499,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000019": {
+    "runningId": 980000019,
+    "raffleId": 980000019,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040645,
+    "typeId": 27341,
+    "groupId": 89,
+    "categoryId": 8,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 21880000,
+    "restrictionId": null,
+    "creationTime": "134190696877770000",
+    "expirationTime": "134193288877770000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134193288877810000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990040645,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000020": {
+    "runningId": 980000020,
+    "raffleId": 980000020,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000348,
+    "typeId": 47727,
+    "groupId": 900,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 17460000,
+    "restrictionId": null,
+    "creationTime": "134190716209990000",
+    "expirationTime": "134193308209990000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134193308210040000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000348,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000021": {
+    "runningId": 980000021,
+    "raffleId": 980000021,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000436,
+    "typeId": 42133,
+    "groupId": 1538,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 212500000,
+    "restrictionId": null,
+    "creationTime": "134190716209990000",
+    "expirationTime": "134193308209990000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134193308210040000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000436,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000022": {
+    "runningId": 980000022,
+    "raffleId": 980000022,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000314,
+    "typeId": 33695,
+    "groupId": 28,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 3130000,
+    "restrictionId": null,
+    "creationTime": "134190716209990000",
+    "expirationTime": "134193308209990000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134193308210040000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000314,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000023": {
+    "runningId": 980000023,
+    "raffleId": 980000023,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040664,
+    "typeId": 21392,
+    "groupId": 85,
+    "categoryId": 8,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 625000,
+    "restrictionId": null,
+    "creationTime": "134190716209990000",
+    "expirationTime": "134193308209990000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134193308210040000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990040664,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000024": {
+    "runningId": 980000024,
+    "raffleId": 980000024,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040788,
+    "typeId": 29620,
+    "groupId": 476,
+    "categoryId": 8,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 187500000,
+    "restrictionId": null,
+    "creationTime": "134190751451340000",
+    "expirationTime": "134193343451340000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134193343451470000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990040788,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000025": {
+    "runningId": 980000025,
+    "raffleId": 980000025,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040399,
+    "typeId": 13831,
+    "groupId": 53,
+    "categoryId": 7,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 3130000,
+    "restrictionId": null,
+    "creationTime": "134190751451340000",
+    "expirationTime": "134193343451340000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134193343451470000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990040399,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000026": {
+    "runningId": 980000026,
+    "raffleId": 980000026,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000367,
+    "typeId": 34243,
+    "groupId": 900,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 17540000,
+    "restrictionId": null,
+    "creationTime": "134190901009090000",
+    "expirationTime": "134193493009090000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134193511144580000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000367,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000027": {
+    "runningId": 980000027,
+    "raffleId": 980000027,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000394,
+    "typeId": 9862,
+    "groupId": 237,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 3130000,
+    "restrictionId": null,
+    "creationTime": "134193398569080000",
+    "expirationTime": "134195990569080000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134195990569190000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000394,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000028": {
+    "runningId": 980000028,
+    "raffleId": 980000028,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000323,
+    "typeId": 27301,
+    "groupId": 31,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 500,
+    "restrictionId": null,
+    "creationTime": "134193398569080000",
+    "expirationTime": "134195990569080000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134195990569190000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000323,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000029": {
+    "runningId": 980000029,
+    "raffleId": 980000029,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040491,
+    "typeId": 21214,
+    "groupId": 86,
+    "categoryId": 8,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 78130000,
+    "restrictionId": null,
+    "creationTime": "134193398569080000",
+    "expirationTime": "134195990569080000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134195990569190000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990040491,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000030": {
+    "runningId": 980000030,
+    "raffleId": 980000030,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040637,
+    "typeId": 21406,
+    "groupId": 85,
+    "categoryId": 8,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 1250000,
+    "restrictionId": null,
+    "creationTime": "134193398569080000",
+    "expirationTime": "134195990569080000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134195990569190000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990040637,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000031": {
+    "runningId": 980000031,
+    "raffleId": 980000031,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040952,
+    "typeId": 20831,
+    "groupId": 86,
+    "categoryId": 8,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 78130000,
+    "restrictionId": null,
+    "creationTime": "134193398569080000",
+    "expirationTime": "134195990569080000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134195990569190000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990040952,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000032": {
+    "runningId": 980000032,
+    "raffleId": 980000032,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040494,
+    "typeId": 21232,
+    "groupId": 86,
+    "categoryId": 8,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 156500000,
+    "restrictionId": null,
+    "creationTime": "134193398569080000",
+    "expirationTime": "134195990569080000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134195990569170000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990040494,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000033": {
+    "runningId": 980000033,
+    "raffleId": 980000033,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000432,
+    "typeId": 42132,
+    "groupId": 547,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 52810000,
+    "restrictionId": null,
+    "creationTime": "134193404179720000",
+    "expirationTime": "134195996179720000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134195996179820000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000432,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000034": {
+    "runningId": 980000034,
+    "raffleId": 980000034,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040632,
+    "typeId": 21416,
+    "groupId": 85,
+    "categoryId": 8,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 3130000,
+    "restrictionId": null,
+    "creationTime": "134193417748600000",
+    "expirationTime": "134196009748600000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134196009748620000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990040632,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000035": {
+    "runningId": 980000035,
+    "raffleId": 980000035,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000334,
+    "typeId": 1902,
+    "groupId": 25,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 6250000,
+    "restrictionId": null,
+    "creationTime": "134193524049940000",
+    "expirationTime": "134196116049940000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134196116050300000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000334,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000036": {
+    "runningId": 980000036,
+    "raffleId": 980000036,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000435,
+    "typeId": 34257,
+    "groupId": 900,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 34910000,
+    "restrictionId": null,
+    "creationTime": "134193524049940000",
+    "expirationTime": "134196116049940000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 9,
+    "endDate": "134196116050300000",
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000435,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000042": {
+    "runningId": 980000042,
+    "raffleId": 980000042,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000403,
+    "typeId": 32846,
+    "groupId": 420,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 3130000,
+    "restrictionId": null,
+    "creationTime": "134196012003880000",
+    "expirationTime": "134198604003880000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 6,
+    "endDate": null,
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000403,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000043": {
+    "runningId": 980000043,
+    "raffleId": 980000043,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040143,
+    "typeId": 13782,
+    "groupId": 55,
+    "categoryId": 7,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 280000,
+    "restrictionId": null,
+    "creationTime": "134196012003890000",
+    "expirationTime": "134198604003890000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 6,
+    "endDate": null,
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990040143,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000044": {
+    "runningId": 980000044,
+    "raffleId": 980000044,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040573,
+    "typeId": 21304,
+    "groupId": 86,
+    "categoryId": 8,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 156300000,
+    "restrictionId": null,
+    "creationTime": "134196012003890000",
+    "expirationTime": "134198604003890000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 6,
+    "endDate": null,
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990040573,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000045": {
+    "runningId": 980000045,
+    "raffleId": 980000045,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040489,
+    "typeId": 21240,
+    "groupId": 86,
+    "categoryId": 8,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 156300000,
+    "restrictionId": null,
+    "creationTime": "134196012003890000",
+    "expirationTime": "134198604003890000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 6,
+    "endDate": null,
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990040489,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000046": {
+    "runningId": 980000046,
+    "raffleId": 980000046,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000447,
+    "typeId": 34475,
+    "groupId": 26,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 3130000,
+    "restrictionId": null,
+    "creationTime": "134196023037130000",
+    "expirationTime": "134198615037130000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 6,
+    "endDate": null,
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000447,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000047": {
+    "runningId": 980000047,
+    "raffleId": 980000047,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000378,
+    "typeId": 33661,
+    "groupId": 25,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 6250000,
+    "restrictionId": null,
+    "creationTime": "134196023037130000",
+    "expirationTime": "134198615037130000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 6,
+    "endDate": null,
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000378,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  },
+  "980000048": {
+    "runningId": 980000048,
+    "raffleId": 980000048,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990040511,
+    "typeId": 23049,
+    "groupId": 85,
+    "categoryId": 8,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 6250000,
+    "restrictionId": null,
+    "creationTime": "134196023037130000",
+    "expirationTime": "134198615037130000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 6,
+    "endDate": null,
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990040511,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000049": {
+    "runningId": 980000049,
+    "raffleId": 980000049,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 990041018,
+    "typeId": 20941,
+    "groupId": 85,
+    "categoryId": 8,
+    "metaGroupId": 0,
+    "ticketCount": 8,
+    "ticketPrice": 62500000,
+    "restrictionId": null,
+    "creationTime": "134196169162500000",
+    "expirationTime": "134198761162500000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 6,
+    "endDate": null,
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "item"
+    },
+    "inventory": {
+      "escrowItemId": 990041018,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "item"
+  },
+  "980000050": {
+    "runningId": 980000050,
+    "raffleId": 980000050,
+    "ownerId": 140000004,
+    "locationId": 60003760,
+    "solarSystemId": 30000142,
+    "itemId": 140000435,
+    "typeId": 34257,
+    "groupId": 900,
+    "categoryId": 6,
+    "metaGroupId": 0,
+    "ticketCount": 16,
+    "ticketPrice": 17460000,
+    "restrictionId": null,
+    "creationTime": "134196248719910000",
+    "expirationTime": "134198840719910000",
+    "soldTickets": [],
+    "winningTicket": null,
+    "raffleStatus": 6,
+    "endDate": null,
+    "pendingIsk": 0,
+    "metaData": {
+      "is_copy": false,
+      "seed_kind": "ship"
+    },
+    "inventory": {
+      "escrowItemId": 140000435,
+      "originalLocationId": 60003760,
+      "originalFlagId": 4
+    },
+    "settlement": {
+      "sellerPayoutApplied": false,
+      "refundedOwners": {},
+      "itemRestored": true,
+      "itemDelivered": false
+    },
+    "source": "seed",
+    "seedKind": "ship"
+  }
+}

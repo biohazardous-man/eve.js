@@ -9,13 +9,42 @@
 
 const BaseService = require("../baseService");
 const log = require("../../utils/logger");
-const database = require("../../database");
-const { applyCharacterToSession, getCharacterRecord } = require("./characterState");
+const database = require("../../newDatabase");
+const sessionRegistry = require("../chat/sessionRegistry");
+const { throwWrappedUserError } = require("../../common/machoErrors");
+const {
+  applyCharacterToSession,
+  flushCharacterSessionNotificationPlan,
+  getCharacterRecord,
+  updateCharacterRecord,
+} = require("./characterState");
+const {
+  getCharacterCreationBloodlines,
+  getCharacterCreationRace,
+  getCharacterCreationRaces,
+  resolveCharacterCreationBloodlineProfile,
+} = require("./characterCreationData");
 const { restoreSpaceSession } = require("../../space/transitions");
 const {
-  ensureCharacterSkills,
   getCharacterSkillPointTotal,
 } = require("../skills/skillState");
+const {
+  ACCOUNT_KEY,
+  JOURNAL_CURRENCY,
+  JOURNAL_ENTRY_TYPE,
+} = require("../account/walletState");
+const {
+  PLEX_LOG_CATEGORY,
+  getTransactionID,
+} = require("../account/plexVaultLogState");
+const {
+  clonePaperDollPayload,
+  resolvePaperDollState,
+} = require("./paperDollPayloads");
+const {
+  broadcastStationGuestJoined,
+  broadcastStructureGuestJoined,
+} = require("../_shared/guestLists");
 
 /**
  * Build a util.KeyVal PyObject — the only working PyObject type in V23.02
@@ -64,6 +93,62 @@ function readCreationIntArg(args, index, fallback, legacyIndex = null) {
 
 function normalizeCreationGender(value, fallback = 1) {
   return value === 0 || value === 1 || value === 2 ? value : fallback;
+}
+
+function isModernCreateCharacterSignature(args) {
+  return Array.isArray(args) && args.length >= 8;
+}
+
+function readCreationPayloadArg(args, index, legacyIndex = null) {
+  const candidate =
+    args && args.length > index
+      ? args[index]
+      : legacyIndex !== null && args && args.length > legacyIndex
+        ? args[legacyIndex]
+        : null;
+
+  return clonePaperDollPayload(candidate);
+}
+
+function readKeywordArg(kwargs, keys = []) {
+  if (!kwargs) {
+    return undefined;
+  }
+
+  if (kwargs.type === "dict" && Array.isArray(kwargs.entries)) {
+    for (const key of keys) {
+      const entry = kwargs.entries.find((candidate) => candidate[0] === key);
+      if (entry) {
+        return unwrapCreationArg(entry[1]);
+      }
+    }
+    return undefined;
+  }
+
+  if (typeof kwargs === "object") {
+    for (const key of keys) {
+      if (Object.prototype.hasOwnProperty.call(kwargs, key)) {
+        return unwrapCreationArg(kwargs[key]);
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function readKeywordIntArg(kwargs, keys = [], fallback = 0) {
+  const numeric = Number(readKeywordArg(kwargs, keys));
+  return Number.isFinite(numeric) ? Math.trunc(numeric) : fallback;
+}
+
+function resolveCharacterRequestId(args, kwargs, fallback = 0) {
+  const directArg =
+    args && args.length > 0 ? Number(unwrapCreationArg(args[0])) : NaN;
+  if (Number.isFinite(directArg) && Math.trunc(directArg) > 0) {
+    return Math.trunc(directArg);
+  }
+
+  return readKeywordIntArg(kwargs, ["charID", "characterID"], fallback);
 }
 
 function summarizeCreationArg(value, depth = 0) {
@@ -202,6 +287,7 @@ class CharService extends BaseService {
         const cid = parseInt(charId, 10);
         const allianceID = this._normalizeAllianceId(character.allianceID);
         const skillPoints = getCharacterSkillPointTotal(cid) || character.skillPoints || 50000;
+        const paperDollState = resolvePaperDollState(character, 2);
         characterDetails.push(
           buildKeyVal([
             ["characterID", cid],
@@ -209,7 +295,10 @@ class CharService extends BaseService {
             ["deletePrepareDateTime", null],
             ["gender", character.gender || 1],
             ["typeID", character.typeID || 1373],
+            ["raceID", character.raceID || 1],
             ["bloodlineID", character.bloodlineID || 1],
+            ["ancestryID", character.ancestryID || 1],
+            ["schoolID", character.schoolID ?? character.corporationID ?? null],
             ["corporationID", character.corporationID || 1000009],
             ["allianceID", allianceID],
             // Keep character-select payload close to upstream.
@@ -230,7 +319,7 @@ class CharService extends BaseService {
             ["securityStatus", character.securityStatus ?? character.securityRating ?? 0.0],
             ["title", character.title || ""],
             ["unreadMailCount", character.unreadMailCount || 0],
-            ["paperdollState", character.paperDollState || 0],
+            ["paperdollState", paperDollState],
             ["lockTypeID", null],
             [
               "logoffDate",
@@ -267,13 +356,7 @@ class CharService extends BaseService {
    * GetCharacterToSelect — returns detailed info for one character
    */
   Handle_GetCharacterToSelect(args, session, kwargs) {
-    let charId = args && args.length > 0 ? args[0] : 0;
-    if (charId === 0 && kwargs && kwargs.entries) {
-      const entry = kwargs.entries.find((candidate) => candidate[0] === "characterID");
-      if (entry) {
-        charId = entry[1];
-      }
-    }
+    const charId = resolveCharacterRequestId(args, kwargs, 0);
     log.info(`[CharService] GetCharacterToSelect(${charId})`);
 
     const characterResult = database.read("characters", "/");
@@ -284,6 +367,7 @@ class CharService extends BaseService {
       getCharacterSkillPointTotal(charId) ||
       (character && character.skillPoints) ||
       50000;
+    const paperDollState = resolvePaperDollState(character, 2);
 
     if (!character) {
       log.warn(`[CharService] Character ${charId} not found`);
@@ -297,7 +381,10 @@ class CharService extends BaseService {
       ["characterID", parseInt(charId, 10)],
       ["petitionMessage", character.petitionMessage || ""],
       ["gender", character.gender || 1],
+      ["raceID", character.raceID || 1],
       ["bloodlineID", character.bloodlineID || 1],
+      ["ancestryID", character.ancestryID || 1],
+      ["schoolID", character.schoolID ?? character.corporationID ?? null],
       [
         "createDateTime",
         { type: "long", value: character.createDateTime || 132000000000000000 },
@@ -328,22 +415,40 @@ class CharService extends BaseService {
       ["plexBalance", character.plexBalance ?? 2222],
       ["daysLeft", character.daysLeft || 365],
       ["userType", character.userType || 30],
-      ["paperDollState", character.paperDollState || 0],
+      ["paperDollState", paperDollState],
+      ["paperdollState", paperDollState],
     ]);
   }
 
   /**
    * CreateCharacterWithDoll — V23.02 character creation
-   * EVEmu signature: (characterName, bloodlineID, genderID, ancestryID, characterInfo, portraitInfo, schoolID)
+   * V23.02 signature: (characterName, raceID, bloodlineID, genderID, ancestryID, characterInfo, portraitInfo, schoolID)
+   * Legacy EVEmu signature: (characterName, bloodlineID, genderID, ancestryID, characterInfo, portraitInfo, schoolID)
    * Returns the new characterID
    */
   Handle_CreateCharacterWithDoll(args, session) {
+    const modernSignature = isModernCreateCharacterSignature(args);
     let characterName = args && args.length > 0 ? args[0] : "New Character";
-    const bloodlineID = readCreationIntArg(args, 1, 1);
-    const parsedGenderID = readCreationIntArg(args, 2, 1);
+    const raceID = modernSignature ? readCreationIntArg(args, 1, 1) : 1;
+    const bloodlineID = modernSignature
+      ? readCreationIntArg(args, 2, 1)
+      : readCreationIntArg(args, 1, 1);
+    const parsedGenderID = modernSignature
+      ? readCreationIntArg(args, 3, 1)
+      : readCreationIntArg(args, 2, 1);
     const genderID = normalizeCreationGender(parsedGenderID, 1);
-    const ancestryID = readCreationIntArg(args, 3, 1);
-    const schoolID = readCreationIntArg(args, 6, 11, 7);
+    const ancestryID = modernSignature
+      ? readCreationIntArg(args, 4, 1)
+      : readCreationIntArg(args, 3, 1);
+    const charInfo = modernSignature
+      ? readCreationPayloadArg(args, 5)
+      : readCreationPayloadArg(args, 4);
+    const portraitInfo = modernSignature
+      ? readCreationPayloadArg(args, 6)
+      : readCreationPayloadArg(args, 5);
+    const schoolID = modernSignature
+      ? readCreationIntArg(args, 7, 11)
+      : readCreationIntArg(args, 6, 11, 7);
 
     if (Buffer.isBuffer(characterName)) {
       characterName = characterName.toString("utf8");
@@ -365,7 +470,7 @@ class CharService extends BaseService {
       );
     }
     log.info(
-      `[CharService] CreateCharacterWithDoll: name="${characterName}" bloodline=${bloodlineID} gender=${genderID} ancestry=${ancestryID} school=${schoolID}`,
+      `[CharService] CreateCharacterWithDoll: name="${characterName}" race=${raceID} bloodline=${bloodlineID} gender=${genderID} ancestry=${ancestryID} school=${schoolID} modern=${modernSignature}`,
     );
 
     const characterResult = database.read("characters", "/");
@@ -375,27 +480,23 @@ class CharService extends BaseService {
     const newCharId =
       existingIds.length > 0 ? Math.max(...existingIds) + 1 : 140000001;
 
-    const bloodlineInfo = {
-      1: { raceID: 1, typeID: 1373, corpID: 1000006 },
-      2: { raceID: 1, typeID: 1374, corpID: 1000006 },
-      3: { raceID: 1, typeID: 1375, corpID: 1000009 },
-      4: { raceID: 1, typeID: 1376, corpID: 1000009 },
-      5: { raceID: 8, typeID: 1377, corpID: 1000115 },
-      6: { raceID: 8, typeID: 1378, corpID: 1000115 },
-      7: { raceID: 2, typeID: 1379, corpID: 1000044 },
-      8: { raceID: 2, typeID: 1380, corpID: 1000044 },
-      11: { raceID: 1, typeID: 1383, corpID: 1000009 },
-      12: { raceID: 8, typeID: 1384, corpID: 1000115 },
-      13: { raceID: 1, typeID: 1385, corpID: 1000006 },
-      14: { raceID: 2, typeID: 1386, corpID: 1000044 },
-    };
-
-    const info = bloodlineInfo[bloodlineID] || {
-      raceID: 1,
-      typeID: 1373,
-      corpID: 1000009,
-    };
+    const bloodlineProfile = resolveCharacterCreationBloodlineProfile(
+      bloodlineID,
+      {
+        raceID: raceID || 1,
+        typeID: 1373,
+        corporationID: 1000009,
+      },
+    );
+    const raceProfile = getCharacterCreationRace(bloodlineProfile.raceID) || null;
+    const starterShipTypeID = Number((raceProfile && raceProfile.shipTypeID) || 606) || 606;
+    const starterShipName =
+      (raceProfile && raceProfile.shipName) || "Velator";
     const now = BigInt(Date.now()) * 10000n + 116444736000000000n;
+    const initialWalletReason = "Initial character creation ISK grant";
+    const initialPlexReason = "Initial character creation PLEX grant";
+    const initialWalletTransactionID = getTransactionID();
+    const initialPlexTransactionID = getTransactionID();
 
     characters[String(newCharId)] = {
       accountId: session ? session.userid : 1,
@@ -404,10 +505,10 @@ class CharService extends BaseService {
       gender: genderID,
       bloodlineID,
       ancestryID,
-      raceID: info.raceID,
-      typeID: info.typeID,
-      corporationID: info.corpID,
-      schoolID: schoolID || info.corpID,
+      raceID: bloodlineProfile.raceID,
+      typeID: bloodlineProfile.typeID,
+      corporationID: bloodlineProfile.corporationID,
+      schoolID: schoolID || bloodlineProfile.corporationID,
       allianceID: 0,
       factionID: null,
       stationID: 60003760,
@@ -428,14 +529,41 @@ class CharService extends BaseService {
       aurBalance: 0.0,
       plexBalance: 2222,
       balanceChange: 0.0,
+      walletJournal: [
+        {
+          transactionID: initialWalletTransactionID,
+          transactionDate: now.toString(),
+          referenceID: newCharId,
+          entryTypeID: JOURNAL_ENTRY_TYPE.GM_CASH_TRANSFER,
+          ownerID1: newCharId,
+          ownerID2: newCharId,
+          accountKey: ACCOUNT_KEY.CASH,
+          amount: 100000.0,
+          balance: 100000.0,
+          description: initialWalletReason,
+          currency: JOURNAL_CURRENCY.ISK,
+          sortValue: 1,
+        },
+      ],
+      plexVaultTransactions: [
+        {
+          transactionID: initialPlexTransactionID,
+          transactionDate: now.toString(),
+          amount: 2222,
+          balance: 2222,
+          categoryMessageID: PLEX_LOG_CATEGORY.CCP,
+          summaryMessageID: PLEX_LOG_CATEGORY.CCP,
+          summaryText: initialPlexReason,
+          reason: initialPlexReason,
+        },
+      ],
       skillPoints: 50000,
-      shipTypeID: 606,
-      shipName: "Velator",
+      shipTypeID: starterShipTypeID,
+      shipName: starterShipName,
       bounty: 0.0,
       skillQueueEndTime: 0,
       daysLeft: 365,
       userType: 30,
-      paperDollState: 0,
       petitionMessage: "",
       worldSpaceID: 0,
       unreadMailCount: 0,
@@ -445,7 +573,7 @@ class CharService extends BaseService {
       shortName: "none",
       employmentHistory: [
         {
-          corporationID: info.corpID,
+          corporationID: bloodlineProfile.corporationID,
           startDate: now.toString(),
           deleted: 0,
         },
@@ -482,6 +610,9 @@ class CharService extends BaseService {
       finishSP: null,
       trainedSP: null,
       finishedSkills: [],
+      appearanceInfo: charInfo,
+      portraitInfo,
+      paperDollState: charInfo ? 0 : 2,
     };
 
     database.write(
@@ -489,7 +620,6 @@ class CharService extends BaseService {
       `/${String(newCharId)}`,
       characters[String(newCharId)],
     );
-    ensureCharacterSkills(newCharId);
     const createdCharacter = getCharacterRecord(newCharId);
 
     log.success(
@@ -497,6 +627,90 @@ class CharService extends BaseService {
     );
 
     return newCharId;
+  }
+
+  Handle_GetNumCharacters(args, session) {
+    const userId = session ? session.userid : 0;
+    const charactersResult = database.read("characters", "/");
+    const characters = charactersResult.success ? charactersResult.data : {};
+    return Object.values(characters).filter(
+      (character) => character && character.accountId === userId,
+    ).length;
+  }
+
+  Handle_UpdateCharacterGender(args, session) {
+    const charId = readCreationIntArg(args, 0, 0);
+    const requestedGenderID = readCreationIntArg(args, 1, 1);
+    const genderID = normalizeCreationGender(requestedGenderID, 1);
+
+    log.info(
+      `[CharService] UpdateCharacterGender(${charId}) gender=${genderID}`,
+    );
+
+    const updateResult = updateCharacterRecord(charId, (record) => ({
+      ...record,
+      gender: genderID,
+    }));
+    if (!updateResult.success) {
+      log.warn(
+        `[CharService] UpdateCharacterGender failed for ${charId}: ${updateResult.errorMsg}`,
+      );
+      return null;
+    }
+
+    if (session && Number(session.charid || session.characterID || 0) === Number(charId)) {
+      session.genderID = genderID;
+      session.genderid = genderID;
+    }
+
+    return null;
+  }
+
+  Handle_UpdateCharacterBloodline(args, session) {
+    const charId = readCreationIntArg(args, 0, 0);
+    const bloodlineID = readCreationIntArg(args, 1, 1);
+    const currentRecord = getCharacterRecord(charId);
+    if (!currentRecord) {
+      log.warn(`[CharService] UpdateCharacterBloodline(${charId}) missing character`);
+      return null;
+    }
+
+    const bloodlineProfile = resolveCharacterCreationBloodlineProfile(
+      bloodlineID,
+      {
+        raceID: currentRecord.raceID || 1,
+        typeID: currentRecord.typeID || 1373,
+        corporationID: currentRecord.corporationID || 1000009,
+      },
+    );
+
+    log.info(
+      `[CharService] UpdateCharacterBloodline(${charId}) bloodline=${bloodlineID} race=${bloodlineProfile.raceID}`,
+    );
+
+    const updateResult = updateCharacterRecord(charId, (record) => ({
+      ...record,
+      bloodlineID: bloodlineProfile.bloodlineID,
+      raceID: bloodlineProfile.raceID,
+      typeID: bloodlineProfile.typeID,
+      paperDollState: resolvePaperDollState(record, 2),
+    }));
+    if (!updateResult.success) {
+      log.warn(
+        `[CharService] UpdateCharacterBloodline failed for ${charId}: ${updateResult.errorMsg}`,
+      );
+      return null;
+    }
+
+    if (session && Number(session.charid || session.characterID || 0) === Number(charId)) {
+      session.bloodlineID = bloodlineProfile.bloodlineID;
+      session.bloodlineid = bloodlineProfile.bloodlineID;
+      session.raceID = bloodlineProfile.raceID;
+      session.raceid = bloodlineProfile.raceID;
+      session.characterTypeID = bloodlineProfile.typeID;
+    }
+
+    return null;
   }
 
   Handle_GetCohortsForUser(args, session) {
@@ -511,12 +725,44 @@ class CharService extends BaseService {
 
   Handle_GetCharCreationInfo(args, session) {
     log.debug("[CharService] GetCharCreationInfo");
-    return { type: "dict", entries: [] };
+    return {
+      type: "dict",
+      entries: [
+        [
+          "races",
+          {
+            type: "list",
+            items: getCharacterCreationRaces().map((race) =>
+              buildKeyVal([
+                ["raceID", race.raceID],
+                ["raceName", race.name],
+                ["shipTypeID", race.shipTypeID],
+                ["shipName", race.shipName],
+              ]),
+            ),
+          },
+        ],
+        [
+          "bloodlines",
+          {
+            type: "list",
+            items: getCharacterCreationBloodlines().map((bloodline) =>
+              buildKeyVal([
+                ["bloodlineID", bloodline.bloodlineID],
+                ["bloodlineName", bloodline.name],
+                ["raceID", bloodline.raceID],
+                ["corporationID", bloodline.corporationID],
+              ]),
+            ),
+          },
+        ],
+      ],
+    };
   }
 
   Handle_GetCharNewExtraCreationInfo(args, session) {
     log.debug("[CharService] GetCharNewExtraCreationInfo");
-    return { type: "dict", entries: [] };
+    return this.Handle_GetCharCreationInfo(args, session);
   }
 
   Handle_IsUserReceivingCharacter(args, session) {
@@ -535,21 +781,32 @@ class CharService extends BaseService {
   }
 
   Handle_SelectCharacterID(args, session, kwargs) {
-    let charId = args && args.length > 0 ? args[0] : 0;
-    if (charId === 0 && kwargs && kwargs.entries) {
-      const entry = kwargs.entries.find((candidate) => candidate[0] === "characterID");
-      if (entry) {
-        charId = entry[1];
-      }
-    }
+    const charId = resolveCharacterRequestId(args, kwargs, 0);
     log.info(`[CharService] SelectCharacterID(${charId})`);
 
     if (!session) {
       return null;
     }
 
+    const existingSession = sessionRegistry.findSessionByCharacterID(charId, {
+      excludeSession: session,
+    });
+    if (existingSession) {
+      const characterRecord = getCharacterRecord(charId);
+      const characterLabel =
+        (characterRecord && characterRecord.characterName) ||
+        existingSession.characterName ||
+        `Character ${charId}`;
+      log.warn(
+        `[CharService] Rejected duplicate login for ${characterLabel}(${charId}); already active on user=${existingSession.userName || "unknown"} client=${existingSession.clientID || 0}`,
+      );
+      throwWrappedUserError("CustomInfo", {
+        info: `${characterLabel} is already online.`,
+      });
+    }
+
     const applyResult = applyCharacterToSession(session, charId, {
-      emitNotifications: true,
+      emitNotifications: false,
       logSelection: true,
     });
 
@@ -557,8 +814,21 @@ class CharService extends BaseService {
       log.warn(
         `[CharService] Failed to select character ${charId}: ${applyResult.errorMsg}`,
       );
-    } else if (!session.stationid && !session.stationID) {
-      restoreSpaceSession(session);
+    } else {
+      if (!session.stationid && !session.stationID) {
+        restoreSpaceSession(session);
+      }
+      flushCharacterSessionNotificationPlan(
+        session,
+        applyResult.notificationPlan,
+      );
+      const stationID = Number(session.stationid || session.stationID || 0);
+      const structureID = Number(session.structureid || session.structureID || 0);
+      if (stationID) {
+        broadcastStationGuestJoined(session, stationID);
+      } else if (structureID) {
+        broadcastStructureGuestJoined(session, structureID);
+      }
     }
 
     return null;
@@ -574,5 +844,9 @@ class CharService extends BaseService {
     return null;
   }
 }
+
+CharService._testing = {
+  resolveCharacterRequestId,
+};
 
 module.exports = CharService;

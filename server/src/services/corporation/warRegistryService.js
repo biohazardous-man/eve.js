@@ -1,113 +1,294 @@
-const BaseService = require("../baseService");
 const path = require("path");
-const log = require("../../utils/logger");
 
-// Static counter for generating unique bound object IDs
+const BaseService = require(path.join(__dirname, "../baseService"));
+const {
+  buildBoundObjectResponse,
+  buildDict,
+  buildFiletimeLong,
+  buildKeyVal,
+  buildList,
+} = require(path.join(__dirname, "../_shared/serviceHelpers"));
+const config = require(path.join(__dirname, "../../config"));
+const {
+  listWarsForOwner,
+  getWarRecord,
+  updateWarRecord,
+} = require(path.join(__dirname, "./warRuntimeState"));
+const {
+  WAR_NEGOTIATION_STATE_DECLINED,
+  WAR_NEGOTIATION_STATE_RETRACTED,
+  WAR_NEGOTIATION_TYPE_ALLY_OFFER,
+  WAR_NEGOTIATION_TYPE_SURRENDER_OFFER,
+  acceptAllyNegotiation,
+  acceptSurrender,
+  createWarNegotiation,
+  getNegotiationRecord,
+  listNegotiationsForOwner,
+  updateWarNegotiation,
+} = require(path.join(__dirname, "./warNegotiationRuntimeState"));
+const {
+  currentFileTime,
+} = require(path.join(__dirname, "../_shared/serviceHelpers"));
+
+function resolveOwnerID(args, session) {
+  return (
+    (args && args.length > 0 && Number(args[0])) ||
+    (session &&
+      (session.allianceID ||
+        session.allianceid ||
+        session.corporationID ||
+        session.corpid)) ||
+    0
+  );
+}
+
+function resolveWarEntityID(session) {
+  return (
+    (session &&
+      ((session.allianceID || session.allianceid) ||
+        (session.corporationID || session.corpid))) ||
+    0
+  );
+}
+
+function buildAllyPayload(ally) {
+  return buildKeyVal([
+    ["allyID", Number(ally && ally.allyID ? ally.allyID : 0)],
+    ["timeStarted", buildFiletimeLong(ally && ally.timeStarted ? ally.timeStarted : 0)],
+    [
+      "timeFinished",
+      ally && ally.timeFinished ? buildFiletimeLong(ally.timeFinished) : null,
+    ],
+  ]);
+}
+
+function buildWarPayload(war) {
+  return buildKeyVal([
+    ["warID", Number(war.warID || 0)],
+    ["declaredByID", Number(war.declaredByID || 0)],
+    ["againstID", Number(war.againstID || 0)],
+    ["warHQID", war.warHQID || null],
+    ["timeDeclared", buildFiletimeLong(war.timeDeclared || 0)],
+    ["timeStarted", buildFiletimeLong(war.timeStarted || 0)],
+    ["timeFinished", war.timeFinished ? buildFiletimeLong(war.timeFinished) : null],
+    ["retracted", war.retracted ? buildFiletimeLong(war.retracted) : null],
+    ["retractedBy", war.retractedBy || null],
+    ["billID", war.billID || null],
+    ["mutual", Number(war.mutual || 0)],
+    ["openForAllies", Number(war.openForAllies || 0)],
+    ["createdFromWarID", war.createdFromWarID || null],
+    ["reward", Number(war.reward || 0)],
+    [
+      "allies",
+      buildDict(
+        Object.entries(war.allies || {}).map(([allyID, ally]) => [
+          Number(allyID),
+          buildAllyPayload({
+            allyID: Number(allyID),
+            ...(ally || {}),
+          }),
+        ]),
+      ),
+    ],
+  ]);
+}
+
+function buildWarNegotiationPayload(negotiation) {
+  return buildKeyVal([
+    ["warNegotiationID", Number(negotiation && negotiation.warNegotiationID ? negotiation.warNegotiationID : 0)],
+    ["warID", Number(negotiation && negotiation.warID ? negotiation.warID : 0)],
+    [
+      "warNegotiationTypeID",
+      Number(negotiation && negotiation.warNegotiationTypeID ? negotiation.warNegotiationTypeID : 0),
+    ],
+    ["ownerID1", Number(negotiation && negotiation.ownerID1 ? negotiation.ownerID1 : 0)],
+    ["ownerID2", Number(negotiation && negotiation.ownerID2 ? negotiation.ownerID2 : 0)],
+    ["declaredByID", Number(negotiation && negotiation.declaredByID ? negotiation.declaredByID : 0)],
+    ["againstID", Number(negotiation && negotiation.againstID ? negotiation.againstID : 0)],
+    ["iskValue", Number(negotiation && negotiation.iskValue ? negotiation.iskValue : 0)],
+    ["description", negotiation && negotiation.description ? negotiation.description : ""],
+    [
+      "negotiationState",
+      Number(negotiation && negotiation.negotiationState ? negotiation.negotiationState : 0),
+    ],
+    [
+      "createdDateTime",
+      buildFiletimeLong(
+        negotiation && negotiation.createdDateTime ? negotiation.createdDateTime : 0,
+      ),
+    ],
+    [
+      "timeAccepted",
+      negotiation && negotiation.timeAccepted
+        ? buildFiletimeLong(negotiation.timeAccepted)
+        : null,
+    ],
+    [
+      "timeDeclined",
+      negotiation && negotiation.timeDeclined
+        ? buildFiletimeLong(negotiation.timeDeclined)
+        : null,
+    ],
+    [
+      "timeRetracted",
+      negotiation && negotiation.timeRetracted
+        ? buildFiletimeLong(negotiation.timeRetracted)
+        : null,
+    ],
+  ]);
+}
 
 class WarRegistryService extends BaseService {
   constructor() {
     super("warRegistry");
   }
 
-  Handle_MachoResolveObject(args, session, kwargs) {
-    log.debug("[WarRegistry] MachoResolveObject called");
-    const config = require(path.join(__dirname, "../../config"));
+  Handle_IsAllianceOrCorpLocal() {
+    return 1;
+  }
+
+  Handle_MachoResolveObject() {
     return config.proxyNodeId;
   }
 
   Handle_MachoBindObject(args, session, kwargs) {
-    const config = require(path.join(__dirname, "../../config"));
-    const bindParams = args && args.length > 0 ? args[0] : null;
-    const nestedCall = args && args.length > 1 ? args[1] : null;
-
-    log.debug(
-      `[PopulationCap] MachoBindObject args.length=${args ? args.length : 0} bindParams=${JSON.stringify(bindParams, (k, v) => (typeof v === "bigint" ? v.toString() : v))} nestedCall=${JSON.stringify(nestedCall, (k, v) => (typeof v === "bigint" ? v.toString() : Buffer.isBuffer(v) ? v.toString("utf8") : v))} kwargs=${JSON.stringify(kwargs, (k, v) => (typeof v === "bigint" ? v.toString() : Buffer.isBuffer(v) ? v.toString("utf8") : v))}`,
-    );
-
-    // Generate a unique bound object ID
-    const boundId = config.getNextBoundId();
-    const idString = `N=${config.proxyNodeId}:${boundId}`;
-    const now = BigInt(Date.now()) * 10000n + 116444736000000000n;
-
-    // OID = (idString, timestamp)
-    const oid = [idString, now];
-
-    // Handle optional nested call
-    let callResult = null;
-    if (nestedCall && Array.isArray(nestedCall) && nestedCall.length >= 1) {
-      const methodName =
-        typeof nestedCall[0] === "string"
-          ? nestedCall[0]
-          : Buffer.isBuffer(nestedCall[0])
-            ? nestedCall[0].toString("utf8")
-            : String(nestedCall[0]);
-      const callArgs = nestedCall.length > 1 ? nestedCall[1] : [];
-      const callKwargs = nestedCall.length > 2 ? nestedCall[2] : null;
-
-      log.debug(`[PopulationCap] MachoBindObject nested call: ${methodName}`);
-      callResult = this.callMethod(
-        methodName,
-        Array.isArray(callArgs) ? callArgs : [callArgs],
-        session,
-        callKwargs,
-      );
-    }
-
-    // Return 2-tuple: [SubStruct(SubStream(OID)), callResult]
-    return [
-      {
-        type: "substruct",
-        value: { type: "substream", value: oid },
-      },
-      callResult != null ? callResult : null,
-    ];
+    return buildBoundObjectResponse(this, args, session, kwargs);
   }
 
   Handle_GetWars(args, session) {
-    log.debug("[WarCSO] GetWars called");
-
-    // Duck-type the IndexRowset by returning an empty dictionary
-    return {
-      type: "dict",
-      entries: [],
-    };
+    const ownerID = resolveOwnerID(args, session);
+    return buildDict(
+      listWarsForOwner(ownerID).map((war) => [Number(war.warID), buildWarPayload(war)]),
+    );
   }
 
-  // Handle_GetWars(args, session) {
-  //   log.debug("[WarRegistry] GetWars called");
+  Handle_GetNegotiations(args, session) {
+    return buildList(
+      listNegotiationsForOwner(resolveWarEntityID(session)).map((negotiation) =>
+        buildWarNegotiationPayload(negotiation),
+      ),
+    );
+  }
 
-  //   const header = {
-  //     type: "objectex1",
-  //     name: "blue.DBRowDescriptor",
-  //     args: [
-  //       [
-  //         ["warID", 3],
-  //         ["declaredByID", 3],
-  //         ["againstID", 3],
-  //         ["timeDeclared", 6],
-  //         ["timeFinished", 6],
-  //         ["retracted", 2],
-  //         ["retractedBy", 3],
-  //         ["billID", 3],
-  //         ["mutual", 2],
-  //       ],
-  //     ],
-  //   };
+  Handle_CreateWarAllyOffer(args, session) {
+    const warID = args && args.length > 0 ? Number(args[0]) || 0 : 0;
+    const iskValue = args && args.length > 1 ? Number(args[1]) || 0 : 0;
+    const defenderID = args && args.length > 2 ? Number(args[2]) || 0 : 0;
+    const description = args && args.length > 3 ? String(args[3] || "") : "";
+    const war = getWarRecord(warID);
+    const ownerID = resolveWarEntityID(session);
+    if (!war || !ownerID) {
+      return null;
+    }
+    createWarNegotiation({
+      warID,
+      warNegotiationTypeID: WAR_NEGOTIATION_TYPE_ALLY_OFFER,
+      ownerID1: ownerID,
+      ownerID2: defenderID || Number(war.againstID || 0),
+      declaredByID: Number(war.declaredByID || 0),
+      againstID: Number(war.againstID || 0),
+      iskValue,
+      description,
+    });
+    return null;
+  }
 
-  //   return {
-  //     type: "object",
-  //     name: "eve.common.script.sys.rowset.IndexRowset",
-  //     args: {
-  //       type: "dict",
-  //       entries: [
-  //         ["header", header],
-  //         ["RowClass", { type: "token", value: "util.Row" }],
-  //         ["idName", "warID"],
-  //         ["items", { type: "dict", entries: [] }],
-  //       ],
-  //     },
-  //   };
-  // }
+  Handle_RetractWarAllyOffer(args) {
+    const warNegotiationID = args && args.length > 0 ? Number(args[0]) || 0 : 0;
+    updateWarNegotiation(warNegotiationID, (record) => ({
+      ...record,
+      negotiationState: WAR_NEGOTIATION_STATE_RETRACTED,
+      timeRetracted: currentFileTime().toString(),
+    }));
+    return null;
+  }
+
+  Handle_CreateSurrenderNegotiation(args, session) {
+    const warID = args && args.length > 0 ? Number(args[0]) || 0 : 0;
+    const iskValue = args && args.length > 1 ? Number(args[1]) || 0 : 0;
+    const description = args && args.length > 2 ? String(args[2] || "") : "";
+    const war = getWarRecord(warID);
+    const ownerID = resolveWarEntityID(session);
+    if (!war || !ownerID) {
+      return null;
+    }
+    const counterpartyID =
+      ownerID === Number(war.declaredByID || 0)
+        ? Number(war.againstID || 0)
+        : Number(war.declaredByID || 0);
+    createWarNegotiation({
+      warID,
+      warNegotiationTypeID: WAR_NEGOTIATION_TYPE_SURRENDER_OFFER,
+      ownerID1: ownerID,
+      ownerID2: counterpartyID,
+      declaredByID: Number(war.declaredByID || 0),
+      againstID: Number(war.againstID || 0),
+      iskValue,
+      description,
+      ownerID1AccountKey:
+        (session && (session.corpAccountKey || session.corpaccountkey)) || 1000,
+    });
+    return null;
+  }
+
+  Handle_GetWarNegotiation(args) {
+    const warNegotiationID = args && args.length > 0 ? Number(args[0]) || 0 : 0;
+    const negotiation = getNegotiationRecord(warNegotiationID);
+    return negotiation ? buildWarNegotiationPayload(negotiation) : null;
+  }
+
+  Handle_AcceptAllyNegotiation(args, session) {
+    const warNegotiationID = args && args.length > 0 ? Number(args[0]) || 0 : 0;
+    acceptAllyNegotiation(warNegotiationID, session);
+    return null;
+  }
+
+  Handle_DeclineAllyOffer(args) {
+    const warNegotiationID = args && args.length > 0 ? Number(args[0]) || 0 : 0;
+    updateWarNegotiation(warNegotiationID, (record) => ({
+      ...record,
+      negotiationState: WAR_NEGOTIATION_STATE_DECLINED,
+      timeDeclined: currentFileTime().toString(),
+    }));
+    return null;
+  }
+
+  Handle_RetractMutualWar(args) {
+    const warID = args && args.length > 0 ? Number(args[0]) || 0 : 0;
+    updateWarRecord(warID, (war) => {
+      const filetime = String(Date.now() * 10000 + 116444736000000000);
+      war.retracted = filetime;
+      war.timeFinished = filetime;
+      return war;
+    });
+    return null;
+  }
+
+  Handle_AcceptSurrender(args) {
+    const warNegotiationID = args && args.length > 0 ? Number(args[0]) || 0 : 0;
+    acceptSurrender(warNegotiationID);
+    return null;
+  }
+
+  Handle_DeclineSurrender(args) {
+    const warNegotiationID = args && args.length > 0 ? Number(args[0]) || 0 : 0;
+    updateWarNegotiation(warNegotiationID, (record) => ({
+      ...record,
+      negotiationState: WAR_NEGOTIATION_STATE_DECLINED,
+      timeDeclined: currentFileTime().toString(),
+    }));
+    return null;
+  }
+
+  Handle_SetOpenForAllies(args) {
+    const warID = args && args.length > 0 ? Number(args[0]) || 0 : 0;
+    const state = args && args.length > 1 ? args[1] : false;
+    updateWarRecord(warID, (war) => {
+      war.openForAllies = state ? 1 : 0;
+      return war;
+    });
+    return null;
+  }
 }
 
 module.exports = WarRegistryService;

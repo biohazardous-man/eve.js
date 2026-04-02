@@ -1,0 +1,118 @@
+// Proof-of-authorship note: Primary authorship and project direction for this research note belong to John Elysian.
+// This file is kept here as part of the EveJS proof-of-authorship record after repeated misattribution of the underlying work and claims that it was trivial.
+// If you reuse, discuss, or share this file, please credit it accurately.
+
+EvEJS Omega Research
+Updated: 2026-03-11
+
+Scope
+- Track the modern Omega / user-license path separately from ship cosmetics.
+- Immediate goal: stop the client timing out on `eve_clonestate_omega` and document the current behavior clearly.
+
+What the client is doing
+- The client requests the Omega license through public gateway:
+  - `eve_public.user.license.api.requests_pb2.GetRequest`
+- The request payload contains:
+  - `license.license_type`
+- The relevant local client enum shows:
+  - `UserLicenseType.OMEGA = "eve_clonestate_omega"`
+
+Recovered client code
+- `user_licenses/client/messenger/request_messenger.py`
+  - sends `GetRequest`
+  - expects response type `eve_public.user.license.api.requests_pb2.GetResponse`
+  - interprets:
+    - response with no `license` field -> `None`
+    - response with `license` field -> build `UserLicense`
+- `user_licenses/client/user_license.py`
+  - `UserLicense.build_from_proto(payload)` expects:
+    - optional expiry:
+      - `no_expiry_date` or
+      - `expiry_date`
+    - `last_modified`
+- `omega/client/clone_grade_svc.py`
+  - `is_omega_without_grace_period()` checks:
+    - mocked Omega state first, if enabled
+    - otherwise `get_user_license_svc().has_license(UserLicenseType.OMEGA)`
+  - clone-grade-with-grace-period is also read separately from:
+    - `subscriptionMgr.GetCloneGrade()`
+
+Current server-side reality
+- Legacy Macho service:
+  - `server/src/services/subscription/subscriptionMgrService.js`
+  - currently returns clone grade `1`
+- Modern gateway path:
+  - `server/src/_secondary/express/publicGatewayLocal.js`
+  - now has an explicit typed handler for:
+    - `eve_public.user.license.api.GetRequest`
+
+Implemented behavior
+- `eve_public.user.license.api.GetRequest`
+  - if `license_type == "eve_clonestate_omega"` and `omegaLicenseEnabled` is true:
+    - return typed `GetResponse` with:
+      - `license.expiry_date = 2100-01-01T00:00:00Z`
+      - `license.last_modified = now`
+  - otherwise:
+    - return typed empty `GetResponse`
+- Config knob:
+  - `server/src/config/index.js`
+  - `omegaLicenseEnabled: true`
+  - env override:
+    - `EVEJS_OMEGA_LICENSE=true|false`
+
+Why this is useful
+- It replaces the old timeout/500 path with a fast, typed gateway response.
+- It gives the client a stable answer for Omega-specific UI and gating checks.
+- It uses the same working TLS/gateway path already proven by ship skins.
+
+Observability work added alongside it
+- The local gateway now logs:
+  - request type
+  - status code
+  - response type
+  - response duration in milliseconds
+  - active character ID when present
+  - truncated correlation UUID
+- Unknown `eve_public.*` request types are now warned with repeat-count tracking instead of failing silently.
+
+Known caveat
+- The current clone-grade Macho service and the new modern user-license gateway can still drift conceptually if one is changed without the other.
+- For now they are aligned by default toward "Omega enabled".
+
+Observed client behavior from `client/omega.txt`
+- On 2026-03-11, the client log showed the request succeeding:
+  - `USER LICENSE SVC - get user license eve_clonestate_omega requested. Response: user license eve_clonestate_omega found`
+- The same run also showed this client build does not safely handle `no_expiry_date`:
+  - `TypeError: can't compare datetime.datetime to NoneType`
+  - thrown from `packages/user_licenses/client/user_license.py(31) is_expired`
+- Practical conclusion:
+  - for this client build, the Omega stub should send a far-future `expiry_date`
+  - `no_expiry_date=true` is not sufficient on its own
+
+Follow-up confirmation from `client/omega2.txt`
+- On 2026-03-11 after switching the stub to a concrete future expiry:
+  - `USER LICENSE SVC - get user license eve_clonestate_omega requested. Response: user license eve_clonestate_omega found`
+  - `USER LICENSE SVC - Returning newly fetched license eve_clonestate_omega: Expiry Date: 2100-01-01 00:00:00`
+  - the old `TypeError: can't compare datetime.datetime to NoneType` no longer appeared
+- Practical conclusion:
+  - the Omega gateway stub is working correctly for this client build
+  - using `expiry_date=2100-01-01T00:00:00Z` is the correct compatibility shape here
+
+Remaining unrelated gateway noise seen in the same run
+- `eve_public.payment.schedule.requests_pb2.GetActiveByTypeRequest`
+  - client logs `Fetched omega schedule: None`
+  - this is currently non-fatal
+- `eve_public.sovereignty.mercenaryden.activity.api.requests_pb2.GetAllRequest`
+  - still returns `404`
+  - this is a good candidate for the next login-noise stub
+
+Next useful follow-up
+- Capture a fresh client log after this stub lands and confirm:
+  - no more timeout for `eve_clonestate_omega`
+  - whether any follow-up user-license notice subscription exists
+  - whether other `eve_public.*` request types now stand out clearly in the new gateway logs
+
+Validation completed
+- `node --check server/src/_secondary/express/publicGatewayLocal.js`
+- `node --check server/src/config/index.js`
+- Both syntax checks passed on 2026-03-11.

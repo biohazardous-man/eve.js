@@ -16,17 +16,44 @@ const {
   getCharacterRecord,
   DEFAULT_PLEX_BALANCE,
 } = require(path.join(__dirname, "../../services/character/characterState"));
+const {
+  resolveCharacterAccountID,
+  resolveOmegaLicenseState,
+} = require(path.join(__dirname, "../../services/newEdenStore/storeState"));
+const {
+  createGatewayServiceRegistry,
+} = require(path.join(
+  __dirname,
+  "./gatewayServices",
+));
+const {
+  buildStructurePaintworkProtoRoot,
+} = require(path.join(
+  __dirname,
+  "./gatewayServices/structurePaintworkGatewayService",
+));
 const sessionRegistry = require(path.join(
   __dirname,
   "../../services/chat/sessionRegistry",
 ));
 const spaceRuntime = require(path.join(__dirname, "../../space/runtime"));
+const {
+  getLicenseForStructure,
+  getPaintworksForSolarSystem,
+  normalizePaintwork,
+} = require(path.join(
+  __dirname,
+  "../../services/structure/structurePaintworkState",
+));
+const {
+  getStructureByID,
+} = require(path.join(__dirname, "../../services/structure/structureState"));
 
 const GATEWAY_INSTANCE_UUID = Buffer.from(
   crypto.randomUUID().replace(/-/g, ""),
   "hex",
 );
-const ACTIVE_NOTICE_STREAMS = new Set();
+const ACTIVE_NOTICE_STREAMS = new Map();
 const UNKNOWN_REQUEST_COUNTS = new Map();
 const GRPC_RESPONSE_HEADERS = {
   ":status": 200,
@@ -144,11 +171,210 @@ const PROTO_ROOT = protobuf.Root.fromJSON({
             },
           },
         },
+        Page: {
+          fields: {
+            size: { type: "uint32", id: 1 },
+            token: { type: "string", id: 2 },
+          },
+        },
+        NextPage: {
+          fields: {
+            token: { type: "string", id: 1 },
+          },
+        },
+        localization: {
+          nested: {
+            message: {
+              nested: {
+                Identifier: {
+                  fields: {
+                    sequential: { type: "uint32", id: 1 },
+                  },
+                },
+              },
+            },
+            cerberus: {
+              nested: {
+                Parameter: {
+                  fields: {
+                    key: { type: "string", id: 1 },
+                    string: { type: "string", id: 2 },
+                    integer: { type: "uint64", id: 3 },
+                    signed_integer: { type: "int64", id: 4 },
+                    double: { type: "double", id: 5 },
+                    timestamp: {
+                      type: "google.protobuf.Timestamp",
+                      id: 6,
+                    },
+                  },
+                },
+                FormattedMessage: {
+                  fields: {
+                    identifier: {
+                      type: "eve_public.localization.message.Identifier",
+                      id: 1,
+                    },
+                    parameters: {
+                      rule: "repeated",
+                      type: "eve_public.localization.cerberus.Parameter",
+                      id: 2,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        color: {
+          nested: {
+            RGB: {
+              fields: {
+                red: { type: "uint32", id: 1 },
+                green: { type: "uint32", id: 2 },
+                blue: { type: "uint32", id: 3 },
+              },
+            },
+          },
+        },
+        corporation: {
+          nested: {
+            Identifier: {
+              fields: {
+                sequential: { type: "uint32", id: 1 },
+              },
+            },
+          },
+        },
         character: {
           nested: {
             Identifier: {
               fields: {
                 sequential: { type: "uint32", id: 1 },
+              },
+            },
+            skill: {
+              nested: {
+                plan: {
+                  nested: {
+                    GetActiveRequest: {
+                      fields: {},
+                    },
+                    GetActiveResponse: {
+                      fields: {
+                        skill_plan: {
+                          type: "eve_public.skill.plan.Identifier",
+                          id: 1,
+                        },
+                        skill_plan_info: {
+                          type: "eve_public.skill.plan.Attributes",
+                          id: 2,
+                        },
+                      },
+                    },
+                    GetAllRequest: {
+                      fields: {},
+                    },
+                    GetAllResponse: {
+                      fields: {
+                        skill_plans: {
+                          rule: "repeated",
+                          type: "eve_public.skill.plan.Identifier",
+                          id: 1,
+                        },
+                      },
+                    },
+                    SetActiveRequest: {
+                      fields: {
+                        skill_plan: {
+                          type: "eve_public.skill.plan.Identifier",
+                          id: 1,
+                        },
+                      },
+                    },
+                    SetActiveResponse: {
+                      fields: {},
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        career: {
+          nested: {
+            goal: {
+              nested: {
+                Identifier: {
+                  fields: {
+                    uuid: { type: "bytes", id: 1 },
+                  },
+                },
+                Attributes: {
+                  fields: {
+                    target: { type: "uint32", id: 4 },
+                    threat: { type: "uint32", id: 7 },
+                    career: {
+                      type: "eve_public.career.goal.Attributes.Career",
+                      id: 9,
+                    },
+                    career_points: { type: "uint32", id: 10 },
+                  },
+                  nested: {
+                    Career: {
+                      values: {
+                        CAREER_UNSPECIFIED: 0,
+                        CAREER_EXPLORATION: 1,
+                        CAREER_INDUSTRIALIST: 2,
+                        CAREER_ENFORCER: 3,
+                        CAREER_SOLDIER_OF_FORTUNE: 4,
+                      },
+                    },
+                  },
+                },
+                api: {
+                  nested: {
+                    GetDefinitionsResponse: {
+                      fields: {
+                        goals: {
+                          rule: "repeated",
+                          type:
+                            "eve_public.career.goal.api.GetDefinitionsResponse.Goal",
+                          id: 1,
+                        },
+                      },
+                      nested: {
+                        Goal: {
+                          fields: {
+                            goal: {
+                              type: "eve_public.career.goal.Identifier",
+                              id: 1,
+                            },
+                            attributes: {
+                              type: "eve_public.career.goal.Attributes",
+                              id: 2,
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        skill: {
+          nested: {
+            plan: {
+              nested: {
+                Identifier: {
+                  fields: {
+                    uuid: { type: "bytes", id: 1 },
+                  },
+                },
+                Attributes: {
+                  fields: {},
+                },
               },
             },
           },
@@ -158,6 +384,119 @@ const PROTO_ROOT = protobuf.Root.fromJSON({
             Identifier: {
               fields: {
                 sequential: { type: "uint64", id: 1 },
+              },
+            },
+          },
+        },
+        solarsystem: {
+          nested: {
+            Identifier: {
+              fields: {
+                sequential: { type: "uint32", id: 1 },
+              },
+            },
+          },
+        },
+        math: {
+          nested: {
+            Fraction: {
+              fields: {
+                numerator: { type: "uint64", id: 1 },
+                denominator: { type: "uint64", id: 2 },
+              },
+            },
+          },
+        },
+        pirate: {
+          nested: {
+            corruption: {
+              nested: {
+                api: {
+                  nested: {
+                    GetSystemInfoRequest: {
+                      fields: {
+                        system: {
+                          type: "eve_public.solarsystem.Identifier",
+                          id: 1,
+                        },
+                      },
+                    },
+                    GetSystemInfoResponse: {
+                      fields: {
+                        total_progress: {
+                          type: "eve_public.math.Fraction",
+                          id: 1,
+                        },
+                        eve_contribution: {
+                          type: "eve_public.math.Fraction",
+                          id: 2,
+                        },
+                        vanguard_contribution: {
+                          type: "eve_public.math.Fraction",
+                          id: 3,
+                        },
+                        stage: { type: "uint32", id: 4 },
+                      },
+                    },
+                    GetStageThresholdsRequest: {
+                      fields: {},
+                    },
+                    GetStageThresholdsResponse: {
+                      fields: {
+                        thresholds: {
+                          rule: "repeated",
+                          type: "eve_public.math.Fraction",
+                          id: 1,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            suppression: {
+              nested: {
+                api: {
+                  nested: {
+                    GetSystemInfoRequest: {
+                      fields: {
+                        system: {
+                          type: "eve_public.solarsystem.Identifier",
+                          id: 1,
+                        },
+                      },
+                    },
+                    GetSystemInfoResponse: {
+                      fields: {
+                        total_progress: {
+                          type: "eve_public.math.Fraction",
+                          id: 1,
+                        },
+                        stage: { type: "uint32", id: 2 },
+                        eve_contribution: {
+                          type: "eve_public.math.Fraction",
+                          id: 3,
+                        },
+                        vanguard_contribution: {
+                          type: "eve_public.math.Fraction",
+                          id: 4,
+                        },
+                      },
+                    },
+                    GetStageThresholdsRequest: {
+                      fields: {},
+                    },
+                    GetStageThresholdsResponse: {
+                      fields: {
+                        thresholds: {
+                          rule: "repeated",
+                          type: "eve_public.math.Fraction",
+                          id: 1,
+                        },
+                      },
+                    },
+                  },
+                },
               },
             },
           },
@@ -215,6 +554,106 @@ const PROTO_ROOT = protobuf.Root.fromJSON({
         },
         cosmetic: {
           nested: {
+            corporation: {
+              nested: {
+                palette: {
+                  nested: {
+                    Identifier: {
+                      fields: {
+                        corporation: {
+                          type: "eve_public.corporation.Identifier",
+                          id: 1,
+                        },
+                      },
+                    },
+                    Attributes: {
+                      oneofs: {
+                        secondary: {
+                          oneof: ["secondary_color", "no_secondary_color"],
+                        },
+                        tertiary: {
+                          oneof: ["tertiary_color", "no_tertiary_color"],
+                        },
+                      },
+                      fields: {
+                        main_color: {
+                          type: "eve_public.color.RGB",
+                          id: 1,
+                        },
+                        secondary_color: {
+                          type: "eve_public.color.RGB",
+                          id: 2,
+                        },
+                        no_secondary_color: { type: "bool", id: 3 },
+                        tertiary_color: {
+                          type: "eve_public.color.RGB",
+                          id: 4,
+                        },
+                        no_tertiary_color: { type: "bool", id: 5 },
+                      },
+                    },
+                    api: {
+                      nested: {
+                        GetRequest: {
+                          fields: {
+                            identifier: {
+                              type: "eve_public.cosmetic.corporation.palette.Identifier",
+                              id: 1,
+                            },
+                          },
+                        },
+                        GetResponse: {
+                          fields: {
+                            attributes: {
+                              type: "eve_public.cosmetic.corporation.palette.Attributes",
+                              id: 1,
+                            },
+                          },
+                        },
+                        GetOwnRequest: {
+                          fields: {},
+                        },
+                        GetOwnResponse: {
+                          fields: {
+                            attributes: {
+                              type: "eve_public.cosmetic.corporation.palette.Attributes",
+                              id: 1,
+                            },
+                            last_modifier: {
+                              type: "eve_public.character.Identifier",
+                              id: 2,
+                            },
+                            last_modified: {
+                              type: "google.protobuf.Timestamp",
+                              id: 3,
+                            },
+                          },
+                        },
+                        SetRequest: {
+                          fields: {
+                            attributes: {
+                              type: "eve_public.cosmetic.corporation.palette.Attributes",
+                              id: 1,
+                            },
+                          },
+                        },
+                        SetResponse: {
+                          fields: {},
+                        },
+                        CanEditRequest: {
+                          fields: {},
+                        },
+                        CanEditResponse: {
+                          fields: {
+                            can_edit: { type: "bool", id: 1 },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
             ship: {
               nested: {
                 api: {
@@ -378,6 +817,133 @@ const PROTO_ROOT = protobuf.Root.fromJSON({
                         },
                       },
                     },
+                    invoice: {
+                      nested: {
+                        Identifier: {
+                          fields: {
+                            uuid: { type: "bytes", id: 1 },
+                          },
+                        },
+                        Attributes: {
+                          fields: {
+                            category: {
+                              type: "eve_public.localization.cerberus.FormattedMessage",
+                              id: 1,
+                            },
+                            summary_message: {
+                              type: "eve_public.localization.cerberus.FormattedMessage",
+                              id: 2,
+                            },
+                            no_summary: { type: "bool", id: 3 },
+                            source_character: {
+                              type: "eve_public.character.Identifier",
+                              id: 4,
+                            },
+                            source_corporation: {
+                              type: "eve_public.corporation.Identifier",
+                              id: 5,
+                            },
+                            no_source: { type: "bool", id: 6 },
+                            destination_character: {
+                              type: "eve_public.character.Identifier",
+                              id: 7,
+                            },
+                            destination_corporation: {
+                              type: "eve_public.corporation.Identifier",
+                              id: 8,
+                            },
+                            no_destination: { type: "bool", id: 9 },
+                          },
+                        },
+                      },
+                    },
+                    api: {
+                      nested: {
+                        GetAllLoggedForUserRequest: {
+                          fields: {},
+                        },
+                        GetAllLoggedForUserResponse: {
+                          fields: {
+                            transactions: {
+                              rule: "repeated",
+                              type: "eve_public.plex.vault.transaction.Identifier",
+                              id: 1,
+                            },
+                          },
+                        },
+                        GetLogRequest: {
+                          fields: {
+                            identifier: {
+                              type: "eve_public.plex.vault.transaction.Identifier",
+                              id: 1,
+                            },
+                          },
+                        },
+                        GetLogResponse: {
+                          fields: {
+                            transaction: {
+                              type: "eve_public.plex.vault.transaction.Attributes",
+                              id: 1,
+                            },
+                            unavailable: { type: "bool", id: 2 },
+                            invoice_entry: {
+                              type: "eve_public.plex.vault.transaction.api.GetLogResponse.Invoice",
+                              id: 3,
+                            },
+                          },
+                          nested: {
+                            Invoice: {
+                              fields: {
+                                id: {
+                                  type: "eve_public.plex.vault.transaction.invoice.Identifier",
+                                  id: 1,
+                                },
+                                attributes: {
+                                  type: "eve_public.plex.vault.transaction.invoice.Attributes",
+                                  id: 2,
+                                },
+                              },
+                            },
+                          },
+                        },
+                        GetStatisticsRequest: {
+                          fields: {},
+                        },
+                        GetStatisticsResponse: {
+                          fields: {
+                            entries: {
+                              rule: "repeated",
+                              type: "eve_public.plex.vault.transaction.api.GetStatisticsResponse.Entry",
+                              id: 1,
+                            },
+                            earliest_transaction: {
+                              type: "google.protobuf.Timestamp",
+                              id: 2,
+                            },
+                          },
+                          nested: {
+                            Entry: {
+                              fields: {
+                                category: {
+                                  type: "eve_public.localization.cerberus.FormattedMessage",
+                                  id: 1,
+                                },
+                                no_classification: { type: "bool", id: 2 },
+                                incomes: {
+                                  type: "eve_public.plex.Currency",
+                                  id: 3,
+                                },
+                                expenses: {
+                                  type: "eve_public.plex.Currency",
+                                  id: 4,
+                                },
+                                transactions_count: { type: "uint32", id: 5 },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
                   },
                 },
                 api: {
@@ -445,6 +1011,14 @@ const PlexVaultBalanceResponse = PROTO_ROOT.lookupType(
 const PlexVaultBalanceChangedNotice = PROTO_ROOT.lookupType(
   "eve_public.plex.vault.api.BalanceChangedNotice",
 );
+const STRUCTURE_PAINTWORK_PROTO_ROOT = buildStructurePaintworkProtoRoot();
+const StructurePaintworkSetNotice = STRUCTURE_PAINTWORK_PROTO_ROOT.lookupType(
+  "eve_public.cosmetic.structure.paintwork.api.SetNotice",
+);
+const StructurePaintworkSetAllInSolarSystemNotice =
+  STRUCTURE_PAINTWORK_PROTO_ROOT.lookupType(
+    "eve_public.cosmetic.structure.paintwork.api.SetAllInSolarSystemNotice",
+  );
 
 const OMEGA_USER_LICENSE_TYPE = "eve_clonestate_omega";
 const OMEGA_LICENSE_EXPIRY_SECONDS = 4102444800; // 2100-01-01T00:00:00Z
@@ -452,6 +1026,12 @@ const OMEGA_LICENSE_EXPIRY_SECONDS = 4102444800; // 2100-01-01T00:00:00Z
 // the gateway currency payload is encoded at 100 cents per PLEX. Serving 200
 // cents here yields the correct displayed whole-plex amount for this build.
 const PLEX_GATEWAY_CENTS_PER_PLEX = 200;
+const gatewayServiceRegistry = createGatewayServiceRegistry({
+  protoRoot: PROTO_ROOT,
+  emptyPayload: EMPTY_PAYLOAD,
+  plexGatewayCentsPerPlex: PLEX_GATEWAY_CENTS_PER_PLEX,
+  publishGatewayNotice,
+});
 
 function timestampNow() {
   const now = Date.now();
@@ -479,6 +1059,11 @@ function bufferFromBytes(value) {
   }
 
   return Buffer.from(String(value), "utf8");
+}
+
+function bytesToHex(value) {
+  const buffer = bufferFromBytes(value);
+  return buffer.length > 0 ? buffer.toString("hex") : "";
 }
 
 function uuidBuffer() {
@@ -512,6 +1097,104 @@ function removeNoticeStream(stream) {
       `[PublicGatewayLocal] Notices.Consume disconnected active=${ACTIVE_NOTICE_STREAMS.size}`,
     );
   }
+}
+
+function getNoticeStreamState(stream) {
+  if (!ACTIVE_NOTICE_STREAMS.has(stream)) {
+    ACTIVE_NOTICE_STREAMS.set(stream, {
+      activeCharacterID: 0,
+      applicationInstanceHex: "",
+    });
+  }
+  return ACTIVE_NOTICE_STREAMS.get(stream);
+}
+
+function updateNoticeStreamState(stream, requestEnvelope) {
+  const state = getNoticeStreamState(stream);
+  state.activeCharacterID = getActiveCharacterID(requestEnvelope);
+  state.applicationInstanceHex = bytesToHex(
+    requestEnvelope && requestEnvelope.application_instance_uuid,
+  );
+  return state;
+}
+
+function resolveNoticeRoutingState(streamState) {
+  const state = streamState || {};
+  const routingState = {
+    activeCharacterID: Number(state.activeCharacterID || 0) || 0,
+    applicationInstanceHex: String(state.applicationInstanceHex || ""),
+    userID: 0,
+    corporationID: 0,
+    allianceID: 0,
+    solarSystemID: 0,
+  };
+
+  const session = routingState.activeCharacterID
+    ? sessionRegistry.findSessionByCharacterID(routingState.activeCharacterID)
+    : null;
+  if (session) {
+    routingState.userID = Number(session.userid || 0) || 0;
+    routingState.corporationID = Number(
+      session.corporationID || session.corpid || 0,
+    ) || 0;
+    routingState.allianceID = Number(
+      session.allianceID || session.allianceid || 0,
+    ) || 0;
+    routingState.solarSystemID = Number(session.solarsystemid2 || 0) || 0;
+  }
+
+  return routingState;
+}
+
+function shouldDeliverNoticeToState(routingState, noticeEnvelope) {
+  const targetGroup =
+    noticeEnvelope && noticeEnvelope.target_group
+      ? noticeEnvelope.target_group
+      : null;
+  if (!targetGroup || typeof targetGroup !== "object") {
+    return true;
+  }
+
+  const applicationInstanceHex = bytesToHex(targetGroup.application_instance_uuid);
+  if (applicationInstanceHex) {
+    return !routingState.applicationInstanceHex ||
+      routingState.applicationInstanceHex === applicationInstanceHex;
+  }
+
+  const solarSystemID = normalizeProtoNumber(targetGroup.solar_system);
+  if (solarSystemID > 0) {
+    return !routingState.solarSystemID ||
+      routingState.solarSystemID === solarSystemID;
+  }
+
+  const userID = normalizeProtoNumber(targetGroup.user);
+  if (userID > 0) {
+    return !routingState.userID || routingState.userID === userID;
+  }
+
+  const characterID = normalizeProtoNumber(targetGroup.character);
+  if (characterID > 0) {
+    return !routingState.activeCharacterID ||
+      routingState.activeCharacterID === characterID;
+  }
+
+  const corporationID = normalizeProtoNumber(targetGroup.corporation);
+  if (corporationID > 0) {
+    return !routingState.corporationID ||
+      routingState.corporationID === corporationID;
+  }
+
+  const allianceID = normalizeProtoNumber(targetGroup.alliance);
+  if (allianceID > 0) {
+    return !routingState.allianceID ||
+      routingState.allianceID === allianceID;
+  }
+
+  if (bufferFromBytes(targetGroup.bubble_instance_uuid).length > 0) {
+    return true;
+  }
+
+  return true;
 }
 
 function extractTypeName(typeUrl) {
@@ -792,8 +1475,10 @@ function buildShipStatesInBubblePayload(requestEnvelope) {
   );
 }
 
-function omegaLicenseEnabled() {
-  return Boolean(config.omegaLicenseEnabled);
+function omegaLicenseEnabled(activeCharacterID = 0) {
+  const accountID = resolveCharacterAccountID(activeCharacterID);
+  const omegaState = resolveOmegaLicenseState(accountID);
+  return Boolean(omegaState && omegaState.hasLicense);
 }
 
 function buildUserLicenseResponsePayload(requestEnvelope) {
@@ -818,7 +1503,11 @@ function buildUserLicenseResponsePayload(requestEnvelope) {
     };
   }
 
-  if (!omegaLicenseEnabled()) {
+  const activeCharacterID = getActiveCharacterID(requestEnvelope);
+  const accountID = resolveCharacterAccountID(activeCharacterID);
+  const omegaState = resolveOmegaLicenseState(accountID);
+
+  if (!omegaState || !omegaState.hasLicense) {
     return {
       payloadBuffer: Buffer.from(
         UserLicenseGetResponse.encode(
@@ -838,7 +1527,9 @@ function buildUserLicenseResponsePayload(requestEnvelope) {
             // This client build ignores no_expiry_date on parse and then
             // compares expiry_date directly in is_expired().
             expiry_date: {
-              seconds: OMEGA_LICENSE_EXPIRY_SECONDS,
+              seconds: omegaState && omegaState.expiryFileTime
+                ? Number((BigInt(omegaState.expiryFileTime) - 116444736000000000n) / 10000000n)
+                : OMEGA_LICENSE_EXPIRY_SECONDS,
               nanos: 0,
             },
             last_modified: timestampNow(),
@@ -944,14 +1635,31 @@ function encodeNoticeEnvelope(noticeTypeName, noticePayloadBuffer, targetGroup) 
 
 function broadcastNoticeEnvelope(noticeBuffer) {
   const grpcFrame = createGrpcFrame(noticeBuffer);
+  let noticeEnvelope = null;
+  try {
+    noticeEnvelope = NoticeEnvelope.decode(noticeBuffer);
+  } catch (error) {
+    log.warn(
+      `[PublicGatewayLocal] Failed to decode notice envelope for routing: ${error.message}`,
+    );
+  }
 
-  for (const stream of [...ACTIVE_NOTICE_STREAMS]) {
+  for (const [stream, streamState] of [...ACTIVE_NOTICE_STREAMS.entries()]) {
     if (stream.destroyed || stream.closed) {
       ACTIVE_NOTICE_STREAMS.delete(stream);
       continue;
     }
 
     try {
+      if (
+        noticeEnvelope &&
+        !shouldDeliverNoticeToState(
+          resolveNoticeRoutingState(streamState),
+          noticeEnvelope,
+        )
+      ) {
+        continue;
+      }
       stream.write(grpcFrame);
     } catch (error) {
       log.warn(
@@ -960,6 +1668,145 @@ function broadcastNoticeEnvelope(noticeBuffer) {
       ACTIVE_NOTICE_STREAMS.delete(stream);
     }
   }
+}
+
+function publishGatewayNotice(noticeTypeName, noticePayloadBuffer, targetGroup) {
+  const noticeEnvelope = encodeNoticeEnvelope(
+    noticeTypeName,
+    noticePayloadBuffer,
+    targetGroup,
+  );
+  broadcastNoticeEnvelope(noticeEnvelope);
+  return true;
+}
+
+function buildStructureIdentifier(id) {
+  return {
+    sequential: normalizeProtoNumber(id),
+  };
+}
+
+function buildSolarSystemIdentifier(id) {
+  return {
+    sequential: normalizeProtoNumber(id),
+  };
+}
+
+function buildStructurePaintworkPayload(paintwork) {
+  const source = normalizePaintwork(paintwork);
+  const payload = {};
+  for (const slotName of [
+    "first",
+    "second",
+    "third",
+    "fourth",
+    "primary",
+    "secondary",
+    "detailing",
+  ]) {
+    if (!source[slotName] || typeof source[slotName] !== "object") {
+      continue;
+    }
+    if (source[slotName].paint !== undefined && source[slotName].paint !== null) {
+      payload[slotName] = {
+        paint: normalizeProtoNumber(source[slotName].paint),
+      };
+      continue;
+    }
+    payload[slotName] = {
+      empty: Boolean(source[slotName].empty),
+    };
+  }
+  return payload;
+}
+
+function resolveStructurePaintworkNoticeState(structureID, options = {}) {
+  const numericStructureID = normalizeProtoNumber(structureID);
+  const activeLicense = getLicenseForStructure(numericStructureID);
+  const structure = getStructureByID(numericStructureID, { refresh: false });
+  const solarSystemID = normalizeProtoNumber(
+    options.solarSystemID ||
+      (activeLicense && activeLicense.solarSystemID) ||
+      (structure && structure.solarSystemID),
+  );
+  const paintworkSource = Object.prototype.hasOwnProperty.call(options, "paintwork")
+    ? options.paintwork
+    : activeLicense && activeLicense.paintwork;
+
+  return {
+    structureID: numericStructureID,
+    solarSystemID,
+    paintwork: buildStructurePaintworkPayload(paintworkSource),
+  };
+}
+
+function publishStructurePaintworkSetNotice(structureID, options = {}) {
+  const state = resolveStructurePaintworkNoticeState(structureID, options);
+  if (!state.structureID || !state.solarSystemID) {
+    log.warn(
+      `[PublicGatewayLocal] Skipped SetNotice for structureID=${structureID}; solar system unavailable`,
+    );
+    return false;
+  }
+
+  const noticePayload = Buffer.from(
+    StructurePaintworkSetNotice.encode(
+      StructurePaintworkSetNotice.create({
+        structure: buildStructureIdentifier(state.structureID),
+        paintwork: state.paintwork,
+      }),
+    ).finish(),
+  );
+  const noticeEnvelope = encodeNoticeEnvelope(
+    "eve_public.cosmetic.structure.paintwork.api.SetNotice",
+    noticePayload,
+    {
+      solar_system: state.solarSystemID,
+    },
+  );
+
+  log.info(
+    `[PublicGatewayLocal] Notices.Publish eve_public.cosmetic.structure.paintwork.api.SetNotice ` +
+      `structureID=${state.structureID} solarSystemID=${state.solarSystemID} streams=${ACTIVE_NOTICE_STREAMS.size}`,
+  );
+  broadcastNoticeEnvelope(noticeEnvelope);
+  return true;
+}
+
+function publishStructurePaintworkSetAllInSolarSystemNotice(solarSystemID) {
+  const numericSolarSystemID = normalizeProtoNumber(solarSystemID);
+  if (!numericSolarSystemID) {
+    return false;
+  }
+
+  const paintworks = getPaintworksForSolarSystem(numericSolarSystemID).map(
+    (license) => ({
+      structure: buildStructureIdentifier(license && license.structureID),
+      paintwork: buildStructurePaintworkPayload(license && license.paintwork),
+    }),
+  );
+  const noticePayload = Buffer.from(
+    StructurePaintworkSetAllInSolarSystemNotice.encode(
+      StructurePaintworkSetAllInSolarSystemNotice.create({
+        paintworks,
+        solar_system: buildSolarSystemIdentifier(numericSolarSystemID),
+      }),
+    ).finish(),
+  );
+  const noticeEnvelope = encodeNoticeEnvelope(
+    "eve_public.cosmetic.structure.paintwork.api.SetAllInSolarSystemNotice",
+    noticePayload,
+    {
+      solar_system: numericSolarSystemID,
+    },
+  );
+
+  log.info(
+    `[PublicGatewayLocal] Notices.Publish eve_public.cosmetic.structure.paintwork.api.SetAllInSolarSystemNotice ` +
+      `solarSystemID=${numericSolarSystemID} paintworks=${paintworks.length} streams=${ACTIVE_NOTICE_STREAMS.size}`,
+  );
+  broadcastNoticeEnvelope(noticeEnvelope);
+  return true;
 }
 
 function publishShipStateSetNotice(shipID, activeCharacterID = 0) {
@@ -1047,111 +1894,8 @@ function publishShipStateSetAllInBubbleNotice(activeCharacterID) {
   return true;
 }
 
-function getDefaultResponseTypeName(requestTypeName) {
-  if (!requestTypeName || !requestTypeName.endsWith("Request")) {
-    return null;
-  }
-
-  return `${requestTypeName.slice(0, -7)}Response`;
-}
-
 function getEmptySuccessResponseType(requestTypeName) {
-  if (!requestTypeName) {
-    return null;
-  }
-
-  if (
-    requestTypeName.startsWith(
-      "eve_public.cosmetic.ship.skin.thirdparty.license.api.",
-    ) &&
-    ["GetOwnedRequest", "ActivateRequest", "ApplyRequest", "UnapplyRequest"].some(
-      (suffix) => requestTypeName.endsWith(suffix),
-    )
-  ) {
-    return getDefaultResponseTypeName(requestTypeName);
-  }
-
-  if (
-    requestTypeName.startsWith(
-      "eve_public.cosmetic.ship.skin.thirdparty.component.license.api.",
-    ) &&
-    requestTypeName.endsWith("GetOwnedRequest")
-  ) {
-    return getDefaultResponseTypeName(requestTypeName);
-  }
-
-  if (
-    requestTypeName.startsWith("eve_public.cosmetic.market.skin.listing.api.") &&
-    ["GetAllOwnedRequest", "GetAllRequest"].some((suffix) =>
-      requestTypeName.endsWith(suffix),
-    )
-  ) {
-    return getDefaultResponseTypeName(requestTypeName);
-  }
-
-  if (
-    requestTypeName.includes("eve_public.entitlement.character") &&
-    requestTypeName.endsWith("GetAllRequest")
-  ) {
-    return getDefaultResponseTypeName(requestTypeName);
-  }
-
-  if (
-    requestTypeName.startsWith(
-      "eve_public.cosmetic.ship.skin.thirdparty.sequencing.job.api.",
-    ) &&
-    requestTypeName.endsWith("GetAllActiveRequest")
-  ) {
-    return getDefaultResponseTypeName(requestTypeName);
-  }
-
-  if (
-    requestTypeName.startsWith(
-      "eve_public.cosmetic.ship.skin.thirdparty.draft.api.",
-    ) &&
-    ["GetAllSavedRequest", "GetSaveCapacityRequest"].some((suffix) =>
-      requestTypeName.endsWith(suffix),
-    )
-  ) {
-    return getDefaultResponseTypeName(requestTypeName);
-  }
-
-  if (
-    requestTypeName.startsWith("eve_public.pirate.corruption.api.") &&
-    requestTypeName.endsWith("GetSystemInfoRequest")
-  ) {
-    return getDefaultResponseTypeName(requestTypeName);
-  }
-
-  if (
-    requestTypeName.startsWith("eve_public.pirate.corruption.api.") &&
-    requestTypeName.endsWith("GetStageThresholdsRequest")
-  ) {
-    return getDefaultResponseTypeName(requestTypeName);
-  }
-
-  if (
-    requestTypeName.startsWith("eve_public.pirate.suppression.api.") &&
-    requestTypeName.endsWith("GetStageThresholdsRequest")
-  ) {
-    return getDefaultResponseTypeName(requestTypeName);
-  }
-
-  if (
-    requestTypeName.startsWith("eve_public.plex.vault.api.") &&
-    requestTypeName.endsWith("BalanceRequest")
-  ) {
-    return getDefaultResponseTypeName(requestTypeName);
-  }
-
-  if (
-    requestTypeName.startsWith("eve_public.sovereignty.skyhook.api.") &&
-    requestTypeName.endsWith("GetTheftVulnerableSkyhooksInSolarSystemRequest")
-  ) {
-    return getDefaultResponseTypeName(requestTypeName);
-  }
-
-  return null;
+  return gatewayServiceRegistry.getEmptySuccessResponseType(requestTypeName);
 }
 
 function encodeResponseEnvelope(
@@ -1279,7 +2023,7 @@ function buildGatewayResponseForRequest(frameBuffer) {
     };
     log.info(
       `[PublicGatewayLocal] UserLicense.Get license_type=${licenseResult.licenseType || "<unknown>"} ` +
-        `hasLicense=${licenseResult.hasLicense} omegaLicenseEnabled=${omegaLicenseEnabled()}`,
+        `hasLicense=${licenseResult.hasLicense} omegaLicenseEnabled=${omegaLicenseEnabled(context.activeCharacterID)}`,
     );
   }
 
@@ -1293,15 +2037,10 @@ function buildGatewayResponseForRequest(frameBuffer) {
   }
 
   if (!result) {
-    const emptySuccessResponseType = getEmptySuccessResponseType(requestTypeName);
-    if (emptySuccessResponseType) {
-      result = {
-        statusCode: 200,
-        statusMessage: "",
-        responseTypeName: emptySuccessResponseType,
-        responsePayloadBuffer: EMPTY_PAYLOAD,
-      };
-    }
+    result = gatewayServiceRegistry.handleRequest(
+      requestTypeName,
+      requestEnvelope,
+    );
   }
 
   if (!result) {
@@ -1378,12 +2117,21 @@ function handleRequestsSendStream(stream) {
 
 function handleNoticesConsumeStream(stream) {
   initializeGrpcStream(stream);
-  ACTIVE_NOTICE_STREAMS.add(stream);
+  getNoticeStreamState(stream);
   log.info(
     `[PublicGatewayLocal] Notices.Consume connected active=${ACTIVE_NOTICE_STREAMS.size}`,
   );
 
-  const parseChunk = createGrpcFrameParser(() => {});
+  const parseChunk = createGrpcFrameParser((payload) => {
+    try {
+      const requestEnvelope = RequestEnvelope.decode(payload);
+      updateNoticeStreamState(stream, requestEnvelope);
+    } catch (error) {
+      log.debug(
+        `[PublicGatewayLocal] Notices.Consume ignored undecodable payload: ${error.message}`,
+      );
+    }
+  });
   stream.on("data", parseChunk);
   stream.on("end", () => {
     log.debug(
@@ -1452,12 +2200,24 @@ module.exports = {
   buildGatewayResponseForRequest,
   createGrpcFrame,
   handleGatewayStream,
+  publishGatewayNotice,
   publishPlexBalanceChangedNotice,
   publishShipStateSetAllInBubbleNotice,
   publishShipStateSetNotice,
+  publishStructurePaintworkSetAllInSolarSystemNotice,
+  publishStructurePaintworkSetNotice,
 };
 module.exports._testing = {
   buildBubbleShipStatesForCharacter,
   findLiveSessionByCharacterID,
+  gatewayServiceRegistry,
   getObserverCharacterIDsForShip,
+  getEmptySuccessResponseType,
+  PROTO_ROOT,
+  RequestEnvelope,
+  ResponseEnvelope,
+  resetGatewayState() {
+    ACTIVE_NOTICE_STREAMS.clear();
+    UNKNOWN_REQUEST_COUNTS.clear();
+  },
 };

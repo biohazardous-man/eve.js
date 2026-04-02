@@ -7,17 +7,19 @@
 const path = require("path");
 const BaseService = require(path.join(__dirname, "../baseService"));
 const log = require(path.join(__dirname, "../../utils/logger"));
-const { performCharacterLogoff } = require(path.join(
-  __dirname,
-  "./logoffCharacter",
-));
-const database = require(path.join(__dirname, "../../database"));
+const database = require(path.join(__dirname, "../../newDatabase"));
 const {
   buildFiletimeLong,
 } = require(path.join(__dirname, "../_shared/serviceHelpers"));
 const {
   DEFAULT_MCT_EXPIRY_FILETIME,
 } = require(path.join(__dirname, "../character/characterState"));
+const {
+  disconnectCharacterSession,
+} = require(path.join(__dirname, "../_shared/sessionDisconnect"));
+const {
+  getTrainingSlotsForAccount,
+} = require(path.join(__dirname, "../newEdenStore/storeState"));
 
 function getAccountRecordByUserID(userID) {
   const result = database.read("accounts", "/");
@@ -65,11 +67,14 @@ class UserService extends BaseService {
   Handle_GetMultiCharactersTrainingSlots(args, session) {
     log.debug("[userSvc] GetMultiCharactersTrainingSlots called");
     const accountRecord = getAccountRecordByUserID(session && session.userid);
-    const configuredSlots =
-      accountRecord &&
-      accountRecord.account &&
-      accountRecord.account.multiCharacterTrainingSlots &&
-      typeof accountRecord.account.multiCharacterTrainingSlots === "object"
+    const configuredSlots = Object.keys(
+      getTrainingSlotsForAccount(session && session.userid),
+    ).length
+      ? getTrainingSlotsForAccount(session && session.userid)
+      : accountRecord &&
+          accountRecord.account &&
+          accountRecord.account.multiCharacterTrainingSlots &&
+          typeof accountRecord.account.multiCharacterTrainingSlots === "object"
         ? accountRecord.account.multiCharacterTrainingSlots
         : buildDefaultTrainingSlots();
 
@@ -81,12 +86,28 @@ class UserService extends BaseService {
       ]),
     };
   }
-  
+
   Handle_UserLogOffCharacter(args, session) {
     log.info(
-      `[userSvc] UserLogOffCharacter called (charID=${session ? session.characterID || 0 : 0})`,
+      `[userSvc] UserLogOffCharacter user=${session ? session.userid : "?"} char=${session ? session.characterID : "?"}`,
     );
-    return performCharacterLogoff(session, "userSvc");
+
+    if (!session || !session.characterID) {
+      return true;
+    }
+
+    const characterID = Number(session.characterID || 0);
+    const disconnectResult = disconnectCharacterSession(session, {
+      broadcast: true,
+      clearSession: true,
+    });
+    if (!disconnectResult.success) {
+      log.warn(
+        `[userSvc] Failed to disconnect char=${characterID}: ${disconnectResult.errorMsg}`,
+      );
+    }
+
+    return true;
   }
 }
 

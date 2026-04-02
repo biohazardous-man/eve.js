@@ -11,7 +11,10 @@
 const path = require("path");
 const BaseService = require(path.join(__dirname, "../baseService"));
 const log = require(path.join(__dirname, "../../utils/logger"));
-const config = require(path.join(__dirname, "../../config"));
+const { buildGlobalConfigDict } = require(path.join(
+  __dirname,
+  "./globalConfig",
+));
 
 class MachoNetService extends BaseService {
   constructor() {
@@ -42,6 +45,10 @@ class MachoNetService extends BaseService {
         ["alert", null],
         ["authentication", null],
         ["account", null],
+        ["storeManager", null],
+        ["vaultManager", null],
+        ["FastCheckoutService", null],
+        ["kiringMgr", null],
         ["charUnboundMgr", null],
         ["charMgr", null],
         ["home_station", null],
@@ -50,15 +57,28 @@ class MachoNetService extends BaseService {
         ["corpRegistry", null],
         ["allianceRegistry", null],
         ["corpmgr", null],
+        ["corpRecProxy", null],
         ["fwCharacterEnlistmentMgr", null],
         ["corpStationMgr", null],
+        ["officeManager", null],
+        ["itemLocking", null],
         ["stationSvc", null],
         ["station", "station"],
         ["ship", "station"],
         ["map", null],
+        ["marketProxy", null],
         ["structureDirectory", null],
+        ["structureDeployment", null],
+        ["structureControl", null],
+        ["structureDocking", null],
+        ["structureHangarViewMgr", null],
         ["fwWarzoneSolarsystem", null],
         ["beyonce", "solarsystem2"],
+        ["miningScanMgr", null],
+        ["characterMiningLedger", null],
+        ["corpMiningLedger", null],
+        ["inSpaceCompressionMgr", null],
+        ["structureCompressionMgr", null],
         ["dogmaIM", "character"],
         ["invbroker", "station"],
         ["charFittingMgr", null],
@@ -67,7 +87,13 @@ class MachoNetService extends BaseService {
         ["onlineStatus", null],
         ["billMgr", null],
         ["corporationSvc", null],
+        ["voteManager", null],
+        ["warRegistry", null],
+        ["warStatisticMgr", null],
         ["warsInfoMgr", null],
+        ["mutualWarInviteMgr", null],
+        ["peaceTreatyMgr", null],
+        ["lookupSvc", null],
         ["certificateMgr", null],
         ["tutorialSvc", null],
         ["agentMgr", null],
@@ -75,6 +101,7 @@ class MachoNetService extends BaseService {
         ["standing2", null],
         ["dungeonExplorationMgr", null],
         ["userSvc", null],
+        ["structureGuests", null],
         ["skillMgr", null],
         ["skillMgr2", null],
         ["skillHandler", null],
@@ -86,8 +113,12 @@ class MachoNetService extends BaseService {
         ["insuranceSvc", "station"],
         ["jumpCloneSvc", null],
         ["LPSvc", "station"],
+        ["LPStoreMgr", "station"],
+        ["publicGatewaySvc", null],
         ["slash", null],
         ["subscriptionMgr", null],
+        ["raffleProxy", null],
+        ["raffleMgr", null],
         ["loginCampaignManager", null],
         ["seasonalLoginCampaignManager", null],
       ],
@@ -100,16 +131,7 @@ class MachoNetService extends BaseService {
     // globalConfig is used by client for things like:
     //   machoNet.GetGlobalConfig().get('imageserverurl') - portrait/logo image server
     //   machoNet.GetGlobalConfig().get('defaultPortraitSaveSize') - portrait save size
-    const globalConfig = {
-      type: "dict",
-      entries: [
-        // Image server URL — required by evePhotosvc.py RemoteImageCacher
-        // Without this, imageServer=None and portrait loading crashes
-        ["imageserverurl", config.imageServerUrl],
-        ["defaultPortraitSaveSize", 256],
-      ],
-    };
-    return [this.getServiceInfoDict(), globalConfig];
+    return [this.getServiceInfoDict(), buildGlobalConfigDict()];
   }
 
   Handle_GetServiceInfo(args, session) {

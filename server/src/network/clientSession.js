@@ -26,15 +26,21 @@ const sessionChangeDebugPath = path.join(
   "../../logs/session-change-debug.log",
 );
 const SESSION_CHANGE_ALLOWED_KEYS = new Set([
+  "role",
+  "countryCode",
   "charid",
   "corpid",
+  "corpAccountKey",
   "allianceid",
+  "factionid",
+  "warfactionid",
   "genderID",
   "bloodlineID",
   "raceID",
   "schoolID",
   "stationid",
   "stationid2",
+  "structureid",
   "solarsystemid",
   "solarsystemid2",
   "locationid",
@@ -42,6 +48,10 @@ const SESSION_CHANGE_ALLOWED_KEYS = new Set([
   "constellationid",
   "regionid",
   "shipid",
+  "fleetid",
+  "fleetrole",
+  "wingid",
+  "squadid",
   "corprole",
   "rolesAtAll",
   "rolesAtBase",
@@ -50,6 +60,9 @@ const SESSION_CHANGE_ALLOWED_KEYS = new Set([
 ]);
 
 function appendSessionChangeDebug(entry) {
+  if (!log.isVerboseDebugEnabled()) {
+    return;
+  }
   try {
     fs.mkdirSync(path.dirname(sessionChangeDebugPath), { recursive: true });
     fs.appendFileSync(
@@ -64,6 +77,53 @@ function appendSessionChangeDebug(entry) {
   }
 }
 
+function summarizeAttributeChangeCounts(changes = []) {
+  const counts = new Map();
+  for (const change of Array.isArray(changes) ? changes : []) {
+    if (!Array.isArray(change) || change.length < 4) {
+      continue;
+    }
+
+    const attributeID = Number(change[3]);
+    if (!Number.isFinite(attributeID)) {
+      continue;
+    }
+
+    counts.set(attributeID, (counts.get(attributeID) || 0) + 1);
+  }
+
+  const entries = [...counts.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .map(([attributeID, count]) => `${attributeID}x${count}`);
+
+  if (entries.length <= 6) {
+    return entries.join(",");
+  }
+
+  return `${entries.slice(0, 6).join(",")},+${entries.length - 6} more`;
+}
+
+function buildNotificationLogMessage(notifyType, idType, payloadTuple = []) {
+  const base = `idType=${idType}`;
+  if (notifyType !== "OnModuleAttributeChanges") {
+    return base;
+  }
+
+  const payload = Array.isArray(payloadTuple) ? payloadTuple[0] : null;
+  const changes =
+    payload &&
+    typeof payload === "object" &&
+    payload.type === "list" &&
+    Array.isArray(payload.items)
+      ? payload.items
+      : [];
+  if (changes.length === 0) {
+    return `${base} changes=0`;
+  }
+
+  return `${base} changes=${changes.length} attrs=${summarizeAttributeChangeCounts(changes)}`;
+}
+
 class ClientSession {
   /**
    * @param {object} handshakeData - Data from the completed handshake
@@ -76,7 +136,11 @@ class ClientSession {
     this.userName = handshakeData.userName || "";
     this.clientID = handshakeData.clientId || 0;
     this.clientId = this.clientID; // alias for camelCase consistency
+    this.accountRole = handshakeData.accountRole || handshakeData.role || 0;
+    this.chatRole = handshakeData.chatRole || handshakeData.role || 0;
     this.role = handshakeData.role || 0;
+    this.languageID = handshakeData.languageId || "EN";
+    this.countryCode = handshakeData.countryCode || null;
     this.sid =
       typeof handshakeData.sessionId === "bigint"
         ? handshakeData.sessionId
@@ -92,15 +156,21 @@ class ClientSession {
     this.raceID = 1;
     this.empireID = null;
     this.factionID = null;
+    this.factionid = null;
     this.schoolID = null;
     this.corporationID = 0;
     this.allianceID = 0;
     this.stationID = 0;
+    this.structureID = 0;
     this.solarsystemid = 0;
     this.constellationID = 0;
     this.regionID = 0;
     this.shipID = 0;
     this.shipName = "";
+    this.fleetid = null;
+    this.fleetrole = null;
+    this.wingid = null;
+    this.squadid = null;
     this.cloneStationID = 0;
     this.hqID = 0;
     this.baseID = 0;
@@ -142,17 +212,47 @@ class ClientSession {
       `[Session] Outgoing hex: ${marshaled.toString("hex").substring(0, 160)}...`,
     );
 
+    this._writePayload(marshaled);
+  }
+
+  /**
+   * Send a raw post-handshake payload to this client.
+   * This bypasses marshal encoding but still uses the normal length-prefix and
+   * session encryption path, which is what native BlueNet TiDi frames need.
+   */
+  sendRawPayload(payload, options = {}) {
+    if (!this.socket || this.socket.destroyed) {
+      log.warn(`[Session] Cannot send raw payload to ${this.address}: socket closed`);
+      return;
+    }
+
+    if (!Buffer.isBuffer(payload)) {
+      throw new TypeError("sendRawPayload expects a Buffer payload");
+    }
+
+    this.lastActivity = Date.now();
+
+    const label = options.label || "raw";
+    log.debug(`[Session] Sending raw payload (${payload.length} bytes) [${label}]`);
+    log.debug(
+      `[Session] Outgoing raw hex: ${payload.toString("hex").substring(0, 160)}...`,
+    );
+
+    this._writePayload(payload);
+  }
+
+  _writePayload(payload) {
     if (this.encrypted && this._encryptFn) {
       // Encrypt, then frame
-      const encrypted = this._encryptFn(marshaled);
+      const encrypted = this._encryptFn(payload);
       const header = Buffer.alloc(4);
       header.writeUInt32LE(encrypted.length, 0);
       this.socket.write(Buffer.concat([header, encrypted]));
     } else {
       // Frame without encryption
       const header = Buffer.alloc(4);
-      header.writeUInt32LE(marshaled.length, 0);
-      this.socket.write(Buffer.concat([header, marshaled]));
+      header.writeUInt32LE(payload.length, 0);
+      this.socket.write(Buffer.concat([header, payload]));
     }
   }
 
@@ -246,10 +346,26 @@ class ClientSession {
       args: responseTuple,
     };
 
-    log.info(
-      `[Session] Sending SessionChangeNotification with ${changeEntries.length} changes`,
+    log.pktOut(
+      "SessionChange",
+      `${changeEntries.length} changes → ${changeEntries.map(([k]) => k).join(", ")}`,
     );
     this.sendPacket(packet);
+
+    if (changeEntries.length > 0) {
+      try {
+        const {
+          synchronizeSessionChatState,
+        } = require(path.join(__dirname, "../services/chat/sessionChatSync"));
+        if (typeof synchronizeSessionChatState === "function") {
+          synchronizeSessionChatState(this, Object.fromEntries(changeEntries));
+        }
+      } catch (error) {
+        log.debug(
+          `[Session] Skipped chat sync after session change: ${error.message}`,
+        );
+      }
+    }
   }
 
   /**
@@ -302,7 +418,10 @@ class ClientSession {
       args: responseTuple,
     };
 
-    log.debug(`[Session] Sending Notification ${notifyType} (${idType})`);
+    log.pktOut(
+      notifyType || "Notification",
+      buildNotificationLogMessage(notifyType, idType, payloadTuple),
+    );
     this.sendPacket(packet);
   }
 
@@ -354,9 +473,7 @@ class ClientSession {
       args: responseTuple,
     };
 
-    log.debug(
-      `[Session] Sending Service Notification ${serviceName}::${methodName}`,
-    );
+    log.pktOut(serviceName || "Notification", `${methodName}()`);
     this.sendPacket(packet);
   }
 

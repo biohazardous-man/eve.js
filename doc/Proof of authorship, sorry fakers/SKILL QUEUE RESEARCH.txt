@@ -1,0 +1,266 @@
+// Proof-of-authorship note: Primary authorship and project direction for this research note belong to John Elysian.
+// This file is kept here as part of the EveJS proof-of-authorship record after repeated misattribution of the underlying work and claims that it was trivial.
+// If you reuse, discuss, or share this file, please credit it accurately.
+
+EvEJS Skill Queue Research
+Updated: 2026-03-11
+
+Scope
+- Research the classic skill queue path and leave a handoff-ready note for a future AI conversation.
+- Main questions:
+  - how much of the queue system is already known
+  - how easily can we make it behave correctly
+  - can it be fully working while keeping the current "all skills to V on login" behavior
+
+Current status
+- Research only in this pass. No skill-queue code was changed yet.
+- High-confidence finding:
+  - the client-side queue system is already mostly reversed
+  - the missing pieces are mainly server-side persistence and training state
+- Important constraint:
+  - the current server normalizes every skill to level V for every character
+  - that makes a truly meaningful training queue impossible without either:
+    - a separate non-maxed test character / mode, or
+    - changing the skill normalization policy
+
+What the client is doing
+- Client service:
+  - `eve/client/script/ui/services/skillQueueSvc.py`
+  - local decompile:
+    - `_local/skillQueueSvc_decompiled.py`
+- Startup path:
+  - `svc.skillqueue` starts
+  - calls `GetSkillQueueAndFreeSPsFromServer()`
+  - that resolves to:
+    - `self.skills.GetSkillHandler().GetSkillQueueAndFreePoints()`
+- On our wire, that currently binds against:
+  - `skillMgr::MachoBindObject`
+  - nested call:
+    - `GetSkillQueueAndFreePoints`
+- Confirmed from logs:
+  - `client/Omega2.txt`
+    - `skillMgr::MachoBindObject args=(140000003, ('GetSkillQueueAndFreePoints', (), {}))`
+    - return value:
+      - `(<RemoteObject:N=65450:46>, ([], 0))`
+
+What the client already knows how to do
+- The client queue service already contains:
+  - queue transactions:
+    - `BeginTransaction`
+    - `CommitTransaction`
+    - `RollbackTransaction`
+  - queue editing:
+    - `AddSkillToQueue`
+    - `RemoveSkillFromQueue`
+    - `MoveSkillToPosition`
+    - `TrimQueue`
+  - dependency validation
+  - clone-grade restrictions
+  - queue timing calculation
+  - queue cache management
+  - free skill point application hooks
+  - multiple-character-training slot checks
+- Practical conclusion:
+  - we do not need to invent the client behavior
+  - we mainly need to satisfy the client with correct server responses and persisted state
+
+Known client/server method surface
+- Confirmed on the server today in:
+  - `server/src/services/skills/skillMgrService.js`
+  - `server/src/services/skills/skillHandlerService.js`
+- Existing queue-related handlers/stubs:
+  - `GetMySkillQueue`
+  - `GetMySkillInfo`
+  - `GetSkillQueue`
+  - `GetSkillQueueAndFreePoints`
+  - `GetFreeSkillPoints`
+  - `GetFreeSkillPointsAppliedToQueue`
+  - `GetFreeSkillPointsAppliedToSkills`
+  - `ApplyFreeSkillPointsToQueue`
+  - `ApplyFreeSkillPointsToSkills`
+  - `ApplyFreeSkillPoints`
+  - `SaveNewQueue`
+  - `AbortTraining`
+  - `CharStartTrainingSkillByTypeID`
+  - `CharStopTrainingSkill`
+- Current reality:
+  - all of these are stubs or empty/no-op responses
+  - the queue returned today is always:
+    - `[]`
+  - free skill points returned today are always:
+    - `0`
+
+Bound-object path
+- The queue path is already compatible with bound-object calls.
+- Relevant files:
+  - `server/src/services/skills/skillMgrService.js`
+  - `server/src/services/serviceManager.js`
+  - `server/src/network/packetDispatcher.js`
+- Important detail:
+  - `skillMgrService.Handle_MachoBindObject()` already creates a bound object and dispatches the nested call
+  - the dispatcher already registers `N=...` bound object IDs back to the same service instance
+- Practical conclusion:
+  - we do not need new transport work for the skill queue
+  - `SaveNewQueue` and related bound-object calls can be implemented in the existing service layer
+
+Current server-side blockers
+- Skill data is forced to maxed state in:
+  - `server/src/services/skills/skillState.js`
+- Important lines of behavior:
+  - `skillLevel = 5`
+  - `trainedSkillLevel = 5`
+  - `effectiveSkillLevel = 5`
+  - `skillPoints = 256000`
+  - `trainedSkillPoints = 256000`
+  - `inTraining = false`
+  - `trainingStartTime = null`
+  - `trainingEndTime = null`
+- This normalization happens every time character skills are ensured.
+- Character queue/training fields exist but are unused:
+  - `server/src/newDatabase/data/characters/data.json`
+  - fields already present:
+    - `skillQueueEndTime`
+    - `skillTypeID`
+    - `toLevel`
+    - `trainingStartTime`
+    - `trainingEndTime`
+    - `queueEndTime`
+    - `finishSP`
+    - `trainedSP`
+    - `finishedSkills`
+
+Current behavior observed in logs
+- Recent runs show the queue service itself is not transport-broken:
+  - `client/Omega2.txt`
+  - `skillqueue` starts cleanly
+  - `GetSkillQueueAndFreePoints` returns successfully
+  - `userSvc::GetMultiCharactersTrainingSlots` returns `{}`
+- Practical conclusion:
+  - the old "skill queue server offline" symptom is not clearly reproduced in logs as a transport failure
+  - if the UI still says that, it is more likely a higher-level UI/state issue than a missing server socket/bind path
+
+What a real queue implementation would need
+- Minimum useful implementation:
+  - add a local queue table under:
+    - `server/src/newDatabase/data/skillQueues`
+  - store per-character:
+    - ordered queue entries
+    - free skill points
+    - active/inactive state
+    - queue end time
+  - implement server queue entry building with fields the client already uses:
+    - `trainingTypeID`
+    - `trainingToLevel`
+    - `queuePosition`
+    - `trainingStartSP`
+    - `trainingDestinationSP`
+    - `trainingStartTime`
+    - `trainingEndTime`
+  - implement:
+    - `GetSkillQueueAndFreePoints`
+    - `GetSkillQueue`
+    - `SaveNewQueue`
+    - `AbortTraining`
+- Full training implementation:
+  - also update actual skill records over time
+  - mark one skill as `inTraining`
+  - advance `trainedSkillPoints`
+  - complete queued levels
+  - update character-level queue/training fields
+  - ideally notify the client on skill changes / queue changes
+
+What we already know well enough to implement
+- High confidence:
+  - persistent queue storage and retrieval
+  - queue entry serialization
+  - `SaveNewQueue(queueInfo, activate=...)` server handling
+  - `AbortTraining`
+  - queue start-up without transport errors
+- Medium confidence:
+  - queue timestamps and queue end-time calculation on the server
+  - reflecting one active training entry correctly across login/relog
+- Low confidence under the current all-V policy:
+  - meaningful end-to-end training behavior
+  - because the client will not normally let you queue already-maxed skills
+  - and the server wipes any non-maxed state back to V during skill normalization
+
+Conflict with current gameplay policy
+- Current policy:
+  - all characters get all skills to V
+  - user wants to keep that
+- Consequence:
+  - a truly working training queue has nothing valid to train
+  - the client-side queue logic will reject adding most skills because they are already trained
+- Practical conclusion:
+  - if we keep all skills to V for normal gameplay, the best realistic queue milestone is:
+    - make the queue system "online", stable, and internally correct
+    - not a fully meaningful live-training gameplay loop
+
+Best realistic milestones
+- Milestone 1: Queue stability / no-offline UX
+  - return consistent queue + free SP data
+  - persist empty queue state cleanly
+  - ensure queue UI opens without misleading broken-state behavior
+  - confidence:
+    - high
+- Milestone 2: Persistent queue model
+  - implement `SaveNewQueue` and `AbortTraining`
+  - round-trip queue entries through relog
+  - confidence:
+    - high to medium
+- Milestone 3: Dev-only training harness
+  - temporary opt-out from max-skills normalization for one character or one skill
+  - use that character to validate real queueing/training behavior
+  - confidence:
+    - medium
+- Milestone 4: Full live training engine
+  - actual over-time SP progression and queue completion
+  - confidence:
+    - medium if a test harness exists
+    - low if we refuse to create any non-maxed test scenario
+
+Recommended implementation path
+1. Add `skillQueues` local database table.
+2. Build a server-side queue entry serializer matching the client fields above.
+3. Implement `GetSkillQueueAndFreePoints`, `GetSkillQueue`, `SaveNewQueue`, and `AbortTraining` against that table.
+4. Keep the first version non-destructive:
+   - allow queue persistence
+   - do not try to fake SP progression yet
+5. Add a small dev/test escape hatch for one character:
+   - do not auto-normalize all skills to V for that character
+   - or allow one selected skill to stay below V
+6. Only after that, add real training progression if still wanted.
+
+Testing reality
+- With the current "all skills to V" policy:
+  - low coverage for real queue/training behavior
+  - high coverage only for:
+    - startup
+    - persistence
+    - no-error UI behavior
+- For full confidence on real training:
+  - a non-maxed test case is required
+- Recommendation:
+  - do not claim "fully working training queue" without a test character or opt-out mode
+
+Answer to the original confidence question
+- Do we know enough to implement the queue transport/persistence side?
+  - yes, high confidence
+- Do we know enough to implement a truly full training system right now?
+  - partly
+  - the reverse-engineering is mostly enough, but confidence is only medium unless we create a real test path
+- Would it need a lot of testing?
+  - for queue persistence and startup:
+    - not much
+  - for actual training progression:
+    - yes, because current gameplay policy prevents meaningful live validation
+
+Next task
+- Best next task if we decide to build this:
+  - implement `server/src/newDatabase/data/skillQueues`
+  - wire `skillMgrService` queue handlers to it
+  - aim for:
+    - queue service stable
+    - queue UI no longer feeling broken/offline
+    - relog persistence
+- Do not start with full SP progression unless we first create a safe test scenario.

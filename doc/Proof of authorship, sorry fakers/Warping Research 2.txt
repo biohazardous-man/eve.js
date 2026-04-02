@@ -1,0 +1,864 @@
+// Proof-of-authorship note: Primary authorship and project direction for this research note belong to John Elysian.
+// This file is kept here as part of the EveJS proof-of-authorship record after repeated misattribution of the underlying work and claims that it was trivial.
+// If you reuse, discuss, or share this file, please credit it accurately.
+
+EvEJS Space Research Notes
+Updated: 2026-03-10
+
+Scope
+- These notes capture the packet, session, and movement rules used to finish the space-undock slice.
+- Research used the local Crucible checkout and the extracted client artifacts as references only.
+- No runtime code depends on those external references.
+
+Primary conclusions
+
+  - packet shapes were mirrored closely,
+  - movement math was isolated and cleaned up instead of ported verbatim.
+
+Session semantics confirmed
+- Docked session state
+  - `stationid` set
+  - `stationid2` set
+  - `locationid` set to station
+  - `worldspaceid` set to station
+  - `solarsystemid2` set
+  - `solarsystemid` cleared
+  - `shipid` set
+- In-space session state
+  - `stationid` cleared
+  - `stationid2` cleared
+  - `worldspaceid` cleared
+  - `solarsystemid` set
+  - `solarsystemid2` set
+  - `locationid` set to solar system
+  - `shipid` set
+
+Dogma prime detail confirmed
+- During an undock/session change, the client re-primes the active ship through `dogmaIM.GetAllInfo`.
+- In that in-space prime, the ship `invItem.flagID` must remain `0`.
+- Falling back from `0` to hangar-style `4` produces a logically invalid in-space ship row and can abort the undock after the animation starts.
+- The same row must also carry the solar system ID as `locationID`.
+
+Undock and bootstrap ordering confirmed
+- Required order for stable client acceptance:
+  - station guest removal notification
+  - session mutation into space
+  - dogma/session refresh
+  - Beyonce bind
+  - `GetFormations`
+  - `AddBalls2`
+  - `SetState`
+  - immediate destiny follow-up updates
+- The implementation follows that sequencing.
+
+Destiny packet shapes mirrored
+- `SetState`
+  - includes `stamp`, `state`, `ego`, `damageState`, `aggressors`, `droneState`, `slims`, `solItem`, `effectStates`, `allianceBridges`
+- `AddBalls2`
+  - uses a binary state buffer plus extra ball data
+- `DoDestinyUpdate`
+  - carries stamped raw update payloads
+- Removal/movement payloads mirrored
+  - `RemoveBall`
+  - `RemoveBalls`
+  - `GotoDirection`
+  - `SetSpeedFraction`
+  - `Stop`
+  - `SetBallVelocity`
+  - `SetBallPosition`
+  - `AlignTo`
+  - `FollowBall`
+  - `Orbit`
+  - `WarpTo`
+  - `OnSpecialFX`
+  - `SetBallMassive`
+
+Ball modes and binary sectors
+- Implemented modes
+  - `GOTO=0`
+  - `FOLLOW=1`
+  - `STOP=2`
+  - `WARP=3`
+  - `ORBIT=4`
+  - `RIGID=11`
+- Static objects
+  - stations, stargates, and celestials are encoded as rigid balls
+- Dynamic ships
+  - include a common ball header
+  - include mass and data sectors
+  - include a mode-specific sector for the active destiny mode
+- Mode-specific sectors now covered in the implementation
+  - `STOP`
+  - `GOTO`
+  - `FOLLOW`
+  - `WARP`
+  - `ORBIT`
+
+Movement and warp calculations used
+- Useful Crucible-derived formulas retained as inputs
+  - `massMKg = mass / 1_000_000`
+  - `agility = massMKg * inertia`
+  - `maxAccelTime = -ln(0.0001) * agility`
+  - `alignTime = -ln(0.25) * agility`
+- Implementation choices differing from Crucible
+  - subwarp acceleration uses exponential blending toward a desired velocity
+  - undock drift is produced from clean direction/speed state, not the rough Crucible hack
+  - follow/orbit steering is resolved from explicit vector math and persisted target state
+  - warp uses a generated accel/cruise/decel profile instead of a copied server tick hack
+
+Cross-reference against Crucible behavior
+- Kept
+  - packet names and ordering
+  - session-field semantics
+  - ball mode numbering
+  - `AddBalls2` plus `SetState` bootstrap pattern
+  - rigid/static ball treatment for world objects
+  - station dock metadata shape from `staStationTypes`
+    - `dockEntryX/Y/Z`
+    - `dockOrientationX/Y/Z`
+  - undock startup shape
+    - spawn at station `dockPosition`
+    - apply undock ejection with heading from `dockOrientation`
+    - use `SetBallVelocity` plus `GotoDirection` semantics instead of a stationary spawn
+- Changed deliberately
+  - no reliance on hardcoded station-only world data
+  - no runtime dependency on external files
+  - cleaned subwarp integration
+  - explicit warp lifecycle handling
+  - dynamic re-broadcasting of mode updates for late joiners
+  - `solarsystem2` binding behavior for this client build
+  - docked sessions keep `shipid` populated because this V23.02 client breaks station ship presentation and boarding updates if it is cleared
+
+Database and data-shape findings
+- Static world/runtime data must be available in the same workspace-local storage format as mutable gameplay state.
+- The implemented solution stores the imported Fuzzwork/SDE-derived tables under `server/src/newDatabase/data`.
+- Runtime services consume those tables through shared loaders, so the space code path does not split between SQL, raw CSV, or external file references.
+- The remaining station-model mismatch was not solvable from `staStations.csv` alone.
+- Crucible confirmed the missing data source: `staStationTypes`.
+- Fuzzwork still publishes that file, and it contains the real dock-entry and dock-orientation transforms needed to line the runtime ballpark up with the rendered station model.
+
+Verification findings
+- The client-facing space slice accepted:
+  - undock bootstrap,
+  - movement updates,
+  - multi-player visibility,
+  - docking removal,
+  - warp replication,
+  - stargate jump re-entry.
+- Two-character in-process smoke verification confirmed the expected sequence and successful cross-player propagation.
+- A follow-up undock validation confirmed that `dogmaIM.GetAllInfo` now returns the active ship with `locationID=30000142` and `flagID=0` once the session is in space.
+- V23.02 remote `SetState` unmarshal is sensitive to rowset class names during live space notifications. In the undock bootstrap path, `droneState` must serialize as `eve.common.script.sys.rowset.Rowset` instead of bare `util.Rowset`, or the client throws `module object has no attribute 'Rowset'` while processing `DoDestinyUpdate`.
+- `godma.RefreshTargets()` immediately calls dogma remote `GetTargets()` and `GetTargeters()` after the ship becomes active. Returning `None` here causes the client-side `'NoneType' object is not iterable` failure during the first space session prime; returning empty lists is accepted.
+- V23.02 `michelle.SetState` reads `industryLevel` directly from the `KeyVal` bag during the first real space flush. Omitting it leaves the client in a repeated exception loop even if the rest of ballpark bootstrap succeeds.
+- After `industryLevel`, the same V23.02 `SetState` path also reads `researchLevel` directly from the same `KeyVal` bag. Leaving it out produces the next `KeyVal instance has no attribute 'researchLevel'` failure during `RealFlushState`.
+- The same `michelle.SetState` path then reads `dbuffState`. An empty dict is accepted for the current emulator slice; omitting the field causes the remaining periodic jitter loop because each flush retries and faults again.
+- Jita stargates must carry a populated `jumps` rowset in their slim items. Empty or missing jump rows lead to the client stargate controller failing during scene object preparation.
+- The piloting client should not receive authoritative `SetBallPosition` or `SetBallVelocity` corrections every movement tick during normal subwarp flight. Sending those to watchers only, with periodic cadence, avoids self-rubberbanding while still keeping observers in sync.
+- `bountyProxy` is not optional once the space scene is live. The client starts fetching bounties and kill-right data for loaded balls immediately after bootstrap, so returning no service there creates an avoidable secondary error flood.
+- Persisted in-space `GOTO` state is unsafe to restore directly on session entry for this build. Reattaching a character already in space should normalize the active ship to `STOP`, zero velocity, and current-position target point.
+- `beyonce.UpdateStateRequest` must not force a fresh initial ballpark once `initialStateSent` is already true. Replaying `AddBalls2` plus `SetState` on that probe causes visible scene churn, overview object flicker, and repeated static-object respawn behavior.
+- Even with valid `jumps` rowsets, V23.02 still rejects the current stargate scene payload during `clientControllerRegistry.StargateSetup`. Until the missing controller field is identified, excluding stargates from the rendered scene is safer than letting them destabilize the whole ballpark.
+- The V23.02 client also issues `eve_public` suppression / insurgency gRPC requests while space stations are loading. If those escape to CCP with emulator-local character IDs, the official service returns `500 invalid character on request`, which in turn causes repeated `_SetCorruptionAndSuppression` tasklet failures on station objects. The debug client must therefore launch with the local proxy enabled, and the local proxy must intercept those `evetech` / `eveonline` public-service hosts with harmless stub responses.
+2026-03-10
+- The previous docking path was still wrong in two ways:
+  - `beyonce.CmdDock` docked immediately without checking distance.
+  - `beyonce.CmdFollowBall(stationID, 50)` was being treated as an immediate dock shortcut instead of a docking-approach intent.
+- For this V23.02 client, the safer rule is:
+  - `CmdFollowBall(stationID, 50)` begins docking approach,
+  - `CmdDock` also degrades into docking approach if the ship is still out of range,
+  - the runtime completes docking only after the ship actually reaches station docking range.
+- `charMgr.GetHomeStation()` was also shaped incorrectly for the client-side `homestation` flow. Returning a raw ID or `None` is not sufficient; the client expects an object with at least `.id`.
+- Undocking exposed that bug more often because character records dropped current `stationID` to `null` without preserving a separate home-station field. The fix is to keep stable `homeStationID` / `cloneStationID` on the character record and answer home-station lookups from those fields instead of current docked state.
+- Docking investigation: server traces showed the client was not sending `CmdDock` when the user pressed dock from overview; it repeatedly sent `beyonce.CmdFollowBall(stationID, 50)` instead. That means the immediate problem was not the dock handler itself, but the client/server shared idea of station distance and arrival.
+- The imported Jita 4-4 station row had `radius=30000` and `undockPosition` about 32500 m from station center. The runtime was also using that same 30000 m radius for live station entities, so follow math computed a desired arrival range around `followRange + shipRadius + stationRadius`, i.e. roughly 30 km. This explains overview showing the station around 35 km away and dock clicks degrading into approach without ever closing properly.
+- Fix direction: keep the large station radius in reference data for future rebuild provenance if needed, but use a small operational interaction radius in the live runtime and compute undock spawn from that smaller docking perimeter.
+- Follow-up finding: after the geometry fix, existing characters could still log in at `~72-75 km` from Jita 4-4 center because that bad approach state had already been persisted into `items.data.json`. On this client, the large station model can still make that look visually adjacent even when the server-side ballpark position is far out. The runtime therefore needs to normalize legacy near-station stopped/follow states on attach, not just future undocks.
+- Correction to the above fix direction: shrinking the live station ball to `1000 m` was not viable for this client. The overview and destiny distance logic then measured against a tiny shell while the rendered station model still used the real station art footprint, which produced the "ship inside structure at 6-7 km" and "double-click causes a visible teleport" reports.
+- The safer rule is: live station entities should keep their real radius, while docking permissiveness is handled separately. Undock spawn and legacy near-station normalization should use a perimeter outside the real station radius, preferring the stored undock vector length when it is already outside the station mesh.
+- Separate but related finding: `moveShipToSpace()` was still merging the ship's previous stored `spaceState` into a new undock/jump state. For docked ships that retained stale follow/goto data, this allowed old target-tracking fields to survive into the next undock even when position, velocity, and mode were reset. Fresh space transitions should overwrite the state instead of merging it.
+- Additional persistence finding: `dockShipToStation()` was correctly writing `spaceState: null`, but `normalizeShipItem()` was using nullish fallback semantics and restoring the previous `spaceState` from defaults. That meant docked ships could remain flagged as `FOLLOW` with non-zero velocity in the persisted items table even while `locationID` and `flagID` said the ship was in station.
+- Safe normalization rule: explicit `spaceState: null` must survive normalization, and any ship not in space (`flagID != 0`) should be treated as having no `spaceState` regardless of what old JSON rows still contain.
+- Movement-authority finding: watcher-only subwarp corrections are not sufficient once the piloting client drifts from the server's idea of ship position. Double-click / direction-change commands then execute from different origins on client and server, which looks like overview distance teleportation and can delay docking completion by tens of seconds.
+- Safer runtime rule: send authoritative position/velocity re-anchors to the piloting client at movement-command boundaries and include the piloting client in throttled periodic subwarp corrections. Full every-tick self-corrections are still too aggressive, but zero self-correction leaves the server/client positions diverged.
+- Live debugging rule: a separate `space-movement-debug.log` is useful because packet call traces alone show the user actions (`CmdGotoDirection`, `CmdFollowBall`, `CmdDock`) but not the server-side ship coordinates or dock-distance math at the moment those requests are handled.
+- Follow-up from live movement tracing: once docking intent is active, the server now shows a smooth monotonic approach to the dock point and reaches `dockReady` correctly at about `2490 m` docking distance. The remaining visible jitter is therefore not a fundamental inability to dock, but client presentation disturbance during a valid approach.
+- Repeated client-side `CmdFollowBall(stationID, 50)` / `CmdDock` retries should be treated as idempotent while the same docking approach is already active. Re-clearing tracking state and rebroadcasting the same follow each time adds visible reorientation churn without improving convergence.
+- A practical compromise for self-correction is asymmetric cadence:
+  - observers can keep the tighter correction interval,
+  - the piloting client should get a slower periodic correction stream plus immediate command-boundary anchors.
+  This keeps the server/client positions aligned without reintroducing the half-second self-rubberband on every movement path.
+- Separate from docking math, some client home-station flows appear to consult live session state while the character is already in space. Keeping `homeStationID` / `cloneStationID` only in the character record is not sufficient for those paths; the live session should carry those IDs too.
+2026-03-10
+- The remaining dock jitter was not just generic correction spam. Server logs showed docking approach was being integrated toward `station.dockPosition`, while the client only had `FollowBall(stationID, 50)` plus the station ball radius. That means the client was predicting approach against the station ball, while the server was flying toward a different hidden point. Result: visible reorientation/reset jitter even though server-side convergence eventually finished.
+- A second proof point was the debug state itself: at `16:26:15`, the ship was only `32.3 km` from Jita 4-4 center with a `30 km` station radius, but server `dockingDistance` still logged `19.7 km`. That can only happen if docking distance is still being measured against a custom dock point instead of the station ball geometry the client knows about.
+- Fix direction: use imported dock metadata for reference/debug only, not for live `FollowBall` steering or docking readiness. The authoritative movement path must match what the V23.02 client can infer from the ballpark: station center, station radius, follow range, and velocity corrections.
+- The extra dock/login black-screen still does not show up as a second server session change in `session-change-debug.log`. The next strongest suspect remains client post-transition service/bootstrap behavior, especially the `home_station`/`GetHomeStation` path that has previously produced `data=None` client exceptions. Alias services and extra packet tracing were added for the next validation pass.
+2026-03-10
+- Follow-up packet trace identified the next concrete client-side bootstrap fault: `homestation.client.service.Service.get_home_station` reads `data.type_id`, not just `stationTypeID`. Returning only camelCase station fields is therefore still invalid for V23.02 even after the service alias itself exists and resolves correctly.
+- Safe response shape for `home_station.get_home_station` is now "over-complete" rather than minimal: keep the previous camelCase fields, but also provide snake_case aliases such as `type_id`, `station_type_id`, `station_id`, `station_name`, `solar_system_id`, `constellation_id`, `region_id`, and `owner_id`.
+- The most likely explanation for the "black screen, see ship, black screen again" feel is that the first transition is succeeding server-side, then a client post-transition service fault is destabilizing the UI/bootstrap path and forcing a second local recovery pass. The `type_id` fault is a stronger explanation for that behavior than a missing second server session change.
+- Remaining small movement jitter is now more consistent with pilot self-correction cadence than with gross path mismatch. The severe 5 km teleport behavior is gone, docking range is correct, and server-side movement logs show monotonic approach. That points to over-frequent pilot re-anchors as the next tuning lever rather than broken docking geometry.
+2026-03-10
+- The next concrete HomeStation fault after `type_id` was `AttributeError: KeyVal instance has no attribute 'is_fallback'`. Safe V23.02 response shape therefore also includes `is_fallback` (and a camelCase alias does no harm).
+- The cleanest data model is to keep `homeStationID` / `cloneStationID` on the character record as the single authoritative source of truth, then derive session/service payloads from those fields. Current `stationID` is transient docked state and should not be trusted as home-station truth once the character is already in space.
+- Fresh packet/session traces still do not show a duplicate server-side transition during the "double re-entry" report. That keeps the suspicion on client post-transition bootstrap, not on the server dispatching dock/login twice.
+- The reported `~3 second` subwarp hitch lined up with the runtime's pilot self-correction cadence. Removing periodic pilot re-anchors is the safer next step now that command-boundary corrections already keep client and server from diverging catastrophically.
+2026-03-10
+- Taking a step back against Crucible clarified the actual subwarp mismatch: the remaining snap did not happen during steady-state movement, it happened when the user issued a new movement command. Our runtime was rebroadcasting `SetBallPosition` and `SetBallVelocity` on every `GotoDirection`, `AlignTo`, `FollowBall`, `Orbit`, `SetSpeedFraction`, and `Stop`. Crucible's normal destiny command path does not do that for the piloting client, so the client and server were being forcibly re-anchored at exactly the command boundary where the user noticed the teleport.
+- Another structural mistake was conflating approach with dock intent. Treating every `CmdFollowBall(stationID, 50)` as docking intent explains why ordinary approach could eventually dock and why docking state was being re-entered from generic follow traffic. Safe rule: only `CmdDock` may arm docking intent; `CmdFollowBall` is just movement.
+- Crucible's dock flow is also staged: out-of-range `CmdDock` raises `DockingApproach`, in-range `CmdDock` starts a dock timer and returns a file time, `OnDockingAccepted` is sent during the accepted phase, and only then does the actual station session transfer happen. Immediate `dockSession()` at the moment server range reaches green is too early and is a strong match for the observed client-side double re-entry.
+2026-03-10
+- The next deeper movement mismatch was in the server integrator itself. Our previous `applyDesiredVelocity()` blended the full velocity vector toward the target vector using `alignTime / 3`, which reaches commanded speed far too quickly and also couples turning and acceleration into one shortcut. That is not how destiny movement is modeled in Crucible.
+- Crucible keeps speed changes logarithmic and separate from heading changes. The practical reusable part for EvEJS is the scalar speed model: derive ship agility from `maxAccelerationTime / ln(10000)` (or `alignTime / ln(4)` as fallback), then move the current speed fraction toward the user-commanded speed fraction with an exponential curve. This matches the dataset already generated into `movementAttributes`.
+- Undock was also structurally wrong: `buildUndockMovement()` was setting full subwarp velocity on attach. That means the server began several seconds ahead of the client immediately after undock, before any player input. Safe rule: undock should set direction + commanded speed fraction, but velocity should still start at zero and be produced by the normal tick/acceleration path.
+- Repeating `SetSpeedFraction` on every `GotoDirection` / `FollowBall` / `Orbit` even when the fraction did not change is another avoidable desync source. The client already knows its throttle unless the server explicitly changes it; unnecessary speed-fraction echoes restart local motion state without adding authority.
+2026-03-10
+- Decompiled V23.02 `michelle.DoDestinyUpdate()` contains a critical rule we had still violated: every `DoDestinyUpdate` batch must contain only one timestamp. The client explicitly logs an error and treats mixed-timestamp batches as a desync condition:
+  - it collects all timestamps in the batch,
+  - if `len(timestamps) > 1`, it logs every action and calls `clientStatsSvc.OnFatalDesync()`.
+- EvEJS was still emitting exactly that invalid shape in several runtime paths:
+  - ship prime updates (`SetBallAgility`, `SetBallMass`, `SetMaxSpeed`, `SetBallMassive`),
+  - command updates where a movement command and a `SetSpeedFraction` were bundled together with different stamps,
+  - docking accept updates (`SetSpeedFraction`, `Stop`, `SetBallVelocity`),
+  - generic correction updates (`SetBallPosition`, `SetBallVelocity`).
+- Safe rule for this client build: either:
+  - all actions in one `DoDestinyUpdate` share the same stamp, or
+  - the server sends multiple `DoDestinyUpdate` notifications, one per stamp group.
+- Crucible `DestinyStructs.h` also confirmed that our live `GOTO` ball sector was still malformed. `GOTO_Struct` is:
+  - `uint8 formationID`
+  - `double x`
+  - `double y`
+  - `double z`
+  That `x/y/z` triple is the target point, not the normalized direction vector. Crucible `DestinyManager::GotoDirection()` sets `m_targetPoint = direction * 1.0e16`, which matches the client-side prediction model much better than our previous unit-vector encoding.
+- The warp FX failure was also confirmed from the decompiled V23.02 client:
+  - `fxSequencer.OnSpecialFX(self, shipID, moduleID, moduleTypeID, targetID, otherTypeID, area, guid, isOffensive, start, active, duration=-1, repeat=None, startTime=None, graphicInfo=None)`
+  - our user log showed `guid=()` and `isOffensive='effects.Warping'`, which is only possible if the payload shape/order is wrong at runtime.
+- Safe `OnSpecialFX` emission rule:
+  - use the `OnSpecialFX14` shape,
+  - send `area` as an actual list object, not a tuple-shaped nested array,
+  - keep `guid` in slot 6,
+  - include the optional duration/repeat/startTime/graphicInfo fields so the client's long-form handler is satisfied for warp startup.
+- Static celestials should also keep their imported semantic kind (`sun`, `planet`, etc.) in the live runtime entity. Flattening everything to generic `celestial` hides meaningful behavior differences and was already breaking type-specific warp stop logic in EvEJS itself.
+2026-03-10
+- Crucible `DestinyManager::BeginMovement()` and `SetSpeedFraction(..., startMovement=true)` explain a subtle but important client expectation: direction/approach/orbit changes are not just heading changes, they also restart the client's movement state even when the commanded throttle fraction stays the same. Safe rule for EvEJS:
+  - on `GotoDirection`, `AlignTo`, `FollowBall`, and `Orbit`, reissue `SetSpeedFraction(currentFraction)` alongside the command update,
+  - do not require the numeric speed fraction to change before sending it.
+- Crucible also strongly suggests that routine ship movement should not be corrected with repeated `SetBallPosition` packets. `SetPosition(..., update=true)` is used sparingly and even the reference comments frame position forcing as a debug / sync hack. Safe rule:
+  - ordinary subwarp should be command-driven plus local destiny simulation,
+  - `SetBallPosition` should be exceptional (attach / hard resync / warp),
+  - if correction is still needed during subwarp, prefer `SetBallVelocity` first.
+- The newest symptom change from live testing is diagnostically meaningful:
+  - when the ship itself visibly snaps, the piloting client is being re-anchored too aggressively;
+  - when the ship looks stable but the whole world jitters around it, the piloting client is free-running on local prediction while the rest of the world stays on server authority.
+  This means the correct fix is not simply "more" or "less" correction, but getting the movement-start handshake and ongoing ship simulation closer to the real client expectation so hard corrections are mostly unnecessary.
+2026-03-10
+- The boarding/login dogma activation contract is build-sensitive, and the live client log must take precedence over a conflicting decompile snapshot. The client currently under test throws `ValueError: need more than 3 values to unpack` when given a 3-slot activation tuple, so the compatible live rule for this build is:
+  - `ship.ActivateShip` returns a 4-slot activation tuple,
+  - dogma `allInfo.shipState` also returns a 4-slot tuple,
+  - the first three slots remain the usual instance-cache / charge-cache / weapon-bank data,
+  - the fourth slot is currently treated as a reserved compatibility payload and can remain empty.
+- Live client logs overrule the older decompiled `OnDockingAccepted` signature assumptions for this build. The active services (`svc.tacticalNavigation`, `svc.space`, `svc.dockingHeroNotification`) faulted with `OnDockingAccepted() takes exactly 2 arguments (4 given)` when EvEJS spread the dock-accepted payload into three notification args. Safe rule: send `OnDockingAccepted` as one notification argument containing the `[dockStartPos, dockEndPos, stationID]` payload object.
+- Movement tracing identified a server-integrator bug independent of packet shape: after `CmdGotoDirection`, the next tick still reconstructed heading from the previous velocity vector if velocity was non-zero. That makes the server drift back toward the old heading even though `targetPoint` and the client command point elsewhere. Safe rule: commanded `direction` must outrank stale `velocity` when building desired heading.
+- Current simulation harness now proves four core contracts before live restart:
+  - boarding produces one `shipid` session change per activation,
+  - undock produces one station-to-space session change,
+  - repeated `GotoDirection` commands keep server heading and velocity aligned to the fresh command,
+  - dock accept produces the corrected one-argument `OnDockingAccepted` notification shape and one final dock session change.
+2026-03-10
+- Decompile-first correction for normal subwarp commands:
+  - The live V23.02 client's double-click navigation path in `eve/client/script/ui/inflight/navigation.py` sends only `CmdGotoDirection(pickDir.x, pickDir.y, pickDir.z)`. It does not automatically send `CmdSetSpeedFraction()` on each heading change.
+  - That matters because EvEJS was still echoing `SetSpeedFraction(currentFraction)` back to the piloting client on every `GotoDirection`, `AlignTo`, `FollowBall`, and `Orbit`, even when the numeric throttle had not changed. Safe rule from the decompiled client command flow: only send `SetSpeedFraction` when movement is actually starting from rest or when the numeric throttle changes.
+  - The server-side heading model was also structurally wrong. If `gotoDirection()` immediately overwrites the live heading, then the tick integrator no longer performs a real turn; it starts from the target heading and only changes speed. Safe rule: movement commands should update the commanded target point / commanded direction, while the persisted live heading should continue to represent the ship's current heading and rotate toward the command over time.
+- `OnDockingAccepted` correction after live client evidence:
+  - The previous "one outer payload object" rule was disproved by the newer client traceback: `spaceMgr.OnDockingAccepted -> GetWarpDestinationName -> cfg.evelocations.Get(key=((...), (...), stationID))`.
+  - That traceback means the whole docking triple was arriving where `stationID` should have been, i.e. it was wrapped one level too deeply.
+  - Safe rule for the currently tested build: `OnDockingAccepted` notification args should be spread as the normal 3-item tuple `[dockStartPos, dockEndPos, stationID]`, not wrapped in an extra outer tuple/list.
+- New diagnostics:
+  - `server/logs/space-destiny-debug.log` now records every outbound `DoDestinyUpdate` sent to a client, including stamp, destiny function name, and summarized args. This should make any remaining piloting-client resync immediately attributable to a concrete outgoing packet sequence rather than guesswork.
+2026-03-10
+- Fresh live client traceback settles the current V23.02 `OnDockingAccepted` contract again: `DockingHeroNotificationService.OnDockingAccepted() takes exactly 2 arguments (4 given)` with runtime args `((...), (...), stationID)` means EvEJS must send one notification argument whose inner payload is `[dockStartPos, dockEndPos, stationID]`. Safe rule for this tested build: `session.sendNotification("OnDockingAccepted", "charid", [[dockStartPos, dockEndPos, stationID]])`.
+2026-03-10
+- Warp follow-up from fresh live testing:
+  - The running V23.02 client is still happier with the short warp startup effect shape used by Crucible, but the live traceback tightened it further: this tested client path behaves as if there is no positional `area` argument in the callback. The signature symptom `guid=[]` and `isOffensive='effects.Warping'` means EvEJS inserted one extra list slot before `guid`. Safe rule for current warp startup: send `OnSpecialFX` as `[shipID, moduleID, moduleTypeID, targetID, otherTypeID, guid, isOffensive, start, active]` with no `area` slot.
+  - Immediate `mode='WARP'` on command is too early. Safer rule: warp command first enters a normal align/accelerate phase using subwarp movement, then sends `WarpTo` once heading is within about `6 degrees` and actual speed is at least `~75%` of max.
+  - Warp completion also needs an explicit arrival anchor. `WarpTo` local prediction alone was not enough for this build; a final `SetBallPosition + SetBallVelocity(0) + Stop` at warp completion is the safer end-of-warp contract.
+  - The next live symptom after fixing startup/arrival was "aligns correctly, then teleports". The matching server trace showed EvEJS was no longer feeding the client any mid-warp state at all between `WarpTo` and the final arrival anchor. Safe rule for the current build: send sparse mid-warp `SetBallPosition` anchors to the piloting client during `mode='WARP'`, and keep warp velocity updates observer-only so the pilot HUD does not fall back to absurd raw `m/s` readouts.
+2026-03-10
+- The live in-space login path for this V23.02 client is stricter than the earlier harness implied:
+  - `michelle.AddBallpark()` calls `beyonce.GetFormations()` and then the client binds the remote ballpark via `beyonce.MachoBindObject`.
+  - Removing bootstrap from `GetFormations()` was correct, but it also revealed that EvEJS was no longer sending the initial ballpark at all for the real login path.
+  - Safe rule for EvEJS: initial `AddBalls2` / `SetState` must happen after the `beyonce.MachoBindObject` response has gone back to the client, not from `GetFormations()` and not only from a later `UpdateStateRequest()`.
+- Local verification with the real active ship data now confirms the correct post-bind order:
+  - bound-object `CALL_RSP` first,
+  - then `DoDestinyUpdate(AddBalls2, waitForBubble=True)`,
+  - then `DoDestinyUpdate(SetState)`,
+  - then ship prime / mode follow-up updates.
+- Safe implementation pattern:
+  - let the service return the normal Macho bound-object response,
+  - only after that response is written should the service trigger initial space bootstrap,
+  - keep `ensureInitialBallpark()` idempotent so later probes like `UpdateStateRequest()` do not duplicate the scene.
+2026-03-10
+- Movement research correction: the still-bad live jitter was not evidence that `GotoDirection` itself was malformed. The stronger signal came from server traces showing that command packets were sane while the active ship's heading barely changed for capital-class agility values.
+- The previous turn-rate curve was:
+  - `degPerTick = max((60 - agilitySeconds) / 10, 0.05)`
+  This is acceptable only for subcapital agility ranges. Once `agilitySeconds` exceeds about `60`, the floor value `0.05` makes the server turn nearly stall. That leaves the piloting client free-running on local prediction while server authority keeps traveling mostly along the old heading.
+- A bounded inverse agility curve matches the intended qualitative behavior better across the whole hull range:
+  - `degPerTick = clamp(75 / agilitySeconds, 0.75, 12)`
+  This keeps frigates sharp, battleships moderate, and Titans slow but finite.
+- Verified harness results for 90-degree full-speed turns after the fix:
+  - `agility=3.3`: completes in about `0.5s`
+  - `agility=14.45`: completes in about `1.1s`
+  - `agility=40`: completes in about `2.8s`
+  - `agility=81.6`: completes in about `5.6s`
+- The Titan result is the important one: before this change the same harness did not converge within the 60-second test window, which explains why repeated direction changes could accumulate obvious server/client divergence even without any malformed packet payloads.
+2026-03-10
+- Warp follow-up from fresh live traces:
+  - the remaining "align -> warp -> teleport a few seconds later" symptom was not just missing FX. The server trace showed EvEJS was genuinely finishing a roughly `3 AU` warp in about `4s`, so the current runtime warp profile was too short even before client presentation was considered.
+  - Crucible's function flow remains the useful reference point here, not its packet bytes: `WarpTo` starts the warp state, local/client motion is expected to own most of the visual travel, and the server should not keep hard-reanchoring the piloting client through warp with repeated `SetBallPosition` teleports.
+  - Safe runtime rule for this client build:
+    - use a longer distance-based warp profile instead of the old short linear accel/decel profile;
+    - keep the pilot on `WarpTo` local simulation plus a final arrival anchor;
+    - reserve mid-warp position/velocity anchors for observers only;
+    - warp-to-station should default to at least `10 km` off the station hull, not `0`, to avoid collision/bump spikes on landing.
+2026-03-11
+- Fresh `client/warplogs.txt` finally exposed the current warp regression directly:
+  - on the same tick as `WarpTo` / `OnSpecialFX`, the piloting client receives immediate mid-warp `SetBallPosition` + `SetBallVelocity` updates for its own ship;
+  - the client then logs `Ship stuck in extended warp ... warpDistance:-1.000000 ... interpolating:0`, flips the ship model controller variable `IsWarping` back to `False`, and `FxSequencer` removes `effects.Warping` immediately after startup;
+  - that matches the visible symptom exactly: travel still happens, but the tunnel/shake never latch and the camera/orientation keep resetting while the HUD falls back to absurd raw `m/s` values.
+- Safe rule after this log pass:
+  - do not send pilot-side mid-warp `SetBallPosition` / `SetBallVelocity` re-anchors;
+  - keep warp correction observer-only during `mode='WARP'`;
+  - let the piloting client stay on local `WarpTo` simulation until the explicit arrival anchor at warp completion.
+2026-03-11
+- `client/warplogs2.lsw` added the next missing clue:
+  - this build now throws a client exception during warp startup: `TypeError: argument of type 'int' is not iterable` from `Warp.Prepare -> AlignToDirection -> GenericEffect.Prepare`;
+  - the decompiled path shows that this happens when the warp effect falls into `AlignToDirection()`'s zero-direction fallback and re-enters `Prepare()` with scalar `transformFlags`;
+  - the server-side WARP ball itself decodes correctly in the captured `SetState`, so the stronger regression signal is sequencing: EvEJS is still sending a full destiny `SetState` at warp entry, while Crucible's warp start sends `WarpTo`, then `OnSpecialFX`, then self-only `SetBallMassive(false)` with no warp-entry `SetState`.
+- Safer rule after the second log pass:
+  - do not send a full `SetState` to the piloting client at warp entry;
+  - keep warp start aligned to the reference order: `WarpTo` + `OnSpecialFX`, then self-only `SetBallMassive(false)`;
+  - reserve full `SetState` refreshes for bootstrap / hard resync / post-transition cases instead of the live warp-start tick.
+2026-03-11
+- `client/warplogs3.txt` shows the warp-start exception is gone, but the piloting client still does not render the tunnel/shake:
+  - the client now cleanly enters the warp effect lifecycle: `WarpState -> 1`, `effects.Warping`, `IsWarping=True`, `WarpState -> 2`, and `warptunnel.red` loads;
+  - however the effect never visibly latches before landing, and warp completion still ends with a self `SetState` right after `SetSpeedFraction(0)` / `SetBallPosition` / `SetBallVelocity(0)` / `Stop` / `SetBallMassive(true)`;
+  - decompiled V23.02 warp code explains the missing visuals: tunnel ignition and camera shake read live ego-ball velocity (`ball.vx/vy/vz`) and `shipModel.speed.value` while `ball.mode == DSTBALL_WARP`.
+- Safer rule after the third log pass:
+  - keep pilot-side warp position watcher-only to avoid interpolation resets;
+  - restore pilot-side mid-warp `SetBallVelocity` so the ego ball still feeds the warp tunnel / shake path without hard re-anchoring;
+  - do not send a full self `SetState` on warp completion; let the arrival anchor and `Stop` end the warp naturally.
+2026-03-11
+- `client/warplogs4.txt` confirms the velocity-only correction was only a partial fix:
+  - camera shake now works, which means pilot-side warp velocity is reaching the ego ball and the warp effect loop is consuming `ball.vx/vy/vz`;
+  - but the warp destination UI stays pinned at `3.01 AU` for the full duration, and the client only changes location when the final arrival `SetBallPosition` lands;
+  - this means the ego ball still is not advancing through warp space visually, even though the effect object is alive and the camera shake path is active.
+- Safer rule after the fourth log pass:
+  - keep frequent pilot-side warp velocity updates for shake/speed signalling;
+  - reintroduce pilot-side warp `SetBallPosition`, but only as a sparse anchor cadence instead of the old 250 ms spam;
+  - use sparse pilot position anchors to drive visible travel/tunnel progression without going back to the earlier hard-reset jitter path.
+2026-03-11
+- `client/warplogs5.txt` disproves the sparse-anchor follow-up and points back at warp startup itself:
+  - the pilot still receives immediate same-stamp warp corrections right on top of `WarpTo` / `OnSpecialFX`, which rebases destiny history on the warp-start tick before the client ever gets a clean local warp step;
+  - the added sparse pilot `SetBallPosition` packets reintroduce orientation fighting without fixing visible warp travel;
+  - `warplogs4.txt` and `warplogs5.txt` also never show the client crossing the `OnWarpStarted2` path, which strongly suggests the ego ship's local warp-speed curve is never being initialized even though `WarpState -> 2` and camera shake do happen.
+- Safer rule after the fifth log pass:
+  - do not send any pilot-side warp `SetBallPosition` anchors;
+  - do not send pilot-side warp velocity corrections on the exact same destiny stamp as `WarpTo`;
+  - seed `WarpTo` with the raw warp destination plus the separate stop range, not the already stop-adjusted target point.
+2026-03-11
+- `client/warplogs6.txt` narrows the remaining failure from "warp startup order" down to the ego ball's local speed state:
+  - the pilot now receives the corrected raw-destination `WarpTo`, enters `WarpState -> 1/2`, and keeps getting large mid-warp `SetBallVelocity` updates with no pilot `SetBallPosition` spam;
+  - camera shake still works, which matches the decompiled `Warp.ShakeCamera()` path reading raw `ball.vx/vy/vz`;
+  - but the client still never logs `OnWarpStarted2`, the warp distance UI stays pinned at `8.65 AU`, and the visible ship position never advances until the final arrival anchor;
+  - the decompiled warp effect explains the split: tunnel/audio ignition uses `shipModel.speed.value`, not raw `ball.vx/vy/vz`, so a pilot ball that keeps its subwarp `SetMaxSpeed(89)` can shake without ever crossing the tunnel-speed threshold.
+- Safer rule after the sixth log pass:
+  - keep pilot warp correction velocity-only and keep pilot warp positions disabled;
+  - seed the piloting client with a warp-time `SetMaxSpeed` on the warp-start stamp so the ego ball can build a real local warp speed curve;
+  - restore the normal subwarp `SetMaxSpeed` on warp completion alongside the existing arrival anchor / `Stop` path.
+2026-03-11
+- `client/warplogs7.txt` shows the warp-speed seed did unlock visible tunnel FX, but it also exposed the next ego-ball conflict:
+  - the pilot now receives `SetMaxSpeed(448793612100)` before `WarpTo`, and the client finally renders a warp tunnel instead of staying completely stationary;
+  - `Space::IndicateWarp` starts dropping at first (`20.63 AU -> 20.12 AU`) instead of staying totally pinned, so the client's local warp progression is no longer fully dead;
+  - however the client log also shows `State history rebased ... newBaseSnapshot True` on every pilot-side mid-warp `SetBallVelocity` batch, which lines up with the ship orientation fighting and the distance display stalling mid-warp;
+  - the decompiled warp loop supports that read: once the tunnel is live, continuous self velocity re-anchors are more likely to fight local warp simulation than help it.
+- Safer rule after the seventh log pass:
+  - keep the warp-time `SetMaxSpeed` seed that unlocked the tunnel;
+  - keep pilot warp `SetBallPosition` disabled;
+  - restrict pilot warp `SetBallVelocity` to the accel/decel edges only, and let the cruise phase stay on local `WarpTo` simulation.
+2026-03-11
+- `client/warplogs8.txt` shows the first "edge-only" velocity gate was still too wide to matter:
+  - the server was still evaluating the pilot velocity window as `elapsed <= accelTime + 750 ms OR remaining <= decelTime + 750 ms`, and with a ~35 s warp plus ~21 s decel that overlap covered almost the whole trip;
+  - destiny stamps only advance at 1 Hz, but warp correction was still running every `250 ms`, so the pilot kept receiving multiple self `SetBallVelocity` packets on the same stamp (`(x2)/(x3)/(x4)`), followed by `State history rebased` on the client;
+  - that matches the remaining symptoms exactly: tunnel visible, but ego orientation fights, warp distance stalls around the early drop, and arrival is still a final teleport.
+- Safer rule after the eighth log pass:
+  - keep the warp-time `SetMaxSpeed` seed that unlocked the tunnel;
+  - keep pilot warp `SetBallPosition` disabled;
+  - reduce pilot self `SetBallVelocity` to a fixed short start/end window only, and never send more than one pilot self velocity correction per destiny stamp.
+2026-03-11
+- `client/warplogs9.txt` shows the fixed `1.5 s` pilot window overcorrected in the other direction:
+  - the pilot now avoids the continuous rebases from `warplogs7/8`, but the client never reaches `WarpState -> 2`; it stays at `WarpState -> 1` through travel and only flips to `4/5` on teardown;
+  - warp distance now drops correctly for the first half of the trip, which means local `WarpTo` travel is finally alive, but the client then overshoots the late warp approach, starts increasing distance again, and eventually gets snapped back by the final arrival anchor;
+  - the current warp-time `SetMaxSpeed(peakWarpSpeed)` seed is also a likely reason camera shake vanished: the decompiled shake path normalizes against `ball.maxVelocity`, so seeding full cruise warp speed leaves almost no headroom for raw warp velocity to produce shake.
+- Safer rule after the ninth log pass:
+  - seed the piloting client with only a fraction of peak warp speed, enough to cross the tunnel activation threshold without zeroing out shake;
+  - keep pilot warp `SetBallPosition` disabled;
+  - send pilot self `SetBallVelocity` once per destiny stamp during real warp startup and again during the final approach, but still leave the cruise phase local.
+2026-03-11
+- `client/warplogs10.txt` shows the reduced warp-speed seed fixed the "no local travel at all" side, but it also exposed two remaining mismatches:
+  - the pilot now reaches `WarpState -> 2` again and the warp distance drops steadily at first (`26.49 AU -> 25.25 AU`), so the startup guidance window is long enough to get the ego ball into active warp;
+  - however the `20%` pilot `SetMaxSpeed` seed is still too weak to carry local travel through the full warp, and the client never catches up to the server's late phase on its own;
+  - the server was still using its own remaining distance (`<= 5 AU`) to decide when to resume pilot self `SetBallVelocity`, which means the client started receiving late-warp self velocities while it still thought it was roughly `25 AU` away;
+  - from that point onward every self `SetBallVelocity` triggers `State history rebased`, the warp distance freezes at `25.25 AU`, and landing still ends in a final anchor/stop snap.
+- Safer rule after the tenth log pass:
+  - raise the pilot warp-speed seed above the current `20%` so local warp travel stays closer to the server profile;
+  - keep pilot warp `SetBallPosition` disabled;
+  - gate late pilot self `SetBallVelocity` on a short final-time window, not server-side remaining distance, so the server cannot start rebasing the ego ball while the client still believes it is far from the destination.
+2026-03-11
+- `client/warplogs11.txt` shows the `50%` seed plus startup self velocity still keeps the piloting client out of full local warp for too long:
+  - the pilot now drops distance across most of the trip (`26.46 AU -> 11.34 AU`), so local `WarpTo` travel is alive end-to-end instead of freezing at the midpoint;
+  - however `WarpState -> 2` still does not happen until the client is already down to roughly `11.34 AU`, which matches the user's "ultra slow warp speed" readout and missing shake/arrival buildup;
+  - the server destiny trace confirms the pilot still receives one self `SetBallVelocity` on each startup stamp (`1773197510`..`1773197514`), and each one is followed by `State history rebased` in the client log;
+  - that lines up with the visible speed curve repeatedly resetting during startup, while the `50%` warp-time `SetMaxSpeed` seed is still too weak to get `shipModel.speed.value` over `OnWarpStarted2` early enough on its own.
+- Safer rule after the eleventh log pass:
+  - remove pilot self `SetBallVelocity` from the startup phase entirely and let warp entry stay on pure local `WarpTo` simulation;
+  - raise the pilot warp-time `SetMaxSpeed` seed again, but still keep it below full cruise warp so the shake path retains headroom;
+  - keep late pilot self `SetBallVelocity` limited to the final safe slice of decel and stop it before the completion stamp.
+2026-03-11
+- `client/warplogs12.txt` shows the `85%` seed plus zero startup self velocity overshoots in the other direction:
+  - the pilot still never reaches `WarpState -> 2`; the client only logs `WarpState -> 1`, then later `4/5` on teardown;
+  - local travel is now fast enough to drop from `8.56 AU` to `0.11 AU`, but then the client starts increasing distance again (`0.86 AU -> 4.88 AU`) before the server's late guidance window begins;
+  - the server trace for that warp confirms the first pilot self `SetBallVelocity` does not arrive until stamp `1773200015`, long after the client has already overshot the destination locally;
+  - that means removing startup self velocity entirely fixed the visible resets, but it also left the local solver under-initialized while the stronger seed let it outrun the server on shorter warps.
+- Safer rule after the twelfth log pass:
+  - lower the pilot warp-time `SetMaxSpeed` seed from the current `85%` to a middle value instead of leaving it near full cruise;
+  - restore only a tiny startup self-velocity assist, capped to the first two destiny stamps after `WarpTo`, so the client has a chance to reach `WarpState -> 2` without the old every-second reset pattern;
+  - keep the existing late self-velocity guard that stops before the completion stamp.
+2026-03-11
+- `client/warplogs13.txt` shows the remaining overshoot was not just a bad pilot seed; the server warp profile itself was compressing almost the entire trip into cruise:
+  - the piloting client still only logged `WarpState -> 1`, then later `4/5`, while local distance fell to about `1.01 AU` and then reversed outward again before the final anchor;
+  - for this `3 AU/s` hull, the existing runtime was still building long-warp `accelDistance` and `decelDistance` from raw `exp(21)` terms, which only reserve about `0.009 AU` for each edge leg;
+  - that means the server stayed at cruise almost the whole warp, then reached completion while the client still believed it had roughly `1 AU` left, matching the late orientation fight and distance reversal in the log;
+  - ship-specific warp speed matters directly here, while align time mostly affects entry timing before `WarpTo`.
+- Safer rule after the thirteenth log pass:
+  - derive warp accel/decel distance from the ship's actual warp speed and subwarp entry floor instead of the fixed `exp(21)` hack;
+  - classify short warps based on whether the ship can actually fit both warp edge legs, not on a one-second cruise-speed distance shortcut;
+  - keep the current pilot seed/guidance settings for now and retest against the corrected server warp profile before tuning them again.
+2026-03-11
+- `client/warplogs14.txt` confirms the server warp profile fix worked, but it also narrows the remaining client mismatch:
+  - the piloting client now drops distance almost to destination on its own (`20.67 AU -> 1.24 AU`) and finally reaches `WarpState -> 2` again;
+  - however `WarpState -> 2` still does not appear until the ship is only about `1.24 AU` out, which explains the missing full-warp feel and absent camera shake;
+  - the client then sits at that same `1.24 AU` distance until the final late self-velocity window, and the two startup self `SetBallVelocity` rebases still make warp entry look like a small teleport into the tunnel.
+- Safer rule after the fourteenth log pass:
+  - keep the corrected ship-speed-based server warp profile;
+  - raise the pilot warp-time `SetMaxSpeed` seed again, but make it depend on ship warp speed and overall warp length instead of using one global percentage;
+  - cut startup self `SetBallVelocity` back to a single post-`WarpTo` stamp so entry is less abrupt while the stronger adaptive seed carries the client into full warp earlier.
+2026-03-11
+- `client/warplogd15.txt` answers the "are we using live data or just hard values?" question more clearly:
+  - the runtime is already using the real per-warp destination distance plus live ship movement stats (`warpSpeedAU`, `alignTime`, and the ship's subwarp `maxVelocity`) when it builds warp start and warp travel;
+  - but the in-warp travel shape was still partly hardcoded around the old Crucible long-warp asymmetry (`accel k=3`, `decel k=1`) plus a fixed `2.5 s` pilot late-guidance window;
+  - on this `8.57 AU`, `3 AU/s` warp the client reaches the destination region much earlier than that old server curve, dropping from `8.57 AU` to about `2,676,373 km` before looping back outward to `4.63 AU`, which means the server is still "in warp" long after the client has already passed the target locally;
+  - the same early-arrival / late-server pattern was already visible in the longer `20.63 AU` full-seed logs, so this is not just one bad percentage on one ship.
+- Safer rule after the fifteenth log pass:
+  - keep using live ship and destination data, but stop treating the old Crucible `3/1` long-warp timing as authoritative for the current client;
+  - shorten the generated server warp profile to a steeper symmetric shape so server completion stays closer to the client's first near-target pass instead of the later overshoot loop;
+  - shrink pilot late self `SetBallVelocity` to roughly one final destiny stamp, so the shorter server warp does not start rebasing the pilot a few AU early.
+2026-03-11
+- `client/warplogs15.txt` on the shorter symmetric profile shows the big timing mismatch is finally gone:
+  - the piloting client now drops distance cleanly from `2.93 AU` to about `0.16 AU` with no outward overshoot loop before landing;
+  - the remaining bad feel is concentrated at the two pilot-only edge assists: one self `SetBallVelocity` still arrives on the first post-`WarpTo` stamp and rebases destiny history at warp entry, and another arrives on the last in-warp stamp just before the final `SetBallPosition + Stop` batch, after which the distance bounces back to `0.68 AU`;
+  - the client still does not log `WarpState -> 2` / `OnWarpStarted2`, so if those are still missing after the edge rebases are removed the next tuning target is the pilot warp-speed seed rather than more self velocity.
+- Safer rule after the sixteenth log pass:
+  - remove pilot self `SetBallVelocity` from warp startup and final approach entirely now that the server warp curve itself no longer overshoots;
+  - keep watcher velocity corrections so non-piloting observers still track the server warp motion;
+  - slightly strengthen the short-warp pilot `SetMaxSpeed` seed instead of using self velocity to force entry.
+2026-03-11
+- `client/warplogs16.txt` shows the fixed symmetric `5/5` warp profile overcorrected on longer warps:
+  - entry is cleaner because the first post-`WarpTo` self rebase is gone, and the tunnel still loads;
+  - but on a `30.99 AU`, `3 AU/s` warp the client only reaches about `12.57 AU` before the server sends the landing `SetBallPosition + Stop` batch, which means the server profile is now finishing far too early for longer trips;
+  - the client still never logs `WarpState -> 2` / `OnWarpStarted2`, so the pilot is not climbing into full local warp quickly enough on long runs even with the existing `80%` seed.
+- Safer rule after the seventeenth log pass:
+  - make warp accel/decel exponents depend on actual warp length instead of forcing one global curve across short and long warps;
+  - keep short warps on the steeper symmetric profile that stopped the old overshoot loop, but relax medium/long warps back toward a slower server profile;
+  - for long warps, use a delayed pilot `SetMaxSpeed` bump instead of self `SetBallVelocity`, so the client has time to ramp up toward full warp without reintroducing edge rebases.
+2026-03-11
+- `client/warplogs17.txt` shows the remaining long-warp overshoot is concentrated in the very last warp tail, not the main cruise:
+  - on the current `26.50 AU`, `3 AU/s` run, the client distance falls cleanly to about `0.69 AU`, then starts increasing outward again before the landing batch arrives;
+  - the matching server trace shows that by the time the client first starts that outward loop, the server warp ball is already within about `2,300 km` of the final stop point and only spends the next several seconds asymptotically decelerating the last few kilometers;
+  - that means the main warp duration is now close enough, but waiting for the exponential decel to hit exact zero gives the piloting client extra time to diverge locally around the destination.
+- Safer rule after the eighteenth log pass:
+  - keep the current ship-speed- and distance-based warp profile for the main travel;
+  - end warp once the server enters a small arrival envelope near the stop point instead of riding the final asymptotic decel all the way to exact zero;
+  - scale that arrival envelope from the real stop distance, with clamps, so the cutoff stays tiny on gates/planets but is still large enough to trim the several-second tail on long star warps.
+2026-03-11
+- `client/warplogs18.txt` shows the arrival-envelope change removed the large late overshoot loop, but the client is still missing the real warp-active lifecycle:
+  - on the `26.41 AU`, `3 AU/s` run the distance now falls cleanly from `26.41 AU` down to about `0.69 AU` before the landing batch, so the main server warp timing is close enough and the old several-AU outward loop is gone;
+  - however the piloting client still never logs `WarpState -> 2`, `OnWarpStarted2`, or the usual warp audio triggers, which matches the user's "instant tunnel, no shake, then spawn at destination" description;
+  - the matching destiny trace shows the pilot now gets a very aggressive warp-start `SetMaxSpeed(426353931495)` on the same stamp as `WarpTo`, then a second full-cruise `SetMaxSpeed(448793612100)` two destiny stamps later, and both packets are followed by `State history rebased` in the client log;
+  - that means the remaining edge mismatch is no longer the main warp curve itself; it is the pilot startup assist being too front-loaded and too strong to produce a natural local ramp into the client's warp-active path.
+- Safer rule after the nineteenth log pass:
+  - keep the current ship-speed- and distance-based server warp profile plus the arrival-envelope completion rule;
+  - lower the pilot warp-time `SetMaxSpeed` seed back into a mid-range value instead of driving long warps near full cruise on the first stamp;
+  - remove the early full-cruise `SetMaxSpeed` bump, and if the pilot still needs help crossing into active warp, send at most one delayed self `SetBallVelocity` nudge later in the accel leg rather than right after `WarpTo`.
+2026-03-11
+- `client/warplogs19.txt` shows the delayed-start tweak fixed a different part of the puzzle, but it also exposed the next missing phase handoff:
+  - the piloting client now gets warp shake again, which means the delayed self `SetBallVelocity` nudge is finally feeding the ego ball enough raw warp velocity to wake the shake path;
+  - however the client still never logs `WarpState -> 2`, and it is still about `10.80 AU` out when the server sends the landing `SetBallPosition + Stop` batch on this `26.43 AU`, `3 AU/s` warp;
+  - the matching destiny trace explains why: the pilot now only gets one startup `SetMaxSpeed(314155528470)` at warp entry, then two delayed self `SetBallVelocity` nudges around stamps `1773231919/1920`, but it never gets a later full-cruise `SetMaxSpeed` once the server itself reaches cruise;
+  - that leaves the client stuck in a pseudo-accel state for the whole warp: raw speed is high enough to keep shake running, but the local warp-speed curve never plateaus into full warp and never has a distinct decel leg before the final stop.
+- Safer rule after the twentieth log pass:
+  - keep the softer pilot warp-speed seed at warp entry so tunnel startup does not snap immediately to full warp;
+  - for longer warps, restore one pilot-only full-cruise `SetMaxSpeed`, but delay it until the server is actually at or just past the accel-to-cruise handoff rather than firing it in the first couple of warp stamps;
+  - once the server reaches the decel leg, drop the pilot's warp-time `SetMaxSpeed` back down from full cruise so shake/tunnel behavior can hand off into visible warp exit instead of staying in "accel shake" until the landing anchor.
+2026-03-11
+- `client/warplogs20.txt` shows the extra pilot `SetMaxSpeed` phases were the wrong direction:
+  - the client does receive `WarpTo`, `OnSpecialFX`, and even `WarpState -> 2`, so the tunnel path itself is not gone;
+  - but the new pilot-only `SetMaxSpeed(448793612100)` followed by `SetMaxSpeed(89)` causes `State history rebased at 1773234965`, and the later landing `SetBallPosition + Stop` batch is then logged as `Events ignored`;
+  - that matches the user's "warp drive active forever / no real movement / stuck indicator" report: the local warp state gets wedged by the mid-warp pilot max-speed rebases before the landing batch can cleanly collapse it.
+- Safer rule after the twenty-first log pass:
+  - keep only the warp-start pilot `SetMaxSpeed` seed;
+  - remove the delayed pilot-only cruise/decel `SetMaxSpeed` schedule entirely;
+  - if the pilot still needs help entering visible warp, use at most one delayed self `SetBallVelocity` during the accel leg, on a single destiny stamp, and do not schedule any other pilot-side rebases during the warp.
+2026-03-11
+- `client/warplogs21.txt` shows the rollback recovered the tunnel/shake baseline, but it also confirms what the client still lacks:
+  - the pilot gets the warp-start seed `SetMaxSpeed(314155528470)` and one delayed accel-leg `SetBallVelocity`, but there is no later pilot cruise-speed handoff;
+  - the distance drops smoothly from `26.44 AU` to `12.74 AU`, then the server lands, so the client is moving locally again but still never gets close enough by the end of the warp;
+  - unlike `warplogs20`, there is no pilot mid-warp max-speed reset before landing, so the old wedge is gone; the remaining issue is that `shipModel.speed.value` never climbs high enough to create a real full-warp cruise plateau and corresponding decel-out.
+- Safer rule after the twenty-second log pass:
+  - keep the current warp-start seed and the one delayed accel-leg pilot self `SetBallVelocity`;
+  - restore only one delayed pilot-only cruise `SetMaxSpeed`, on the same stamp as that accel-leg handoff;
+  - do not restore the later pilot max-speed drop before landing, because that was the part that caused the `warplogs20` history-rebase failure.
+2026-03-11
+- `client/warplogs22.txt` shows the restored cruise bump needs to be separated from the startup rebase instead of paired with it:
+  - the client gets the long-warp seed `SetMaxSpeed(314155528470)` plus an immediate `OnSpecialFX effects.Warping` on stamp `1773235855`, so entry still snaps straight into the tunnel;
+  - five stamps later the pilot gets both `SetMaxSpeed(448793612100)` and self `SetBallVelocity(...)` on stamp `1773235860`, after which the client rebases history and the indicated distance jumps backward from `19.96 AU` to `24.75 AU`;
+  - the client then falls back inward again but still lands at about `3.60 AU` with no `WarpState -> 2`, which means the same-stamp cruise handoff is harming local progress instead of creating a real cruise plateau.
+- Safer rule after the twenty-third log pass:
+  - keep the corrected ship-speed- and distance-based server warp curve;
+  - split long-warp startup into separate pilot-side phases: `WarpTo` plus the softer seed first, one earlier accel-leg self `SetBallVelocity` to wake shake, then a later cruise-speed `SetMaxSpeed` near the end of the accel leg;
+  - move the warp FX activation to that later cruise handoff on long warps, and stop keying pilot correction stamps off the FX stamp itself, so the client can accelerate before the tunnel without future-dated rebases.
+2026-03-11
+- `client/warplogs23.txt` shows why the first delayed-FX attempt wedged the pilot in warp:
+  - the server pre-sent pilot `OnSpecialFX effects.Warping` plus `SetMaxSpeed(448793612100)` for future stamp `1773236389`, so the client rebased its history to that future point as soon as the startup batch arrived;
+  - the real-time pilot accel-leg `SetBallVelocity` then arrived later with older stamp `1773236384`, failed `SynchroniseToSimulationTime`, and forced another history reset;
+  - after that double rebase, the landing `SetBallPosition + Stop` batch at `1773236401` was logged with `Events ignored`, which matches the user's report of overshoot, tunnel persistence, and getting stuck near the destination instead of collapsing out of warp.
+- Safer rule after the twenty-fourth log pass:
+  - never pre-send future-dated pilot warp FX or cruise-speed updates in the initial warp-start batch;
+  - if pilot tunnel/cruise needs to start later than `WarpTo`, emit those packets only from the live warp tick once the scheduled stamp is current, and stamp them with the current destiny tick rather than an older scheduled tick;
+  - keep the earlier accel-leg pilot self `SetBallVelocity`, because the bad behavior in `warplogs23` came from out-of-order future/past pilot packets, not from that one live-tick velocity assist itself.
+2026-03-11
+- `client/WarpLogs24.txt` shows the live-tick delayed-FX ordering fix worked, but the pilot is still under-driven into cruise:
+  - the pilot now gets `WarpTo` cleanly at `1773236850`, the early accel-leg self `SetBallVelocity` at `1773236853`, and the delayed cruise `SetMaxSpeed(448793612100) + OnSpecialFX` together on the live stamp `1773236858`, with no ignored landing batch afterward;
+  - however the client still never logs `WarpState -> 2`, and it is still about `3.66 AU` out when the landing `SetBallPosition + Stop` batch arrives at `1773236872`;
+  - that means the delayed cruise handoff is now ordered correctly, but `SetMaxSpeed + OnSpecialFX` alone is still not enough to push the pilot's local warp simulation up to a real full-warp plateau before the server finishes.
+- Safer rule after the twenty-fifth log pass:
+  - keep the live-tick delayed cruise/tunnel handoff introduced after `warplogs23`;
+  - add one pilot self `SetBallVelocity` on that same live cruise-handoff stamp, using the server's current warp velocity, so the pilot gets an actual local velocity transition into full warp instead of only a max-speed ceiling change;
+  - do not restore any future-dated packets or any later pilot max-speed reset, since those were the parts that broke `warplogs23` and `warplogs20`.
+2026-03-11
+- `client/warplogs25.txt` shows that extra live cruise-handoff self `SetBallVelocity` was a regression on the shorter Jita VI warp:
+  - the pilot accepted `SetMaxSpeed(448793612100) + SetBallVelocity + OnSpecialFX` together at `1773237186`, rebased history, then froze at `19.47 AU` until the landing teleport;
+  - that means the delayed live-tick ordering fix from `WarpLogs24` was still correct, but the added same-stamp cruise self-velocity wedged the pilot's local warp solver on this shorter long-warp case.
+- Safer rollback after `warplogs25`:
+  - keep the live-tick delayed cruise `SetMaxSpeed + OnSpecialFX` handoff introduced after `warplogs23`;
+  - remove the extra pilot self `SetBallVelocity` from that cruise-handoff stamp and treat `WarpLogs24` as the last known-good warp state until a different cruise handoff is tested.
+2026-03-11
+- `client/warplogs27.txt` confirms the rollback recovered the old baseline, but it also shows the remaining timing mismatch very clearly:
+  - on the short `~3.22 AU` warp, the delayed cruise/tunnel handoff does not arrive until `1773238798`, when the client is already only about `0.85 AU` from the tunnel destination;
+  - on the longer `~19.97 AU` warp, the delayed cruise handoff arrives at `1773238819`, but `WarpState -> 2` still does not happen until the client is around `2.47 AU` from destination, so landing still looks like a late snap instead of a visible decel-out;
+  - both runs still use the same fixed `95% of accel leg` handoff timing, which is simply too late for this 5 AU/s hull.
+- Safer rule after `warplogs27`:
+  - keep the live-tick delayed `SetMaxSpeed + OnSpecialFX` handoff and keep the cruise self-velocity rollback from `warplogs25`;
+  - move the cruise/tunnel handoff earlier in the accel leg, but still keep it at least one full destiny stamp after the startup self `SetBallVelocity` assist so the two pilot-side rebases stay separated.
+2026-03-11
+- `client/warplogs28.txt` plus the copied `docs/warpofficial.txt` show the remaining server warp profile mismatch is in the curve itself, not just in pilot packet timing:
+  - the official CCP-derived model uses `k_accel = warpSpeedAU`, `k_decel = min(warpSpeedAU / 3, 2)`, `warpDropoutSpeed = min(maxSubwarp / 2, 100)`, exactly `1 AU` of accel distance, and roughly `3 AU` of decel distance for hulls up to `6 AU/s`;
+  - the current runtime had already drifted away from that by reusing a subwarp entry floor for both accel and decel and by swapping between hard-coded exponent buckets (`5/5`, `4/3`, `3/2`) based on total warp length;
+  - on the `~22.46 AU`, `5 AU/s` case from `warplogs28`, that made the server decel leg only about `7.25 s` instead of the official `~13.6 s`, which matches the client entering the tunnel and then freezing around `8.98 AU` while the server ran out of warp too early.
+- Safer rule after the twenty-eighth log pass:
+  - replace the generated warp profile with the official CCP/EVE-Uni curve directly, using live per-ship `warpSpeedAU`, live per-ship subwarp max velocity, and the actual per-warp target distance;
+  - keep the current pilot-side startup/tunnel heuristics for now, and only retune those after the server accel/cruise/decel durations match the documented curve again.
+2026-03-11
+- Follow-up against `docs/warpofficial.txt`:
+  - even after matching the server curve, the pilot tunnel/cruise handoff was still keyed off a hard-coded `70% of accel leg` stamp;
+  - that heuristic is not part of the official model, and it explains the remaining "snap into tunnel before full warp" feel the user still sees on entry.
+- Safer rule after the official-curve follow-up:
+  - keep the pilot startup seed and startup self-velocity assist;
+  - move the delayed pilot `SetMaxSpeed + OnSpecialFX` handoff to the actual end of the official accel phase, using `ceil(accelTimeMs / destinyStampInterval)`, so the tunnel starts when the warp profile reaches cruise instead of partway through accel.
+2026-03-11
+- `client/warplogs30.txt` shows the official server curve is now behaving, but the pilot-side phase timing is still too coarse:
+  - on the `~22.46 AU`, `5 AU/s` warp, the server itself reaches full cruise by around stamp `1773272688`, but the pilot only gets the cruise `SetMaxSpeed(747989353500)` and `effects.Warping` together at `1773272690`;
+  - the pilot then does not hit `WarpState -> 2` until the client is already about `4.38 AU` from destination, and that distance stays pinned until the landing batch, which matches the user's "never reaches full warp, teleports into and out of the tunnel" report.
+- Safer rule after `warplogs30`:
+  - split the old single cruise/tunnel handoff into separate pilot phases: raise pilot warp max speed one stamp before the tunnel FX, then start `effects.Warping` on the next stamp;
+  - add one live decel-side pilot `SetMaxSpeed` drop at the actual server decel-start stamp, but keep it at a warp-time speed instead of resetting all the way to subwarp, so the client has a visible warp-exit leg without repeating the old `warplogs20` subwarp rebase failure.
+2026-03-11
+- Rubicon dev-blog notes from the user confirm both the math target and the presentation target:
+  - CCP describes post-align warp as three phases only: acceleration, cruise, then deceleration; nothing in the Rubicon changes should affect the pre-warp align phase before the ship reaches the normal `75%` threshold;
+  - the acceleration/deceleration model shown in the blog uses `x = e^(k*t)` and `v = k*e^(k*t)` with the Rubicon "fulcrum" pinned on T1 cruisers, so an unmodified `3 AU/s` cruiser should keep the old feel while faster hulls accelerate harder and slower hulls accelerate less aggressively;
+  - the official `30 AU`, `3 AU/s` cruiser graph gives a concrete feel target: about `8.6 s` accelerating, `8.7 s` cruising at full warp, and `21.6 s` decelerating before warp ends;
+  - the same graph also makes the presentation requirement explicit: the ship should finish accelerating to full warp speed before the tunnel/cruise phase dominates visually, and the end of warp should be a long decel-out rather than a last-second teleport.
+- What this adds to the current implementation:
+  - the server-side official curve already matches those Rubicon cruiser timings when `warpSpeedAU = 3`, `k_accel = 3`, `k_decel = 1`, and `warpDropoutSpeed = 100`, so the remaining mismatch is no longer in the core server duration math;
+  - the remaining work is pilot-side: getting the local client up to its full-warp plateau before tunnel presentation fully takes over, and then giving it a distinct decel-side handoff so the tunnel can collapse smoothly instead of freezing and snapping at the end.
+2026-03-11
+- `client/warplogs32.txt` shows the current pilot-side decel hint is firing at exactly the wrong time:
+  - on the `~24.10 AU`, `5 AU/s` warp, the server trace reaches real cruise at stamp `1773273030`, but the pilot still does not flip into `WarpState -> 2` until stamp `1773273035`, when the live decel-side `SetMaxSpeed(149597870700)` arrives;
+  - from that same stamp onward the client distance freezes at `8.10 AU` until the landing batch, which means the pilot is treating the decel-side max-speed drop as its real warp-state handoff instead of as a late warp-exit cue;
+  - this also explains the missing accel/decel shake: the pilot never gets a true full-warp local velocity transition at cruise entry, so the tunnel/effect packet alone is not enough to finish the handoff before decel.
+- Safer rule after `warplogs32`:
+  - remove the pilot-only live decel `SetMaxSpeed` drop entirely, because it is a presentation heuristic and is not part of the official CCP warp curve;
+  - keep the split `cruise SetMaxSpeed` one stamp before FX, but move the one explicit pilot self `SetBallVelocity` handoff to the `effects.Warping` stamp instead of the decel phase, so the client gets a high-speed cruise-entry handoff after the ceiling is already raised and before the tunnel fully takes over.
+2026-03-12
+- `client/warplogs33.txt` shows that the latest cruise-entry self-velocity handoff is not a math fix, it is another pilot-side wedge:
+  - on the `~31.08 AU`, `5 AU/s` warp, the server starts with the expected official timings again (`~5.15 s` accel, `~5.41 s` cruise, `~13.64 s` decel), so the base warp-duration math is still matching the literal `docs/warpofficial.txt` implementation;
+  - the client now reaches `WarpState -> 2` much earlier, around `24.96 AU`, but that happens on the same stamp as the new cruise-entry self `SetBallVelocity + effects.Warping`, and from that point onward the distance stays pinned at `24.96 AU` until the landing batch;
+  - that means the latest regression is packet-side again: the extra cruise-entry self velocity is freezing the piloting client's local warp solver even though the server itself is already cruising at full `5 AU/s`.
+- Next debugging step after `warplogs33`:
+  - stop relying on mixed movement/destiny/client logs alone and add a dedicated server-side warp diagnostics log;
+  - log the literal official-reference profile next to the runtime profile at warp request/start, then log one warp-progress snapshot per destiny stamp plus each pilot warp packet phase, so the next run shows whether a failure is in formulae, server position integration, or the client-facing handoff sequence.
+2026-03-12
+- `client/warplogs34.txt` plus `server/logs/space-warp-debug.log` confirm the new diagnostics are working and that the base warp math is no longer the active problem:
+  - on the `~30.016 AU`, `5 AU/s` warp, the server profile delta against the literal `warpofficial.txt` implementation is exactly zero for accel time, cruise time, decel time, and phase distances;
+  - the server reaches true full cruise at stamp `1773274365` and then decelerates cleanly to completion, while the client distance display only gets down to about `14.01 AU` before flattening and then lands on the final stop batch;
+  - that means the remaining mismatch is entirely in the pilot-side handoff and local client interpretation, not in the server warp curve itself.
+- Local decompile finding from `_local/_tmp_Warp_decompiled.py`:
+  - `ShakeCamera()` computes warp rumble from `(ball velocity - ball.maxVelocity) / (ballpark.warpSpeed * AU - ball.maxVelocity)`, so if `ball.maxVelocity` is already equal to full warp speed there is no shake budget left by definition;
+  - `OnWarpStarted2` and `OnWarpDecelerate` are keyed off `self.shipModel.speed.value`, not raw `ball.v`, which is why the client can still show distance movement while never visually reaching a proper full-warp plateau;
+  - the live client therefore needs a short window where actual warp velocity is above `ball.maxVelocity` before the full cruise ceiling and tunnel FX take over.
+- Safer rule after `warplogs34`:
+  - keep the startup seed below full warp so the shake path is still mathematically possible;
+  - move the high-speed pilot self `SetBallVelocity` handoff to one stamp before the full cruise `SetMaxSpeed`, and keep `effects.Warping` one stamp after the cruise bump, so the pilot gets a brief real accel-to-cruise transition instead of a same-stamp rebase into the tunnel.
+2026-03-12
+- `client/warplogs36.txt` plus the dedicated server warp diagnostics show the next pilot-side mismatch more clearly:
+  - the server is still following the literal `warpofficial.txt` curve exactly on the `~19.97 AU`, `5 AU/s` Punisher warp, including the full `~5.15 s` accel, `~3.19 s` cruise, and `~13.64 s` decel profile;
+  - the client freezes at `16.27 AU` right after the cruise-side self `SetBallVelocity`, which means the full-cruise pilot velocity rebase is still toxic even when it is split away from the later `SetMaxSpeed` and FX packets;
+  - the runtime also showed a second timing issue: those pilot cruise/tunnel packets were still being quantized off rounded destiny stamps, so on a short `~5 s` accel leg they could land almost a full second later than the real server phase boundary.
+- Safer rule after `warplogs36`:
+  - drop the full-cruise pilot self `SetBallVelocity` again and keep only the earlier accel-leg self velocity nudge for the piloting client;
+  - lower the pilot warp-speed seed so the client has real shake budget before cruise;
+  - key the later pilot `SetMaxSpeed` bump and tunnel FX from exact elapsed milliseconds off the official accel end, then emit them on the first live destiny tick after those thresholds are crossed instead of pre-rounding them to future stamps.
+2026-03-12
+- `client/warplogs37.txt` shows the newest regression is not wrong per-ship warp data, it is a bad startup-guidance guard:
+  - the active ship is still using live movement attributes (`warpSpeedMultiplier = 5`, `maxVelocity = 355`, `inertia = 2.9`) and the server warp diagnostics still match the literal `warpofficial.txt` profile exactly on the `~24.10 AU` Punisher warp;
+  - however the piloting client now gets self `SetBallVelocity` every destiny stamp from `1773275495` through landing, because the startup guidance window was widened to `warpCorrectionStamp >= startupGuidanceStamp` with only a per-correction-stamp guard;
+  - once the warp passes the startup threshold, that condition stays true for the rest of the warp, so the client keeps rebasing its own destiny history, pins the distance at `19.20 AU`, and fights orientation all the way to the landing teleport.
+- Safer rule after `warplogs37`:
+  - keep the exact-ms startup threshold, but treat startup self guidance as a one-shot keyed by the startup-guidance stamp itself, not as an open-ended window;
+  - allow any later end-window guidance to use its own normal per-stamp guard, but never let the startup leg emit more than one pilot self `SetBallVelocity` for a warp.
+2026-03-12
+- `client/warplogs39.txt` confirms the one-shot startup-guidance fix worked, but it also shows the current pilot handoff is now too weak:
+  - the latest `~30.016 AU`, `5 AU/s` Punisher warp only sent one startup self `SetBallVelocity` at `1773275866`, then a full-cruise `SetMaxSpeed` at `1773275869`, and `effects.Warping` at `1773275870`;
+  - the client no longer rebases every tick, but it still never gets a strong enough local cruise build-up before the tunnel FX, so the user sees a teleport into the tunnel, no accel shake, `WarpState -> 2` only around `16.85 AU`, and then a flat remainder until the landing teleport;
+  - the server diagnostics still match the literal `warpofficial.txt` curve exactly, so the remaining issue is not the ship-specific warp math, it is that the pilot-side seed and cruise-bump timing are too conservative for the client's local warp solver.
+- Safer rule after `warplogs39`:
+  - raise the pilot warp seed back toward the older `~55%` scale so long 5 AU/s hulls are not trying to build all the way from a `2 AU/s` ceiling before the tunnel;
+  - move the pilot full-cruise `SetMaxSpeed` bump one live destiny tick before the tunnel FX instead of exactly at accel end, while keeping the FX itself tied to the official accel-end timing;
+  - keep the startup guidance one-shot and do not reintroduce a high-speed cruise self `SetBallVelocity`, since that is still the packet that previously froze the client outright.
+2026-03-12
+- `client/warplogs40.txt` plus `server/logs/space-destiny-debug.log` show the delayed pilot-only cruise `SetMaxSpeed` rebase is now a stronger suspect than the entry seed itself:
+  - before the delayed cruise bump, the client distance is still falling smoothly under the initial `WarpTo` plus seed path (`39.45 -> 39.08 -> 38.12 -> 36.41 AU`);
+  - the pilot then receives `SetMaxSpeed(747989353500)` at `1773276200`, rebases history to `1773276201`, gets `effects.Warping` at `1773276201`, and only a few seconds later the distance pins flat at `27.10 AU` until the landing teleport;
+  - that means the current build is no longer obviously "too slow everywhere"; it is more likely breaking at the mid-warp pilot max-speed handoff, while the pre-tunnel local warp path is still progressing.
+- Safer rule after `warplogs40`:
+  - stop sending the delayed pilot-only cruise `SetMaxSpeed` bump entirely;
+  - keep the delayed tunnel FX tied to the official accel end so the client still transitions into the tunnel after the accel leg;
+  - compensate by raising the initial pilot warp seed moderately, so the local warp can build from a stronger starting ceiling without another mid-warp history rebase.
+2026-03-12
+- `client/warplogs41.txt` shows the no-cruise-bump build overcorrected:
+  - the pilot still receives the live `WarpTo` packet with the correct ship-specific `warpSpeed = 50` (`5 AU/s`), but the only pilot `SetMaxSpeed` before landing is the startup seed at `1773276718` (`483729250309.4585`, about `3.23 AU/s`);
+  - distance continues falling normally before the tunnel (`23.31 -> 20.09 AU`), then `effects.Warping` lands at `1773276723` and the client quickly pins flat at `15.68 AU` until the landing teleport;
+  - the dedicated server warp diagnostics still match the literal `warpofficial.txt` profile exactly on the same warp (`~5.15 s` accel, `~3.95 s` cruise, `~13.64 s` decel), so the under-speed visual is not bad warp math, it is that the pilot path never receives the full-cruise max-speed ceiling at all.
+- Safer rule after `warplogs41`:
+  - keep the stronger seed and one-shot startup guidance, but restore one full pilot cruise `SetMaxSpeed`;
+  - emit that full-cruise `SetMaxSpeed` on the same live destiny stamp as `effects.Warping`, immediately before the effect packet, instead of as a separate earlier delayed rebase;
+  - do not reintroduce a cruise-side pilot self `SetBallVelocity`, since those were the packets that previously froze the client outright.
+2026-03-12
+- `client/warplogs42.txt` shows the effect-stamp full-cruise `SetMaxSpeed` handoff did restore the correct ceiling packet, but it still did not fix the local warp path:
+  - the pilot now receives `SetMaxSpeed(747989353500)` together with `effects.Warping` on stamp `1773277115`, and the client finally reaches `WarpState -> 2`, but it still stalls flat at `10.63 AU` until the landing teleport;
+  - the server diagnostics show the same warp was already down to `3.50 AU` by stamp `1773277120`, so the client is still under-running cruise even after the full max-speed handoff;
+  - the decompiled client clarifies why the current startup self `SetBallVelocity` is not helping: at the current `40%` accel sample the official Rubicon curve only yields about `0.000001 AU/s` on a `5 AU/s` warp, which is far too small to wake `OnWarpStarted2` or build visible cruise locally;
+  - the same decompile also explains the missing shake: `ShakeCamera()` only has headroom while `ball.v > ball.maxVelocity`, so raising `ball.maxVelocity` all the way to full warp on the tunnel/effect stamp removes the shake budget by definition.
+- Safer rule after `warplogs42`:
+  - stop using the effect stamp for a full pilot `SetMaxSpeed` rebase;
+  - raise the persistent pilot warp-speed seed substantially instead, so the client can climb much closer to full warp before the tunnel while still leaving some room for shake;
+  - keep the tunnel FX timing tied to the official accel end, because the server-side Rubicon warp math itself is still correct.
+2026-03-12
+- `client/warplogs45.txt` shows the remaining mismatch is now the pilot effect timing itself, not the official warp profile:
+  - the pilot receives `WarpTo` with the correct ship-specific `warpSpeed = 50` and a higher seed `SetMaxSpeed(635790950475)` (`~4.25 AU/s`), but it still gets one startup self `SetBallVelocity` on stamp `1773277471`;
+  - that startup self velocity is only about `189,193 m/s` (`~0.00000126 AU/s`), so it is far too small to matter for warp progression, yet it still forces `State history rebased at 1773277472`;
+  - the pilot `effects.Warping` is still delayed until stamp `1773277474`, while the decompiled client starts its active-warp path and captures `initialWarpDistance` only once `ball.effectStamp > 0`;
+  - after that late effect stamp the client reaches `WarpState -> 2` only around `16.33 AU` and then pins there, while the server is already following the official curve through cruise and decel down to landing.
+- Safer rule after `warplogs45`:
+  - stop sending the useless startup self `SetBallVelocity` nudge to the pilot altogether;
+  - send the pilot `effects.Warping` immediately on the warp-start stamp, matching the watcher path and the decompiled `ball.effectStamp > 0` gate;
+  - keep the official server-side warp curve unchanged, because the divergence is now clearly in the pilot packet sequencing rather than in the Rubicon math.
+2026-03-12
+- `client/warplogs46.txt` plus the latest server diagnostics finally narrowed the remaining issue to the pilot warp-start `SetMaxSpeed` itself:
+  - the server is still matching the literal `warpofficial.txt` curve exactly on the same `~31.07 AU`, `5 AU/s` warp (`~5.15 s` accel, `~5.41 s` cruise, `~13.64 s` decel), so the base warp math is no longer the active mismatch;
+  - the pilot receives immediate `WarpTo + effects.Warping`, but it also still gets a pilot-only `SetMaxSpeed(635790950475)` (`~4.25 AU/s`) on the same start stamp, and from there the client drops to `21.05 AU` and pins flat until the final landing anchor;
+  - older pre-SetMaxSpeed runs at least proved the client can enter its warp FX path from `WarpTo + OnSpecialFX + SetBallMassive(false)` alone, while the later warp-time `SetMaxSpeed` experiments consistently trade shake away and correlate with the pinned remainder;
+  - the decompiled client already resolves `warpSpeedModifier` from local godma type data and keys active warp off `ball.effectStamp > 0`, so pilot startup does not need a server-side max-speed override to know the hull's real warp speed.
+- Safer rule after `warplogs46`:
+  - stop sending pilot-only warp `SetMaxSpeed` at warp entry and return the pilot to the same minimal start order as watchers: `WarpTo`, immediate `effects.Warping`, then self `SetBallMassive(false)`;
+  - keep pilot startup/end `SetBallVelocity` disabled so the ego ball is not rebased mid-warp;
+  - leave the official Rubicon server curve unchanged and re-test from this cleaner baseline before adding any new pilot heuristics back.
+2026-03-12
+- `client/warplogs47.txt` disproves that last minimal-start theory:
+  - the pilot still receives immediate `WarpTo + effects.Warping`, and the client does load `warptunnel.red`, but the warp distance stays pinned at `30.02 AU` for the entire warp and only changes on the final landing anchor;
+  - the latest server diagnostics on the same run still match `warpofficial.txt` exactly, so this is not a server-curve regression;
+  - the changed variable was removing the pilot warp-time startup `SetMaxSpeed`, which means that one startup seed is required just to get the ego ball moving locally at all.
+- Safer rule after `warplogs47`:
+  - restore exactly one pilot warp-start `SetMaxSpeed` seed;
+  - keep every later pilot warp `SetMaxSpeed`/`SetBallVelocity` heuristic disabled, because those are still the packets that correlate with the mid-warp pin and history rebases;
+  - use the restored one-seed build as the baseline for the next comparison, not the no-seed regression.
+2026-03-12
+- `client/warplogs48.txt` shows the restored one-seed baseline fixed the no-motion regression, but it also exposed a deterministic client-side stall:
+  - on the latest `~39.81 AU`, `5 AU/s` warp the pilot receives the startup seed (`~4.25 AU/s`), immediate `WarpTo`, and immediate `effects.Warping`, then travels locally from `39.25 AU` down to `29.78 AU` before pinning flat until the final landing teleport;
+  - comparing that with `warplogs46` (`31.07 AU -> 21.05 AU`) shows the seed-only build is consistently advancing only about `10 AU` on the piloting client before its local warp solver stalls, while the server diagnostics continue to match `warpofficial.txt` exactly all the way through cruise/decel;
+  - that makes the remaining mismatch pilot-side handoff again, but now in a much narrower form: the startup seed is required, yet the client still needs one later cruise max-speed ceiling update to keep progressing past that fixed `~10 AU` budget.
+- Safer rule after `warplogs48`:
+  - keep the restored startup `SetMaxSpeed` seed and immediate `effects.Warping`;
+  - re-enable exactly one delayed pilot `SetMaxSpeed` cruise handoff for long-profile warps only, emitted on the first live destiny tick at or after the official accel end;
+  - continue to keep all pilot self `SetBallVelocity` guidance disabled, because the same-stamp and cruise-side velocity rebases were the regressions that previously froze or future-rebased the client outright.
+2026-03-12
+- `client/warplogs50.txt` shows the remaining loop is no longer in the server curve, it is in the pilot-side local solver:
+  - the server still matches the literal `warpofficial.txt` profile exactly on the `~22.47 AU`, `5 AU/s` warp, including the `~5.15 s` accel and `~13.64 s` decel legs;
+  - the pilot now receives startup `SetMaxSpeed(621446295774)` (`~4.15 AU/s`), immediate `WarpTo`, immediate `effects.Warping`, and then one delayed full-cruise `SetMaxSpeed(747989353500)` at stamp `1773278789`;
+  - the client does accelerate locally for a while (`21.92 -> 20.46 -> 18.33 -> 15.69 -> 12.55 -> 8.95 AU`), but it flips into `WarpState -> 2` exactly as the distance pins flat, which means the hidden client-side warp solver is still diverging even though the authoritative server state is already cruising/decelerating correctly.
+- Safer rule after `warplogs50`:
+  - stop trying to finish the pilot handoff with another delayed `SetMaxSpeed` rebase, because that still correlates with the pinned remainder;
+  - keep only the startup seed for pilot-local warp entry;
+  - once the official accel leg ends, start sending the pilot the same authoritative `SetBallPosition + SetBallVelocity` stream the watchers already receive, on live destiny stamps only, so the server carries the ego ball through cruise/decel instead of relying on the hidden local solver for the rest of the trip.
+2026-03-12
+- `client/warplogs52.txt` disproves that new authoritative pilot-sync fallback:
+  - on the latest `~24.10 AU`, `5 AU/s` warp the pilot travels locally from `23.54 AU` down to `17.17 AU` first, so the startup seed plus local `WarpTo` simulation is still working before cruise/decel;
+  - the first pilot-only live-stamp `SetBallPosition + SetBallVelocity` arrives at stamp `1773279254`, and the client immediately logs `State history rebased` while the visible distance jumps backward from `17.17 AU` to `21.81 AU`;
+  - once those pilot self position/velocity rebases start, the client keeps reorienting inside the tunnel and pins at the wrong remainder while the server debug log still matches the literal `warpofficial.txt` curve through cruise and decel.
+- Safer rule after `warplogs52`:
+  - do not send the piloting client any in-warp `SetBallPosition` or `SetBallVelocity` corrections at all;
+  - keep watcher corrections for everyone else, but leave the ego ball on a pure local `WarpTo` simulation until the final landing anchor/`Stop` batch;
+  - treat the remaining failure as a client local-warp solver mismatch, not a server Rubicon-curve timing issue.
+2026-03-12
+- Native `_destiny.dll` disassembly added a new hard fact that does not depend on our server curve at all:
+  - the V23.02 WarpTo handler (`0x180043140` -> `0x1800425e0`) still stores the expected native warp inputs on the ball: stop distance at `+0x90`, warp factor at `+0x98`, total warp distance at `+0x110`, then switches the ball into mode `3` (WARP);
+  - after that setup, the same handler seeds the ball's internal warp start tick at `ball.+0x88 = ballpark.currentTick - 5`, not the current tick;
+  - the ballpark constructor at `0x180033710` initializes `tickLengthMs = 1000` at `+0x18` and then computes `ballpark.+0xa8 = tickLengthMs * 0.001`, so the native warp solver really is backdated by a full `5.0` seconds on every WarpTo;
+  - native strings/xrefs also show an explicit lifecycle around this: `OnActivatingWarp` in the warp activation helper, `OnExitWarp` when leaving mode `3`, and `OnDeactivatingWarp` in the solver's warp-exit/failure branch before it clears warp mode.
+- What this changes:
+  - it is now much harder to justify more server-side curve tweaks or more pilot `SetMaxSpeed` guessing, because the official Rubicon path is already correct on the server and the client is provably applying its own fixed native warp-time bias underneath our packets;
+  - the current pilot sequence almost certainly still disagrees with the native activation window, because we only emit WarpTo at authoritative warp start, while the client's own WarpTo path assumes a solver that is already five seconds "in";
+  - this is consistent with the `warplogs53` presentation failure: immediate `WarpTo` produces some local motion, but the distance indication and `WarpState` progression are already on the wrong native branch long before server cruise/decel become relevant.
+- Safer rule after the native disassembly:
+  - stop treating this as a missing official-curve constant;
+  - the next real experiment should be sequencing-focused, most likely moving the pilot-only WarpTo/activation earlier into the align/activation window or reproducing the native activation phase more faithfully, not changing the authoritative server warp profile again.
+2026-03-12
+- More native/client evidence from `warplogs48`, `warplogs50`, `warplogs53`, and `_destiny.dll` narrowed the failure further:
+  - the pilot is not just "a bit slow"; on the one-seed builds it always gets a few seconds of real local motion and then hard-pins on a flat remainder until the landing anchor (`39.25 -> 37.76 -> 35.58 -> 32.87 -> 29.78` in `warplogs48`, `29.46 -> 27.97 -> 25.78 -> 23.08 -> 19.99` in `warplogs53`);
+  - the pinned duration is long and deterministic (`~16 s` in `warplogs48`, `~14 s` in `warplogs53`), which still does not match any server-side Rubicon phase boundary;
+  - the one delayed cruise `SetMaxSpeed` in `warplogs50` did force a new `StoreState` / `State history rebased at 1773278790`, but it only bought about one extra visible distance sample (`12.55 -> 8.95 AU`) before pinning again, so this is not a clean "prediction horizon expires after N seconds" story either.
+- The effect-side logs now show a cleaner split than before:
+  - `WarpState -> 2` does happen on all the later runs (`warplogs48`, `warplogs50`, `warplogs53`);
+  - but there is still no `OnWarpStarted2`, no `OnWarpDecelerate`, no `OnWarpActive`, and no visible shake/wind event in those same logs;
+  - that means the client is entering some tunnel/controller state, but not the `effects.Warping` "active warp" path that uses `shipModel.speed.value` and rumble.
+- The decompiled warp effect still makes `ball.effectStamp` the hard gate for that active path:
+  - `WarpLoop()` only sends `OnWarpActive`, sets `TravelTunnelProgress`, captures `initialWarpDistance`, and flips the non-legacy tunnel into its active path once `ball.effectStamp > 0`;
+  - our live pilot start order still only sends `SetMaxSpeed`, `WarpTo`, `OnSpecialFX('effects.Warping')`, and `SetBallMassive(false)`;
+  - there is no obvious pilot warp-start update in the current runtime that sets the ball's internal `effectStamp`, and the current logs are consistent with that gate never opening.
+- The native movement path also exposed an internal mode transition we had been glossing over:
+  - the ballpark tick update checks `ball.+0x238 == 3` and `ball.+0x88 >= 0`, then calls the native warp solver at `0x180042b20`;
+  - immediately after that, it only copies the solver output into the live ball if the ball mode is now `2`;
+  - once in that follow-on path, later movement goes through helpers around `0x18003e980` / `0x180036700`, which propagate the motion using the ball's coefficient fields at `+0x1e8..+0x210` and the current speed/turn parameters;
+  - the delayed `SetMaxSpeed` rebase improving motion by only one more sample fits that secondary path being recomputed, not the official warp solver itself being wrong.
+- What this changes:
+  - the remaining pilot failure looks even less like a Rubicon-curve bug and even less like "wrong warp factor scaling";
+  - it looks more like we start the tunnel FX successfully, but we never populate one or more internal ball fields that let the client stay on its real active-warp path after the initial setup;
+  - the two strongest current suspects are:
+    - the pilot ball never gets `effectStamp > 0`, so `effects.Warping` never enters its true active-warp branch;
+    - or the pilot ball is dropping into a secondary trajectory mode that depends on different hidden state than the startup `WarpTo` packet alone provides.
+- Safer rule after this pass:
+  - stop spending more cycles on server-side warp-curve tuning;
+  - do not add another blind `SetMaxSpeed` or pilot self position/velocity heuristic;
+  - the next valid experiment should be driven by native field ownership, most likely proving where `effectStamp` is actually populated and whether a start-of-warp state refresh can set it without reproducing the old `extended warp / interpolating:0` regression.
+2026-03-12
+- Native mode-state decode in `_destiny.dll` finally pinned down the actual WARP `SetState` wire order instead of just the field aliases:
+  - the mode dispatch table at `0x18009966c` maps native mode `3` (WARP) to decode case `0x1800994f3` and encode case `0x180099e8c`;
+  - that mode-3 decode path reads the WARP extras in this exact order: `goto(24) -> effectStamp(4) -> warpDistance(8) -> stopDistance(8) -> warpFactor(8)`;
+  - concretely the reads land at `ball.+0x1a8`, `ball.+0x88`, `ball.+0x110`, `ball.+0x90`, and `ball.+0x98` respectively.
+- This corrects two earlier assumptions that were too loose:
+  - `ball.+0x88` is still the field the client names `effectStamp`, but the earlier note claiming WarpTo permanently seeds it as `currentTick - 5` is not the right conclusion to carry forward; the harder fact that matters for the wire is that WARP `SetState` reads a 32-bit value directly into `+0x88`;
+  - the generic property names from the descriptor table (`followId`, `ownerId`, etc.) are not enough on their own for WARP mode, because the mode-3 decoder reuses those slots with warp semantics: `+0x110` is warp distance as a `double`, `+0x90` is stop distance as raw `double` bits, and `+0x98` is the integer warp factor.
+- Consequence for our server encoder:
+  - the old WARP `SetState` layout in `server/src/space/destiny.js` was wrong; it was sending `effectStamp`, then two opaque marker doubles, then a 32-bit warp speed;
+  - the DLL-backed layout says the client instead expects `targetPoint`, `effectStamp`, `totalDistance`, `stopDistance`, and `warpSpeed` (`50` for a `5 AU/s` hull) on mode `3`;
+  - this is a stronger lead than the older "missing effectStamp" theory, because we now know the exact native WARP-state decode order rather than guessing from logs or field names.
+- Next experiment from that decode result:
+  - re-enable exactly one pilot-only `SetState` at warp entry, on the same warp-start stamp and before the startup `SetMaxSpeed + WarpTo + effects.Warping` batch;
+  - keep watcher traffic unchanged for now;
+  - if the next warplog still pins, the corrected mode-3 state path is no longer the missing piece and we can move back to the native activation/event chain with one more major branch ruled out.
+2026-03-12
+- `client/warplogs54.txt` ruled out that corrected mode-3 `SetState` experiment as the missing fix:
+  - the pilot definitely received the corrected `SetState` on warp-start tick `1773283892`, then the usual `SetMaxSpeed`, `WarpTo`, `effects.Warping`, and `SetBallMassive(false)` batch right behind it;
+  - the visible warp path was still unchanged: `39.25 -> 37.76 -> 35.58 -> 32.87 -> 29.78 AU`, then a hard pin at `29.78 AU` until landing;
+  - the controller still flipped to `WarpState -> 2`, but there was still no `OnWarpStarted2`, no `OnWarpDecelerate`, and no `TravelTunnelProgress`, so the client still never entered the true active-warp visual path.
+- The most useful new timing fact in `warplogs54` is the stamp split:
+  - the warp request itself reached the client on tick `1773283887` as only `GotoDirection + SetSpeedFraction`;
+  - the pilot did not receive `SetState + SetMaxSpeed + WarpTo + OnSpecialFX` until tick `1773283892`, exactly five destiny ticks later;
+  - that lines up uncomfortably well with the native `_destiny.dll` WarpTo bias we already found (`currentTick - 5`), and it makes the existing pilot sequencing look like a reset arriving right when the client's own activation window should be maturing.
+- Next experiment after `warplogs54`:
+  - send the piloting client one early `WarpTo` at warp request / align start, on the initial `GotoDirection + SetSpeedFraction` tick;
+  - keep the authoritative watcher `WarpTo` at real warp start, but do not send that second `WarpTo` to the pilot again;
+  - keep the pilot seed `SetMaxSpeed` and `effects.Warping` on the real warp-start stamp for now, so the only behavioral change is whether the pilot's native activation countdown starts five ticks earlier instead of being reset at the handoff point.
+2026-03-12
+- `client/warplogs55.txt` showed that early pilot `WarpTo` alone is not sufficient:
+  - the piloting client now receives `WarpTo` on the initial request tick `1773284550`, and the controller immediately flips to `WarpState -> 1`;
+  - however the visible warp distance never advances at all after that: it stays pinned at `23.74 AU` from the first indication through the final landing anchor;
+  - the later authoritative pilot batch at tick `1773284556` still delivers `SetState`, `SetMaxSpeed`, `effects.Warping`, and `SetBallMassive(false)`, the tunnel assets load, and the controller eventually flips to `WarpState -> 2`, but there is still no `OnWarpStarted2`, no `TravelTunnelProgress`, and no real in-between motion.
+- What `warplogs55` clarifies:
+  - moving only `WarpTo` earlier changed the client activation timing, but it also separated `WarpTo` from the startup warp-speed seed that previously correlated with at least some visible local progression;
+  - in other words the earlier preactivation command is probably on the right track, but the request-time packet batch is incomplete if it does not carry the same startup `SetMaxSpeed` seed on that same stamp.
+- Next experiment after `warplogs55`:
+  - keep the pilot-only early `WarpTo`;
+  - move the pilot startup `SetMaxSpeed` seed to that same request / align tick as well;
+  - once that early seed is sent, do not repeat the same pilot seed again at authoritative warp start; keep the later pilot handoff to `SetState + effects.Warping + SetBallMassive(false)` unchanged for one more pass so the only new variable is the request-time seed pairing.
+2026-03-12
+- `client/warplogs56.txt` shows the request-time `SetMaxSpeed + WarpTo` pair finally does wake the pilot's local warp path, but the later real-start `SetState` handoff now looks actively harmful:
+  - before the authoritative warp-start tick, the pilot already advances locally from `25.70 -> 24.21 -> 22.02 -> 19.32 -> 16.23 AU`, which is the first clear proof that the request-time seed plus early `WarpTo` can drive real local motion;
+  - the authoritative pilot batch then lands at tick `1773284953` as `SetState + effects.Warping`, followed immediately by `SetBallMassive(false)`, and Michelle logs `Michelle received a SetState at time 1773284953 . Clearing out-of-date entries...`;
+  - right after that batch the client rebases history at `1773284953` and again at `1773284954`, the tunnel assets load, and the visible warp indication jumps backward to `26.26 AU` where it stays pinned until landing;
+  - there is still no `OnWarpStarted2`, no `OnWarpDecelerate`, and no `TravelTunnelProgress`, so even this stronger preactivation path still never reaches the client's true active-warp visual branch.
+- What `warplogs56` changes:
+  - the request-time seed is no longer just "not helping"; paired with early `WarpTo` it is the first thing that produced genuine local pilot warp motion;
+  - the new toxic packet is more likely the pilot-only real-start `SetState`, because that is the first event that coincides with the visible snapback, history rebuild, and reset to a larger remaining distance;
+  - `effects.Warping` may still be incomplete visually, but it no longer needs to carry the blame for the first hard reset while `SetState` is still in that real-start pilot batch.
+- Next experiment after `warplogs56`:
+  - keep the request-time pilot `SetMaxSpeed + WarpTo` pair;
+  - if the pilot already received that preactivation `WarpTo`, do not send the pilot a second warp-start `SetState` on the authoritative start tick;
+  - leave the later pilot `effects.Warping + SetBallMassive(false)` handoff unchanged for one pass, so the only removed variable is the real-start pilot `SetState` that now correlates with the snapback.
+2026-03-12
+- `client/warplogs57.txt` confirms that removing the real-start pilot `SetState` fixed the snapback, but it also makes the remaining stall cleaner:
+  - the piloting client now gets the request-time `SetMaxSpeed + WarpTo` pair on tick `1773285366`, with no pilot `SetState` at the real warp-start tick at all;
+  - the local warp indication then falls cleanly from `20.47 -> 19.05 -> 16.96 -> 14.37 -> 11.42 AU`, proving the preactivation path can carry the pilot several seconds into local warp without any authoritative reset;
+  - the client reaches `IsWarping=True` / `WarpState -> 2` around tick `1773285372`, but the distance is already pinned at `11.42 AU` before the later pilot `effects.Warping` action is applied;
+  - once the delayed tunnel FX arrives, the tunnel assets load and the client stays flat at `11.42 AU` until the final landing `SetBallPosition + SetBallVelocity(0) + Stop` batch, with still no `OnWarpStarted2`, no `OnWarpDecelerate`, and no `TravelTunnelProgress`.
+- What `warplogs57` changes:
+  - the remaining failure is no longer the real-start `SetState` reset; that branch is now ruled out cleanly on this build;
+  - the pilot is back to the older fixed local-warp budget pattern from the one-seed experiments: about `~9-10 AU` of real progress, then a flat remainder until landing;
+  - because the distance is already pinned before `effects.Warping` is processed, the tunnel FX is now polishing a stalled local warp rather than causing the first stall by itself.
+- Next experiment after `warplogs57`:
+  - keep the request-time pilot `SetMaxSpeed + WarpTo` pair and keep the real-start pilot `SetState` disabled;
+  - for preactivated pilot warps only, restore exactly one later pilot cruise `SetMaxSpeed` handoff on the authoritative warp-start tick;
+  - push the pilot `effects.Warping` packet one live destiny tick later than that cruise handoff, so the ceiling change lands before the tunnel FX instead of on the same tick.
+2026-03-12
+- `client/warplogs58.txt` shows that the restored cruise ceiling handoff does help, but my first FX-delay implementation was stamped too early:
+  - the pilot still gets the request-time `SetMaxSpeed + WarpTo` pair on tick `1773285931`, with no pilot `SetState` at warp start;
+  - the later authoritative pilot handoff at tick `1773285936` now includes a full-cruise `SetMaxSpeed(747989353500)`, `SetBallMassive(false)`, and `effects.Warping`, and that does extend the local motion budget materially;
+  - the visible distance falls from `23.54 -> 22.05 -> 19.87 -> 17.17 -> 14.07 -> 10.59 -> 6.73 AU`, then pins at `6.73 AU` until the final landing anchor;
+  - there is still no `OnWarpStarted2`, no `OnWarpDecelerate`, and no `TravelTunnelProgress`, so the client is still not entering the true active-warp branch even though the extra ceiling update buys several more AU of motion.
+- What `warplogs58` changes:
+  - the one later cruise `SetMaxSpeed` handoff is now the strongest non-toxic packet we have; on this cleaner path it clearly extends local warp beyond the old `~10 AU` budget;
+  - however the intended "bump before tunnel FX" separation did not actually happen yet: the pilot still logs `OnSpecialFX` on the same `1773285936` stamp as the cruise bump, because the delay was keyed off `startTimeMs + 1000 ms` rather than the next destiny-stamp boundary;
+  - that means `warplogs58` is not a valid verdict on the true separated-timing experiment yet, only on "extra cruise bump plus effectively same-stamp FX".
+- Next experiment after `warplogs58`:
+  - keep the request-time pilot `SetMaxSpeed + WarpTo` pair, keep the real-start pilot `SetState` disabled, and keep the extra cruise `SetMaxSpeed` handoff;
+  - schedule the pilot `effects.Warping` handoff from the next destiny-stamp boundary itself (`warpStartStamp + 1`) rather than from a raw `+1000 ms` delay, so the FX cannot collapse back onto the same stamped update;
+  - then re-test whether separating the cruise ceiling from the tunnel FX unlocks any `OnWarpStarted2` / shake path or at least pushes the pin materially later than `6.73 AU`.

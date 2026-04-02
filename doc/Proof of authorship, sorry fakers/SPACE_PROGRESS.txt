@@ -1,0 +1,144 @@
+// Proof-of-authorship note: Primary authorship and project direction for this progress note belong to John Elysian.
+// This file is kept here as part of the EveJS proof-of-authorship record after repeated misattribution of the underlying work and claims that it was trivial.
+// If you reuse, discuss, or share this file, please credit it accurately.
+
+EvEJS Space Completion Checklist
+Updated: 2026-03-10
+
+Scope
+- This document now tracks the implemented station-to-space slice, not the older planning-only state.
+- The original undock plan phases are complete for the intended scope:
+  - undock,
+  - ballpark bootstrap,
+  - destiny movement,
+  - docking back,
+  - multi-player visibility,
+  - warp,
+  - stargate jump,
+  - unified workspace-local reference data.
+
+Database and data-source status
+- DONE: mutable gameplay state remains under `server/src/newDatabase`.
+- DONE: static universe reference data is also available under `server/src/newDatabase/data`:
+  - `solarSystems`
+  - `stations`
+  - `celestials`
+  - `stargates`
+  - `movementAttributes`
+  - `shipTypes`
+  - `skillTypes`
+- DONE: runtime readers use the shared reference-data loader and no longer read `server/data/sde` at runtime.
+- DONE: runtime code does not reference any path outside this workspace.
+- DONE: build scripts generate/import workspace-owned data into the `newDatabase` table format.
+
+Runtime and ballpark status
+- DONE: `server/src/space/worldData.js`
+  - loads systems, stations, celestials, stargates, and movement attributes from `newDatabase`
+  - supports all-system lazy lookup, not Jita-only hardcoding
+- DONE: `server/src/space/runtime.js`
+  - owns solar-system scenes
+  - owns static and dynamic entities
+  - tracks session attachment and removal
+  - persists ship `spaceState`
+  - broadcasts enter/leave visibility changes
+- DONE: dynamic ballpark bootstrap
+  - `AddBalls2`
+  - `SetState`
+  - immediate mode follow-up updates
+  - removal propagation via `RemoveBalls`
+- DONE: multi-player visibility
+  - two in-space players in the same system see each other enter, move, warp, and leave
+
+Destiny and movement status
+- DONE: dedicated packet builder layer in `server/src/space/destiny.js`
+  - slim items
+  - rigid/static balls
+  - ship balls
+  - `AddBalls2`
+  - `SetState`
+  - `DoDestinyUpdate`
+  - movement/update payload helpers
+- DONE: implemented ship modes
+  - `STOP`
+  - `GOTO`
+  - `FOLLOW`
+  - `ORBIT`
+  - `WARP`
+- DONE: implemented commands and movement paths
+  - forced undock drift
+  - double-click style `CmdGotoDirection`
+  - `CmdSetSpeedFraction`
+  - `CmdStop`
+  - `CmdAlignTo`
+  - `CmdFollowBall`
+  - `CmdOrbit`
+  - `CmdWarpToStuff`
+  - `CmdWarpToStuffAutopilot`
+  - `CmdStargateJump`
+- DONE: warp lifecycle
+  - warp profile generation
+  - acceleration / cruise / deceleration timing
+  - in-warp state replication
+  - warp completion cleanup
+  - `SetBallMassive` toggling around warp
+
+Session and transition status
+- DONE: undock transition in `server/src/space/transitions.js`
+  - validates docked state
+  - resolves station and destination system
+  - moves ship item into space
+  - updates character record
+  - applies in-space session values
+  - emits `OnCharNoLongerInStation`
+  - attaches to ballpark runtime
+- DONE: docking transition
+  - detaches from space
+  - moves ship back to station
+  - restores station session state
+- DONE: disconnect/reconnect support
+  - stale dynamic entities are removed on detach
+  - in-space characters can be restored into runtime from persisted ship `spaceState`
+- DONE: stargate jump transition
+  - validates gate targeting/proximity
+  - moves ship to destination system
+  - reapplies session state
+  - rebinds/reboots the new destination ballpark
+
+Original milestone checklist
+- Milestone 0: prep
+  - DONE: mutable state centralized in `newDatabase` and `itemStore`
+  - DONE: static reference data generated/imported into `newDatabase`
+  - DONE: packet/runtime logging is present across transition and Beyonce paths
+- Milestone 1: data only
+  - DONE: all required solar-system, station, celestial, stargate, and movement datasets exist
+  - DONE: station-to-system relationships validate from imported data
+- Milestone 2: runtime scaffolding
+  - DONE: scene manager, entities, destiny encoding, and Beyonce bind path exist
+- Milestone 3: one-player bootstrap
+  - DONE: undock enters space cleanly and bootstraps dogma/session/ballpark state
+- Milestone 4: forced undock movement
+  - DONE: undock drift, stop, speed changes, and `CmdGotoDirection` are implemented
+- Milestone 5: scene completeness
+  - DONE: stations, planets/celestials, and stargates spawn from imported data
+- Milestone 6: docking back
+  - DONE: round-trip dock/undock path exists
+- Milestone 7: movement correctness pass
+  - DONE: movement math is isolated from packet encoding and does not blindly mirror Crucible's hacky subwarp behavior
+- Extended milestone beyond the original plan
+  - DONE: follow/orbit
+  - DONE: warp
+  - DONE: stargate jump
+  - DONE: multi-player synchronization for the implemented slice
+
+Verification checklist
+- DONE: server boot smoke
+- DONE: static reference-data readers load from `newDatabase`
+- DONE: runtime/service export smoke
+- DONE: two-character in-process undock smoke
+- DONE: movement command smoke
+- DONE: warp smoke
+- DONE: stargate jump smoke
+
+Open TODOs
+- None for the space-undock slice tracked by these docs.
+- Broader gameplay systems such as combat, NPC AI, drones, crimewatch, and fleet mechanics remain separate work and are not part of this document's definition of complete.

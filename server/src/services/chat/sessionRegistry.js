@@ -1,5 +1,8 @@
 const sessions = new Set();
-const listeners = new Set();
+
+function isLiveSession(session) {
+  return Boolean(session && session.socket && !session.socket.destroyed);
+}
 
 function register(session) {
   if (session) {
@@ -14,25 +17,25 @@ function unregister(session) {
 }
 
 function getSessions() {
-  return Array.from(sessions).filter(
-    (session) => session && session.socket && !session.socket.destroyed,
-  );
+  return Array.from(sessions).filter(isLiveSession);
 }
 
-function subscribe(listener) {
-  if (typeof listener !== "function") {
-    return () => {};
+function findSessionByCharacterID(characterID, options = {}) {
+  const targetCharacterID = Number(characterID || 0);
+  if (!Number.isInteger(targetCharacterID) || targetCharacterID <= 0) {
+    return null;
   }
 
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+  const excludedSession = options.excludeSession || null;
+  return getSessions().find((session) => (
+    session !== excludedSession &&
+    Number(session.characterID || 0) === targetCharacterID
+  )) || null;
 }
 
 module.exports = {
   register,
   unregister,
   getSessions,
-  subscribe
+  findSessionByCharacterID,
 };

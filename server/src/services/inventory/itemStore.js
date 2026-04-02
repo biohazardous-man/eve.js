@@ -1,20 +1,37 @@
 const path = require("path");
 
-const database = require(path.join(__dirname, "../../database"));
+const database = require(path.join(__dirname, "../../newDatabase"));
 const log = require(path.join(__dirname, "../../utils/logger"));
+const worldData = require(path.join(__dirname, "../../space/worldData"));
+const { resolveItemByTypeID } = require(path.join(
+  __dirname,
+  "./itemTypeRegistry",
+));
 const { resolveShipByTypeID } = require(path.join(
   __dirname,
   "../chat/shipTypeRegistry",
 ));
+const {
+  resolveRuntimeWreckRadius,
+} = require(path.join(__dirname, "./wreckRadius"));
 
-const { resolveModuleType } = require(path.join(
-  __dirname,
-  "./moduleTypeRegistry",
-));
+// Fitting flag ranges (hi/med/lo slots, rigs, subsystems).
+// Duplicated from liveFittingState to avoid circular dependency.
+const FITTING_FLAG_RANGES = Object.freeze([
+  [11, 34],
+  [92, 99],
+  [125, 132],
+]);
+
+function isFittingFlag(flagID) {
+  const f = Number(flagID) || 0;
+  return FITTING_FLAG_RANGES.some(([lo, hi]) => f >= lo && f <= hi);
+}
 
 const CHARACTERS_TABLE = "characters";
 const ITEMS_TABLE = "items";
 const SHIP_CATEGORY_ID = 6;
+const BLUEPRINT_CATEGORY_ID = 9;
 const DEFAULT_SHIP_TYPE_ID = 606;
 const CAPSULE_TYPE_ID = 670;
 const ITEM_FLAGS = {
@@ -22,16 +39,25 @@ const ITEM_FLAGS = {
   CARGO_HOLD: 5,
   DRONE_BAY: 87,
   SHIP_HANGAR: 90,
+  FIGHTER_BAY: 158,
+  FIGHTER_TUBE_0: 159,
+  FIGHTER_TUBE_1: 160,
+  FIGHTER_TUBE_2: 161,
+  FIGHTER_TUBE_3: 162,
+  FIGHTER_TUBE_4: 163,
+  GENERAL_MINING_HOLD: 134,
+  SPECIALIZED_GAS_HOLD: 135,
+  SPECIALIZED_ICE_HOLD: 181,
+  SPECIALIZED_ASTEROID_HOLD: 182,
 };
-
-const FITTED_SLOT_FLAGS = new Set([
-  11, 12, 13, 14, 15, 16, 17, 18,
-  19, 20, 21, 22, 23, 24, 25, 26,
-  27, 28, 29, 30, 31, 32, 33, 34,
-  92, 93, 94,
+const FIGHTER_TUBE_FLAGS = Object.freeze([
+  ITEM_FLAGS.FIGHTER_TUBE_0,
+  ITEM_FLAGS.FIGHTER_TUBE_1,
+  ITEM_FLAGS.FIGHTER_TUBE_2,
+  ITEM_FLAGS.FIGHTER_TUBE_3,
+  ITEM_FLAGS.FIGHTER_TUBE_4,
 ]);
-const MODULE_CATEGORY_ID = 7;
-const GENERIC_MODULE_GROUP_ID = 46;
+const JUNK_LOCATION_ID = 6;
 const DEFAULT_SHIP_CONDITION_STATE = Object.freeze({
   damage: 0.0,
   charge: 1.0,
@@ -39,18 +65,29 @@ const DEFAULT_SHIP_CONDITION_STATE = Object.freeze({
   shieldCharge: 1.0,
   incapacitated: false,
 });
+const DEFAULT_MODULE_STATE = Object.freeze({
+  online: false,
+  damage: 0.0,
+  charge: 0.0,
+  skillPoints: 0,
+  armorDamage: 0.0,
+  shieldCharge: 0.0,
+  incapacitated: false,
+});
 
 let migrationComplete = false;
-let migrationSignature = "";
-
-function getTableRevisionSafe(tableName) {
-  return typeof database.getTableRevision === "function"
-    ? database.getTableRevision(tableName)
-    : 0;
-}
+let itemMutationVersion = 1;
+let itemsTableCache = null;
+let itemIndexesDirty = true;
+let itemIndexesCache = null;
 
 function cloneValue(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function normalizeTimestampMs(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? Math.trunc(numeric) : null;
 }
 
 function readCharacters() {
@@ -62,28 +99,89 @@ function readCharacters() {
   return result.data;
 }
 
-function writeCharacters(data) {
-  const writeResult = database.write(CHARACTERS_TABLE, "/", data);
+function writeCharacters(data, options = {}) {
+  const writeResult = database.write(CHARACTERS_TABLE, "/", data, options);
   return Boolean(writeResult && writeResult.success);
 }
 
 function readItems() {
+  if (itemsTableCache) {
+    return itemsTableCache;
+  }
   const result = database.read(ITEMS_TABLE, "/");
   if (!result.success || !result.data || typeof result.data !== "object") {
     return {};
   }
 
-  return result.data;
+  itemsTableCache = result.data;
+  return itemsTableCache;
 }
 
-function writeItems(data) {
-  const writeResult = database.write(ITEMS_TABLE, "/", data);
-  return Boolean(writeResult && writeResult.success);
+function writeItems(data, options = {}) {
+  const writeResult = database.write(ITEMS_TABLE, "/", data, options);
+  if (writeResult && writeResult.success) {
+    itemsTableCache = data;
+    itemIndexesDirty = true;
+    itemIndexesCache = null;
+    itemMutationVersion += 1;
+    return true;
+  }
+  return false;
+}
+
+function getItemMutationVersion() {
+  return itemMutationVersion;
 }
 
 function toNumber(value, fallback = 0) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? Math.trunc(numeric) : fallback;
+}
+
+function appendIndexedItem(indexMap, key, item) {
+  if (!Number.isFinite(Number(key))) {
+    return;
+  }
+  if (!indexMap.has(key)) {
+    indexMap.set(key, []);
+  }
+  indexMap.get(key).push(item);
+}
+
+function ensureItemIndexes() {
+  ensureMigrated();
+  if (!itemIndexesDirty && itemIndexesCache) {
+    return itemIndexesCache;
+  }
+
+  const nextIndexes = {
+    byID: new Map(),
+    byLocation: new Map(),
+    byOwner: new Map(),
+  };
+
+  for (const rawItem of Object.values(readItems())) {
+    const item = normalizeInventoryItem(rawItem);
+    if (!item) {
+      continue;
+    }
+    nextIndexes.byID.set(item.itemID, item);
+    appendIndexedItem(nextIndexes.byLocation, item.locationID, item);
+    appendIndexedItem(nextIndexes.byOwner, item.ownerID, item);
+  }
+
+  for (const indexMap of [
+    nextIndexes.byLocation,
+    nextIndexes.byOwner,
+  ]) {
+    for (const items of indexMap.values()) {
+      items.sort((left, right) => left.itemID - right.itemID);
+    }
+  }
+
+  itemIndexesCache = nextIndexes;
+  itemIndexesDirty = false;
+  return itemIndexesCache;
 }
 
 function toFiniteNumber(value, fallback = 0) {
@@ -105,6 +203,18 @@ function normalizeSpaceVector(rawValue, fallback = { x: 0, y: 0, z: 0 }) {
     y: toFiniteNumber(rawValue.y, fallback.y),
     z: toFiniteNumber(rawValue.z, fallback.z),
   };
+}
+
+function normalizeDunRotation(rawValue) {
+  if (!Array.isArray(rawValue) || rawValue.length < 3) {
+    return null;
+  }
+
+  return [
+    toFiniteNumber(rawValue[0], 0),
+    toFiniteNumber(rawValue[1], 0),
+    toFiniteNumber(rawValue[2], 0),
+  ];
 }
 
 function normalizeSpaceState(rawValue) {
@@ -172,6 +282,101 @@ function normalizeSpaceState(rawValue) {
   };
 }
 
+function normalizeFighterState(rawValue) {
+  if (!rawValue || typeof rawValue !== "object") {
+    return null;
+  }
+
+  const normalized = {};
+  const tubeFlagID = toNumber(rawValue.tubeFlagID, 0);
+  const controllerID = toNumber(rawValue.controllerID, 0);
+  const controllerOwnerID = toNumber(rawValue.controllerOwnerID, 0);
+
+  if (tubeFlagID > 0) {
+    normalized.tubeFlagID = tubeFlagID;
+  }
+  if (controllerID > 0) {
+    normalized.controllerID = controllerID;
+  }
+  if (controllerOwnerID > 0) {
+    normalized.controllerOwnerID = controllerOwnerID;
+  }
+
+  const abilityStates = normalizeFighterAbilityStates(rawValue.abilityStates);
+  if (abilityStates) {
+    normalized.abilityStates = abilityStates;
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : null;
+}
+
+function normalizeFighterAbilitySlotState(rawValue) {
+  if (!rawValue || typeof rawValue !== "object") {
+    return null;
+  }
+
+  const normalized = {};
+  const activeSinceMs = toFiniteNumber(rawValue.activeSinceMs, null);
+  const durationMs = toFiniteNumber(rawValue.durationMs, null);
+  const activeUntilMs = toFiniteNumber(rawValue.activeUntilMs, null);
+  const cooldownStartMs = toFiniteNumber(rawValue.cooldownStartMs, null);
+  const cooldownEndMs = toFiniteNumber(rawValue.cooldownEndMs, null);
+  const remainingChargeCount = toNumber(rawValue.remainingChargeCount, null);
+  const targetID = toNumber(rawValue.targetID, 0);
+  const targetPoint =
+    rawValue.targetPoint && typeof rawValue.targetPoint === "object"
+      ? normalizeSpaceVector(rawValue.targetPoint)
+      : null;
+
+  if (activeSinceMs !== null && activeSinceMs >= 0) {
+    normalized.activeSinceMs = activeSinceMs;
+  }
+  if (durationMs !== null && durationMs > 0) {
+    normalized.durationMs = durationMs;
+  }
+  if (activeUntilMs !== null && activeUntilMs >= 0) {
+    normalized.activeUntilMs = activeUntilMs;
+  }
+  if (cooldownStartMs !== null && cooldownStartMs >= 0) {
+    normalized.cooldownStartMs = cooldownStartMs;
+  }
+  if (cooldownEndMs !== null && cooldownEndMs >= 0) {
+    normalized.cooldownEndMs = cooldownEndMs;
+  }
+  if (remainingChargeCount !== null && remainingChargeCount >= 0) {
+    normalized.remainingChargeCount = remainingChargeCount;
+  }
+  if (targetID > 0) {
+    normalized.targetID = targetID;
+  }
+  if (targetPoint) {
+    normalized.targetPoint = targetPoint;
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : null;
+}
+
+function normalizeFighterAbilityStates(rawValue) {
+  if (!rawValue || typeof rawValue !== "object") {
+    return null;
+  }
+
+  const normalized = {};
+  for (const [slotID, slotState] of Object.entries(rawValue)) {
+    const numericSlotID = toNumber(slotID, -1);
+    if (numericSlotID < 0 || numericSlotID > 2) {
+      continue;
+    }
+
+    const normalizedState = normalizeFighterAbilitySlotState(slotState);
+    if (normalizedState) {
+      normalized[numericSlotID] = normalizedState;
+    }
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : null;
+}
+
 function normalizeShipConditionState(rawValue) {
   const source =
     rawValue && typeof rawValue === "object" ? rawValue : DEFAULT_SHIP_CONDITION_STATE;
@@ -193,6 +398,99 @@ function normalizeShipConditionState(rawValue) {
   };
 }
 
+function normalizeModuleState(rawValue) {
+  if (rawValue === undefined) {
+    return undefined;
+  }
+
+  const source =
+    rawValue && typeof rawValue === "object" ? rawValue : DEFAULT_MODULE_STATE;
+
+  return {
+    online: Boolean(source.online),
+    damage: toFiniteNumber(source.damage, DEFAULT_MODULE_STATE.damage),
+    charge: toFiniteNumber(source.charge, DEFAULT_MODULE_STATE.charge),
+    skillPoints: toNumber(source.skillPoints, DEFAULT_MODULE_STATE.skillPoints),
+    armorDamage: toFiniteNumber(
+      source.armorDamage,
+      DEFAULT_MODULE_STATE.armorDamage,
+    ),
+    shieldCharge: toFiniteNumber(
+      source.shieldCharge,
+      DEFAULT_MODULE_STATE.shieldCharge,
+    ),
+    incapacitated: Boolean(source.incapacitated),
+  };
+}
+
+function normalizePositiveInteger(value, fallback = 1) {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric > 0 ? numeric : fallback;
+}
+
+function captureItemState(item) {
+  if (!item || typeof item !== "object") {
+    return {};
+  }
+
+  return {
+    locationID: item.locationID,
+    flagID: item.flagID,
+    quantity: item.quantity,
+    singleton: item.singleton,
+    stacksize: item.stacksize,
+    moduleState: Object.prototype.hasOwnProperty.call(item, "moduleState")
+      ? cloneValue(item.moduleState)
+      : undefined,
+  };
+}
+
+function getItemMetadata(typeID, name = null) {
+  const resolvedTypeID = toNumber(typeID, 0);
+  const resolvedItem = resolveItemByTypeID(resolvedTypeID);
+  if (resolvedItem) {
+    return {
+      ...resolvedItem,
+      name: resolvedItem.name || name || "Item",
+    };
+  }
+
+  const resolvedShip = resolveShipByTypeID(resolvedTypeID);
+  if (resolvedShip) {
+    return {
+      ...resolvedShip,
+      name: resolvedShip.name || name || "Ship",
+      portionSize: 1,
+      basePrice: null,
+      marketGroupID: null,
+      iconID: null,
+      soundID: null,
+      graphicID: null,
+      raceID: null,
+    };
+  }
+
+  return {
+    typeID: resolvedTypeID,
+    name: name || "Item",
+    groupID: 0,
+    categoryID: 0,
+    groupName: "",
+    mass: null,
+    volume: null,
+    capacity: null,
+    portionSize: 1,
+    raceID: null,
+    basePrice: null,
+    marketGroupID: null,
+    iconID: null,
+    soundID: null,
+    graphicID: null,
+    radius: null,
+    published: true,
+  };
+}
+
 function getShipMetadata(typeID, name = null) {
   const resolvedTypeID = toNumber(typeID, DEFAULT_SHIP_TYPE_ID);
   return (
@@ -207,6 +505,127 @@ function getShipMetadata(typeID, name = null) {
       radius: null,
     }
   );
+}
+
+function shouldItemDefaultToSingleton(metadata) {
+  const categoryID = toNumber(metadata && metadata.categoryID, 0);
+  return categoryID === SHIP_CATEGORY_ID || categoryID === BLUEPRINT_CATEGORY_ID;
+}
+
+function buildInventoryItem({
+  itemID,
+  typeID,
+  ownerID,
+  locationID,
+  flagID = ITEM_FLAGS.HANGAR,
+  itemName = null,
+  quantity = null,
+  stacksize = null,
+  singleton = null,
+  customInfo = "",
+  spaceState = null,
+  conditionState = null,
+  moduleState = undefined,
+  createdAtMs = null,
+  expiresAtMs = null,
+  launcherID = null,
+  dunRotation = null,
+  spaceRadius = null,
+  stackOriginID = null,
+  fighterState = null,
+}) {
+  const metadata = getItemMetadata(typeID, itemName);
+  const defaultSingleton = shouldItemDefaultToSingleton(metadata) ? 1 : 0;
+  const normalizedSingleton =
+    singleton === null || singleton === undefined
+      ? defaultSingleton
+      : toNumber(singleton, defaultSingleton) > 0
+        ? 1
+        : 0;
+  const normalizedUnits = normalizePositiveInteger(
+    quantity === null || quantity === undefined ? stacksize : quantity,
+    normalizePositiveInteger(metadata.portionSize, 1),
+  );
+
+  const item = {
+    itemID: toNumber(itemID),
+    typeID: toNumber(metadata.typeID, 0),
+    ownerID: toNumber(ownerID),
+    locationID: toNumber(locationID),
+    flagID: toNumber(flagID, ITEM_FLAGS.HANGAR),
+    quantity: normalizedSingleton === 1 ? -1 : normalizedUnits,
+    stacksize: normalizedSingleton === 1 ? 1 : normalizedUnits,
+    singleton: normalizedSingleton,
+    groupID: toNumber(metadata.groupID, 0),
+    categoryID: toNumber(metadata.categoryID, 0),
+    customInfo: String(customInfo || ""),
+    itemName: itemName || metadata.name || "Item",
+    mass: toFiniteNumber(metadata.mass, 0),
+    volume: toFiniteNumber(metadata.volume, 0),
+    capacity: toFiniteNumber(metadata.capacity, 0),
+    radius: toFiniteNumber(metadata.radius, 0),
+  };
+  const normalizedSpaceState = normalizeSpaceState(spaceState);
+  const normalizedModuleState = normalizeModuleState(moduleState);
+  const normalizedConditionState =
+    conditionState === null || conditionState === undefined
+      ? null
+      : normalizeShipConditionState(conditionState);
+  const normalizedCreatedAtMs = normalizeTimestampMs(createdAtMs);
+  const normalizedExpiresAtMs = normalizeTimestampMs(expiresAtMs);
+  const normalizedFighterState = normalizeFighterState(fighterState);
+
+  if (normalizedCreatedAtMs !== null) {
+    item.createdAtMs = normalizedCreatedAtMs;
+  }
+  if (normalizedExpiresAtMs !== null) {
+    item.expiresAtMs = normalizedExpiresAtMs;
+  }
+  if (toNumber(launcherID, 0) > 0) {
+    item.launcherID = toNumber(launcherID, 0);
+  }
+  if (toFiniteNumber(spaceRadius, 0) > 0) {
+    item.spaceRadius = toFiniteNumber(spaceRadius, 0);
+  }
+  if (toNumber(stackOriginID, 0) > 0) {
+    item.stackOriginID = toNumber(stackOriginID, 0);
+  }
+  const normalizedDunRotation = normalizeDunRotation(dunRotation);
+  if (normalizedDunRotation) {
+    item.dunRotation = normalizedDunRotation;
+  }
+
+  if (item.categoryID === SHIP_CATEGORY_ID) {
+    item.spaceState = normalizedSpaceState;
+    item.conditionState = normalizedConditionState || normalizeShipConditionState(null);
+    if (item.flagID !== 0) {
+      item.spaceState = null;
+    }
+
+    return {
+      ...item,
+      shipID: item.itemID,
+      shipTypeID: item.typeID,
+      shipName: item.itemName,
+    };
+  }
+
+  if (item.flagID === 0 && normalizedSpaceState) {
+    item.spaceState = normalizedSpaceState;
+  }
+
+  if (normalizedConditionState) {
+    item.conditionState = normalizedConditionState;
+  }
+
+  if (normalizedModuleState !== undefined) {
+    item.moduleState = normalizedModuleState;
+  }
+  if (normalizedFighterState) {
+    item.fighterState = normalizedFighterState;
+  }
+
+  return item;
 }
 
 function buildShipItem({
@@ -224,269 +643,21 @@ function buildShipItem({
   conditionState = null,
 }) {
   const metadata = getShipMetadata(typeID, itemName);
-  const normalizedSingleton =
-    singleton === null || singleton === undefined ? 1 : toNumber(singleton, 1);
-  const normalizedQuantity =
-    quantity === null || quantity === undefined
-      ? normalizedSingleton === 1
-        ? -1
-        : 1
-      : toNumber(quantity, normalizedSingleton === 1 ? -1 : 1);
-
-  const item = {
-    itemID: toNumber(itemID),
+  return buildInventoryItem({
+    itemID,
     typeID: metadata.typeID,
-    ownerID: toNumber(ownerID),
-    locationID: toNumber(locationID),
-    flagID: toNumber(flagID, ITEM_FLAGS.HANGAR),
-    quantity: normalizedQuantity,
-    stacksize: toNumber(stacksize, 1),
-    singleton: normalizedSingleton,
-    groupID: toNumber(metadata.groupID, 25),
-    categoryID: toNumber(metadata.categoryID, SHIP_CATEGORY_ID),
-    customInfo: String(customInfo || ""),
-    itemName: metadata.name || itemName || "Ship",
-    mass: toFiniteNumber(metadata.mass, 0),
-    volume: toFiniteNumber(metadata.volume, 0),
-    capacity: toFiniteNumber(metadata.capacity, 0),
-    radius: toFiniteNumber(metadata.radius, 0),
-    spaceState: normalizeSpaceState(spaceState),
-    conditionState: normalizeShipConditionState(conditionState),
-  };
-
-  if (item.flagID !== 0) {
-    item.spaceState = null;
-  }
-
-  return {
-    ...item,
-    shipID: item.itemID,
-    shipTypeID: item.typeID,
-    shipName: item.itemName,
-  };
-}
-
-function isShipLikeItem(rawItem, defaults = {}) {
-  if (!rawItem || typeof rawItem !== "object") {
-    return false;
-  }
-
-  const typeID = toNumber(
-    rawItem.typeID ?? rawItem.shipTypeID ?? defaults.typeID ?? defaults.shipTypeID,
-    0,
-  );
-  const categoryID = toNumber(rawItem.categoryID ?? defaults.categoryID, 0);
-  if (categoryID === SHIP_CATEGORY_ID) {
-    return true;
-  }
-
-  if (
-    Object.prototype.hasOwnProperty.call(rawItem, "shipID") ||
-    Object.prototype.hasOwnProperty.call(rawItem, "shipTypeID") ||
-    Object.prototype.hasOwnProperty.call(rawItem, "shipName")
-  ) {
-    return true;
-  }
-
-  return Boolean(resolveShipByTypeID(typeID));
-}
-
-function normalizeShipItem(rawItem, defaults = {}) {
-  if (!rawItem || typeof rawItem !== "object") {
-    return null;
-  }
-
-    if (!isShipLikeItem(rawItem, defaults)) {
-    return null;
-  }
-
-  const itemID = toNumber(rawItem.itemID ?? rawItem.shipID, 0);
-  const typeID = toNumber(rawItem.typeID ?? rawItem.shipTypeID, 0);
-  if (itemID <= 0 || typeID <= 0) {
-    return null;
-  }
-
-  return buildShipItem({
-    itemID,
-    typeID,
-    ownerID: rawItem.ownerID ?? defaults.ownerID ?? 0,
-    locationID: rawItem.locationID ?? defaults.locationID ?? 0,
-    flagID: rawItem.flagID ?? defaults.flagID ?? ITEM_FLAGS.HANGAR,
-    itemName: rawItem.itemName ?? rawItem.shipName ?? defaults.itemName ?? null,
-    quantity: rawItem.quantity ?? defaults.quantity ?? null,
-    stacksize: rawItem.stacksize ?? defaults.stacksize ?? 1,
-    singleton: rawItem.singleton ?? defaults.singleton ?? null,
-    customInfo: rawItem.customInfo ?? defaults.customInfo ?? "",
-    spaceState: Object.prototype.hasOwnProperty.call(rawItem, "spaceState")
-      ? rawItem.spaceState
-      : defaults.spaceState ?? null,
-    conditionState: Object.prototype.hasOwnProperty.call(rawItem, "conditionState")
-      ? rawItem.conditionState
-      : defaults.conditionState ?? null,
+    ownerID,
+    locationID,
+    flagID,
+    itemName: itemName || metadata.name || "Ship",
+    quantity,
+    stacksize,
+    singleton:
+      singleton === null || singleton === undefined ? 1 : singleton,
+    customInfo,
+    spaceState,
+    conditionState,
   });
-}
-function isMeaningfulItemName(value) {
-  const normalizedValue = String(value || "").trim();
-  return normalizedValue !== "" && !/^Type\s+\d+$/i.test(normalizedValue);
-}
-
-function findItemTypeReference(typeID, skipItemID = 0) {
-  const normalizedTypeID = toNumber(typeID, 0);
-  const normalizedSkipItemID = toNumber(skipItemID, 0);
-  if (normalizedTypeID <= 0) {
-    return null;
-  }
-
-  for (const rawEntry of Object.values(readItems())) {
-    if (!rawEntry || typeof rawEntry !== "object") {
-      continue;
-    }
-
-    const entryItemID = toNumber(rawEntry.itemID ?? rawEntry.shipID, 0);
-    if (entryItemID > 0 && entryItemID === normalizedSkipItemID) {
-      continue;
-    }
-
-    const entryTypeID = toNumber(rawEntry.typeID ?? rawEntry.shipTypeID, 0);
-    if (entryTypeID !== normalizedTypeID) {
-      continue;
-    }
-
-    const entryCategoryID = toNumber(rawEntry.categoryID, 0);
-    if (entryCategoryID === SHIP_CATEGORY_ID) {
-      continue;
-    }
-
-    const entryName = String(rawEntry.itemName || "").trim();
-    const entryGroupID = toNumber(rawEntry.groupID, 0);
-    if (
-      entryGroupID > 0 ||
-      entryCategoryID > 0 ||
-      isMeaningfulItemName(entryName)
-    ) {
-      return {
-        groupID: entryGroupID,
-        categoryID: entryCategoryID,
-        itemName: isMeaningfulItemName(entryName) ? entryName : "",
-      };
-    }
-  }
-
-  return null;
-}
-
-function resolveInventoryItemMetadata({
-  itemID,
-  typeID,
-  flagID,
-  itemName,
-  groupID,
-  categoryID,
-}) {
-  const normalizedTypeID = toNumber(typeID, 0);
-  const normalizedFlagID = toNumber(flagID, 0);
-  const normalizedGroupID = toNumber(groupID, 0);
-  const normalizedCategoryID = toNumber(categoryID, 0);
-  const normalizedItemName = String(itemName || "").trim();
-  const moduleMetadata = resolveModuleType(normalizedTypeID, normalizedItemName);
-  const referenceMetadata =
-    normalizedTypeID > 0 &&
-    (
-      !moduleMetadata ||
-      normalizedGroupID <= 0 ||
-      normalizedCategoryID <= 0 ||
-      !isMeaningfulItemName(normalizedItemName)
-    )
-      ? findItemTypeReference(normalizedTypeID, itemID)
-      : null;
-  const looksLikeModule = Boolean(
-    moduleMetadata ||
-      (referenceMetadata && (
-        referenceMetadata.categoryID === MODULE_CATEGORY_ID ||
-        referenceMetadata.groupID > 0 ||
-        referenceMetadata.itemName
-      )) ||
-      normalizedCategoryID === MODULE_CATEGORY_ID ||
-      FITTED_SLOT_FLAGS.has(normalizedFlagID),
-  );
-
-  return {
-    groupID:
-      normalizedGroupID > 0
-        ? normalizedGroupID
-        : toNumber(moduleMetadata && moduleMetadata.groupID, 0) ||
-          toNumber(referenceMetadata && referenceMetadata.groupID, 0) ||
-          (looksLikeModule ? GENERIC_MODULE_GROUP_ID : 0),
-    categoryID:
-      normalizedCategoryID > 0
-        ? normalizedCategoryID
-        : toNumber(moduleMetadata && moduleMetadata.categoryID, 0) ||
-          toNumber(referenceMetadata && referenceMetadata.categoryID, 0) ||
-          (looksLikeModule ? MODULE_CATEGORY_ID : 0),
-    itemName:
-      (isMeaningfulItemName(normalizedItemName) ? normalizedItemName : "") ||
-      String(
-        (moduleMetadata && moduleMetadata.name) ||
-          (referenceMetadata && referenceMetadata.itemName) ||
-          (looksLikeModule
-            ? `Module ${normalizedTypeID}`
-            : `Type ${normalizedTypeID}`),
-      ),
-  };
-}
-
-function buildInventoryItem({
-  itemID,
-  typeID,
-  ownerID,
-  locationID,
-  flagID = ITEM_FLAGS.HANGAR,
-  itemName = null,
-  quantity = 1,
-  stacksize = null,
-  singleton = 0,
-  groupID = 0,
-  categoryID = 0,
-  customInfo = "",
-}) {
-  const normalizedTypeID = toNumber(typeID);
-  const normalizedSingleton = toNumber(singleton, 0);
-  const normalizedQuantity =
-    quantity === null || quantity === undefined
-      ? normalizedSingleton === 1
-        ? -1
-        : 1
-      : toNumber(quantity, normalizedSingleton === 1 ? -1 : 1);
-  const normalizedStacksize =
-    stacksize === null || stacksize === undefined
-      ? normalizedSingleton === 1
-        ? 1
-        : Math.max(1, normalizedQuantity)
-      : toNumber(stacksize, normalizedSingleton === 1 ? 1 : normalizedQuantity);
-  const normalizedFlagID = toNumber(flagID, ITEM_FLAGS.HANGAR);
-  const resolvedMetadata = resolveInventoryItemMetadata({
-    itemID,
-    typeID: normalizedTypeID,
-    flagID: normalizedFlagID,
-    itemName,
-    groupID,
-    categoryID,
-  });
-
-  return {
-    itemID: toNumber(itemID),
-    typeID: normalizedTypeID,
-    ownerID: toNumber(ownerID),
-    locationID: toNumber(locationID),
-    flagID: normalizedFlagID,
-    quantity: normalizedQuantity,
-    stacksize: normalizedStacksize,
-    singleton: normalizedSingleton,
-    groupID: resolvedMetadata.groupID,
-    categoryID: resolvedMetadata.categoryID,
-    customInfo: String(customInfo || ""),
-    itemName: resolvedMetadata.itemName,
-  };
 }
 
 function normalizeInventoryItem(rawItem, defaults = {}) {
@@ -494,12 +665,8 @@ function normalizeInventoryItem(rawItem, defaults = {}) {
     return null;
   }
 
-  if (isShipLikeItem(rawItem, defaults)) {
-    return normalizeShipItem(rawItem, defaults);
-  }
-
-  const itemID = toNumber(rawItem.itemID ?? defaults.itemID, 0);
-  const typeID = toNumber(rawItem.typeID ?? defaults.typeID, 0);
+  const itemID = toNumber(rawItem.itemID ?? rawItem.shipID, 0);
+  const typeID = toNumber(rawItem.typeID ?? rawItem.shipTypeID, 0);
   if (itemID <= 0 || typeID <= 0) {
     return null;
   }
@@ -510,14 +677,53 @@ function normalizeInventoryItem(rawItem, defaults = {}) {
     ownerID: rawItem.ownerID ?? defaults.ownerID ?? 0,
     locationID: rawItem.locationID ?? defaults.locationID ?? 0,
     flagID: rawItem.flagID ?? defaults.flagID ?? ITEM_FLAGS.HANGAR,
-    itemName: rawItem.itemName ?? defaults.itemName ?? null,
-    quantity: rawItem.quantity ?? defaults.quantity ?? 1,
+    itemName: rawItem.itemName ?? rawItem.shipName ?? defaults.itemName ?? null,
+    quantity: rawItem.quantity ?? defaults.quantity ?? null,
     stacksize: rawItem.stacksize ?? defaults.stacksize ?? null,
-    singleton: rawItem.singleton ?? defaults.singleton ?? 0,
-    groupID: rawItem.groupID ?? defaults.groupID ?? 0,
-    categoryID: rawItem.categoryID ?? defaults.categoryID ?? 0,
+    singleton: rawItem.singleton ?? defaults.singleton ?? null,
     customInfo: rawItem.customInfo ?? defaults.customInfo ?? "",
+    spaceState: Object.prototype.hasOwnProperty.call(rawItem, "spaceState")
+      ? rawItem.spaceState
+      : defaults.spaceState ?? null,
+    conditionState: Object.prototype.hasOwnProperty.call(rawItem, "conditionState")
+      ? rawItem.conditionState
+      : defaults.conditionState ?? null,
+    moduleState: Object.prototype.hasOwnProperty.call(rawItem, "moduleState")
+      ? rawItem.moduleState
+      : defaults.moduleState,
+    createdAtMs: Object.prototype.hasOwnProperty.call(rawItem, "createdAtMs")
+      ? rawItem.createdAtMs
+      : defaults.createdAtMs ?? null,
+    expiresAtMs: Object.prototype.hasOwnProperty.call(rawItem, "expiresAtMs")
+      ? rawItem.expiresAtMs
+      : defaults.expiresAtMs ?? null,
+    launcherID: Object.prototype.hasOwnProperty.call(rawItem, "launcherID")
+      ? rawItem.launcherID
+      : defaults.launcherID ?? null,
+    spaceRadius: Object.prototype.hasOwnProperty.call(rawItem, "spaceRadius")
+      ? rawItem.spaceRadius
+      : defaults.spaceRadius ?? null,
+    stackOriginID: Object.prototype.hasOwnProperty.call(rawItem, "stackOriginID")
+      ? rawItem.stackOriginID
+      : defaults.stackOriginID ?? null,
+    dunRotation: Object.prototype.hasOwnProperty.call(rawItem, "dunRotation")
+      ? rawItem.dunRotation
+      : defaults.dunRotation ?? null,
+    fighterState: Object.prototype.hasOwnProperty.call(rawItem, "fighterState")
+      ? rawItem.fighterState
+      : defaults.fighterState ?? null,
   });
+}
+
+function normalizeShipItem(rawItem, defaults = {}) {
+  const normalizedItem = normalizeInventoryItem(rawItem, defaults);
+  return normalizedItem && normalizedItem.categoryID === SHIP_CATEGORY_ID
+    ? normalizedItem
+    : null;
+}
+
+function getStructureState() {
+  return require(path.join(__dirname, "../structure/structureState"));
 }
 
 function collectLegacyShips(charId, record) {
@@ -562,7 +768,7 @@ function nextItemID(charId, items, characterRecord = null) {
   }
 
   for (const rawItem of Object.values(items)) {
-    const item = normalizeShipItem(rawItem);
+    const item = normalizeInventoryItem(rawItem);
     if (!item) {
       continue;
     }
@@ -574,68 +780,9 @@ function nextItemID(charId, items, characterRecord = null) {
 
   return maxItemID + 1;
 }
-function getMigrationSignature() {
-  return [
-    `characters:${getTableRevisionSafe(CHARACTERS_TABLE)}`,
-    `items:${getTableRevisionSafe(ITEMS_TABLE)}`,
-  ].join("|");
-}
-
-function reconcileCharacterCapsules(charId, characterRecord, items) {
-  const numericCharId = toNumber(charId, 0);
-  if (numericCharId <= 0 || !characterRecord || !items) {
-    return false;
-  }
-
-  const normalizedItems = Object.entries(items)
-    .map(([key, value]) => [key, normalizeShipItem(value)])
-    .filter(([, value]) => value && value.ownerID === numericCharId);
-  const activeShipID = toNumber(characterRecord.shipID, 0);
-  const activeShip = normalizedItems.find(([, value]) => value.itemID === activeShipID)?.[1] || null;
-  const stationID = toNumber(characterRecord.stationID, 0);
-  let keepCapsuleID =
-    activeShip && activeShip.typeID === CAPSULE_TYPE_ID ? activeShip.itemID : 0;
-
-  if (!keepCapsuleID) {
-    const dockedCapsule = normalizedItems
-      .map(([, value]) => value)
-      .filter((value) => value.typeID === CAPSULE_TYPE_ID)
-      .sort((left, right) => {
-        const leftPriority =
-          left.locationID === stationID && left.flagID === ITEM_FLAGS.HANGAR ? 0 : 1;
-        const rightPriority =
-          right.locationID === stationID && right.flagID === ITEM_FLAGS.HANGAR ? 0 : 1;
-        if (leftPriority !== rightPriority) {
-          return leftPriority - rightPriority;
-        }
-        return left.itemID - right.itemID;
-      })[0] || null;
-
-    if (dockedCapsule) {
-      keepCapsuleID = dockedCapsule.itemID;
-    }
-  }
-
-  let changed = false;
-  for (const [itemKey, item] of normalizedItems) {
-    if (item.typeID !== CAPSULE_TYPE_ID) {
-      continue;
-    }
-
-    if (item.itemID === keepCapsuleID) {
-      continue;
-    }
-
-    delete items[itemKey];
-    changed = true;
-  }
-
-  return changed;
-}
 
 function ensureMigrated() {
-  const nextSignature = getMigrationSignature();
-  if (migrationComplete && migrationSignature === nextSignature) {
+  if (migrationComplete) {
     return;
   }
 
@@ -704,10 +851,6 @@ function ensureMigrated() {
       characters[charIdKey] = nextRecord;
       charactersDirty = true;
     }
-
-        if (reconcileCharacterCapsules(charId, nextRecord, items)) {
-      itemsDirty = true;
-    }
   }
 
   if (itemsDirty && !writeItems(items)) {
@@ -719,7 +862,6 @@ function ensureMigrated() {
   }
 
   migrationComplete = true;
-  migrationSignature = getMigrationSignature();
 }
 
 function getAllItems() {
@@ -727,9 +869,9 @@ function getAllItems() {
   return cloneValue(readItems());
 }
 
-function listCharacterShipItems(charId, options = {}) {
+function listOwnedItems(ownerId, options = {}) {
   ensureMigrated();
-  const numericCharId = toNumber(charId, 0);
+  const numericOwnerId = toNumber(ownerId, 0);
   const locationID =
     options.locationID === undefined || options.locationID === null
       ? null
@@ -738,19 +880,36 @@ function listCharacterShipItems(charId, options = {}) {
     options.flagID === undefined || options.flagID === null
       ? null
       : toNumber(options.flagID, ITEM_FLAGS.HANGAR);
+  const categoryID =
+    options.categoryID === undefined || options.categoryID === null
+      ? null
+      : toNumber(options.categoryID, 0);
+  const typeID =
+    options.typeID === undefined || options.typeID === null
+      ? null
+      : toNumber(options.typeID, 0);
 
-  return Object.values(readItems())
-    .map((entry) => normalizeShipItem(entry))
+  return (ensureItemIndexes().byOwner.get(numericOwnerId) || [])
     .filter(
       (entry) =>
         entry &&
-        entry.ownerID === numericCharId &&
-        entry.categoryID === SHIP_CATEGORY_ID &&
         (locationID === null || entry.locationID === locationID) &&
-        (flagID === null || entry.flagID === flagID),
+        (flagID === null || entry.flagID === flagID) &&
+        (categoryID === null || entry.categoryID === categoryID) &&
+        (typeID === null || entry.typeID === typeID),
     )
-    .sort((left, right) => left.itemID - right.itemID)
     .map((entry) => cloneValue(entry));
+}
+
+function listCharacterItems(charId, options = {}) {
+  return listOwnedItems(charId, options);
+}
+
+function listCharacterShipItems(charId, options = {}) {
+  return listCharacterItems(charId, {
+    ...options,
+    categoryID: SHIP_CATEGORY_ID,
+  });
 }
 
 function getCharacterShipItems(charId) {
@@ -777,13 +936,22 @@ function findCharacterShipItem(charId, shipId) {
 }
 
 function findShipItemById(shipId) {
-  ensureMigrated();
   const numericShipId = toNumber(shipId, 0);
   if (numericShipId <= 0) {
     return null;
   }
 
-  const entry = normalizeShipItem(readItems()[String(numericShipId)]);
+  const entry = ensureItemIndexes().byID.get(numericShipId) || null;
+  return entry && entry.categoryID === SHIP_CATEGORY_ID ? cloneValue(entry) : null;
+}
+
+function findItemById(itemId) {
+  const numericItemId = toNumber(itemId, 0);
+  if (numericItemId <= 0) {
+    return null;
+  }
+
+  const entry = ensureItemIndexes().byID.get(numericItemId) || null;
   return entry ? cloneValue(entry) : null;
 }
 
@@ -909,46 +1077,28 @@ function syncCharacterActiveShip(charId, shipItem) {
   };
 }
 
-function createShipItemForCharacter(charId, stationId, shipType) {
-  ensureMigrated();
-  const characters = readCharacters();
-  const items = readItems();
-  const record = characters[String(charId)];
-  if (!record) {
-    return {
-      success: false,
-      errorMsg: "CHARACTER_NOT_FOUND",
-    };
+function resolveItemTypeReference(itemType) {
+  if (itemType && typeof itemType === "object" && itemType.typeID) {
+    return getItemMetadata(itemType.typeID, itemType.name || itemType.itemName || null);
   }
 
-  const shipItem = buildShipItem({
-    itemID: nextItemID(charId, items, record),
-    typeID: shipType.typeID,
-    ownerID: charId,
-    locationID: stationId,
-    flagID: ITEM_FLAGS.HANGAR,
-    itemName: shipType.name,
-  });
-
-  items[String(shipItem.itemID)] = shipItem;
-  if (!writeItems(items)) {
-    return {
-      success: false,
-      errorMsg: "WRITE_ERROR",
-    };
-  }
-
-  return {
-    success: true,
-    data: cloneValue(shipItem),
-  };
+  return getItemMetadata(itemType);
 }
 
-function createInventoryItemForCharacter(
+function buildStackKey(ownerID, locationID, flagID, typeID) {
+  return [
+    toNumber(ownerID, 0),
+    toNumber(locationID, 0),
+    toNumber(flagID, ITEM_FLAGS.HANGAR),
+    toNumber(typeID, 0),
+  ].join(":");
+}
+
+function grantItemsToCharacterLocation(
   charId,
   locationId,
-  itemType,
-  options = {},
+  flagId,
+  grantEntries = [],
 ) {
   ensureMigrated();
   const characters = readCharacters();
@@ -961,89 +1111,398 @@ function createInventoryItemForCharacter(
     };
   }
 
-  const normalizedOwnerID = toNumber(charId, 0);
-  const normalizedLocationID = toNumber(locationId, 0);
-  const normalizedFlagID = toNumber(options.flagID ?? ITEM_FLAGS.HANGAR, ITEM_FLAGS.HANGAR);
-  const normalizedSingleton = toNumber(options.singleton ?? 0, 0);
-  const normalizedQuantity = toNumber(options.quantity ?? 1, normalizedSingleton === 1 ? -1 : 1);
-  const normalizedCustomInfo = String(options.customInfo ?? "");
-  const normalizedTypeID = toNumber(itemType && itemType.typeID, 0);
+  const entries = Array.isArray(grantEntries)
+    ? grantEntries.filter(Boolean)
+    : [];
+  if (entries.length === 0) {
+    return {
+      success: true,
+      data: {
+        quantity: 0,
+        items: [],
+        changes: [],
+        grantedEntries: [],
+      },
+    };
+  }
 
-  if (normalizedSingleton === 0) {
-    const existingStack = Object.values(items)
-      .map((entry) => normalizeInventoryItem(entry))
-      .find(
-        (entry) =>
-          entry &&
-          entry.categoryID !== SHIP_CATEGORY_ID &&
-          entry.ownerID === normalizedOwnerID &&
-          entry.locationID === normalizedLocationID &&
-          entry.flagID === normalizedFlagID &&
-          entry.typeID === normalizedTypeID &&
-          entry.singleton === 0 &&
-          String(entry.customInfo || "") === normalizedCustomInfo,
-      );
+  const numericLocationId = toNumber(locationId, 0);
+  const numericFlagId = toNumber(flagId, ITEM_FLAGS.HANGAR);
+  const changes = [];
+  const createdItems = [];
+  const grantedEntries = [];
+  const transientCreatedItemIDs = [];
+  const stackIndex = new Map();
 
-    if (existingStack) {
-      const previousData = cloneValue(existingStack);
-      const existingUnits = Math.max(
-        1,
-        toNumber(existingStack.stacksize, existingStack.quantity),
-      );
-      const addedUnits = Math.max(
-        1,
-        toNumber(options.stacksize ?? normalizedQuantity, normalizedQuantity),
-      );
-      const mergedItem = buildInventoryItem({
-        ...existingStack,
-        itemName: itemType && itemType.name ? itemType.name : existingStack.itemName,
-        groupID:
-          itemType && itemType.groupID !== undefined
-            ? itemType.groupID
-            : existingStack.groupID,
-        categoryID:
-          itemType && itemType.categoryID !== undefined
-            ? itemType.categoryID
-            : existingStack.categoryID,
-        quantity: existingUnits + addedUnits,
-        stacksize: existingUnits + addedUnits,
-        customInfo: normalizedCustomInfo,
-      });
+  for (const rawItem of Object.values(items)) {
+    const item = normalizeInventoryItem(rawItem);
+    if (!item || item.singleton !== 0) {
+      continue;
+    }
+    stackIndex.set(
+      buildStackKey(item.ownerID, item.locationID, item.flagID, item.typeID),
+      item,
+    );
+  }
 
-      items[String(existingStack.itemID)] = mergedItem;
-      if (!writeItems(items)) {
-        return {
-          success: false,
-          errorMsg: "WRITE_ERROR",
-        };
-      }
-
+  for (const entry of entries) {
+    const metadata = resolveItemTypeReference(entry.itemType);
+    if (!metadata || !Number.isInteger(toNumber(metadata.typeID, 0)) || metadata.typeID <= 0) {
       return {
-        success: true,
-        created: false,
-        merged: true,
-        previousData,
-        data: cloneValue(mergedItem),
+        success: false,
+        errorMsg: "ITEM_TYPE_NOT_FOUND",
       };
+    }
+
+    const normalizedQuantity = normalizePositiveInteger(entry.quantity, 1);
+    const options =
+      entry.options && typeof entry.options === "object"
+        ? entry.options
+        : {};
+    const singletonMode =
+      options.singleton === undefined || options.singleton === null
+        ? shouldItemDefaultToSingleton(metadata)
+        : toNumber(options.singleton, 0) > 0;
+
+    if (singletonMode) {
+      for (let index = 0; index < normalizedQuantity; index += 1) {
+        const item = buildInventoryItem({
+          itemID: nextItemID(charId, items, record),
+          typeID: metadata.typeID,
+          ownerID: charId,
+          locationID: numericLocationId,
+          flagID: numericFlagId,
+          itemName: options.itemName || metadata.name,
+          singleton: 1,
+          customInfo: options.customInfo || "",
+          spaceState: options.spaceState || null,
+          conditionState: options.conditionState || null,
+          moduleState: options.moduleState,
+          createdAtMs: options.createdAtMs ?? null,
+          expiresAtMs: options.expiresAtMs ?? null,
+          launcherID: options.launcherID ?? null,
+          dunRotation: options.dunRotation ?? null,
+          spaceRadius: options.spaceRadius ?? null,
+        });
+
+        items[String(item.itemID)] = item;
+        changes.push({
+          created: true,
+          item: cloneValue(item),
+          previousState: {
+            locationID: 0,
+            flagID: 0,
+          },
+        });
+        createdItems.push(cloneValue(item));
+        if (options.transient === true) {
+          transientCreatedItemIDs.push(item.itemID);
+        }
+      }
+    } else {
+      const stackKey = buildStackKey(
+        charId,
+        numericLocationId,
+        numericFlagId,
+        metadata.typeID,
+      );
+      const existingStack = stackIndex.get(stackKey) || null;
+
+      if (existingStack) {
+        const previousState = captureItemState(existingStack);
+        const updatedItem = buildInventoryItem({
+          ...existingStack,
+          quantity: toNumber(existingStack.quantity, 0) + normalizedQuantity,
+          stacksize: toNumber(existingStack.stacksize, 0) + normalizedQuantity,
+        });
+        items[String(updatedItem.itemID)] = updatedItem;
+        stackIndex.set(stackKey, updatedItem);
+        changes.push({
+          created: false,
+          item: cloneValue(updatedItem),
+          previousState,
+        });
+        createdItems.push(cloneValue(updatedItem));
+      } else {
+        const item = buildInventoryItem({
+          itemID: nextItemID(charId, items, record),
+          typeID: metadata.typeID,
+          ownerID: charId,
+          locationID: numericLocationId,
+          flagID: numericFlagId,
+          itemName: options.itemName || metadata.name,
+          quantity: normalizedQuantity,
+          stacksize: normalizedQuantity,
+          singleton: 0,
+          customInfo: options.customInfo || "",
+          spaceState: options.spaceState || null,
+          conditionState: options.conditionState || null,
+          moduleState: options.moduleState,
+          createdAtMs: options.createdAtMs ?? null,
+          expiresAtMs: options.expiresAtMs ?? null,
+          launcherID: options.launcherID ?? null,
+          dunRotation: options.dunRotation ?? null,
+          spaceRadius: options.spaceRadius ?? null,
+        });
+        items[String(item.itemID)] = item;
+        stackIndex.set(stackKey, item);
+        changes.push({
+          created: true,
+          item: cloneValue(item),
+          previousState: {
+            locationID: 0,
+            flagID: 0,
+          },
+        });
+        createdItems.push(cloneValue(item));
+        if (options.transient === true) {
+          transientCreatedItemIDs.push(item.itemID);
+        }
+      }
+    }
+
+    grantedEntries.push({
+      itemType: cloneValue(metadata),
+      quantity: normalizedQuantity,
+    });
+  }
+
+  if (!writeItems(items)) {
+    return {
+      success: false,
+      errorMsg: "WRITE_ERROR",
+    };
+  }
+
+  if (transientCreatedItemIDs.length > 0) {
+    for (const itemID of transientCreatedItemIDs) {
+      database.setTransientPath(ITEMS_TABLE, `/${String(itemID)}`, true);
     }
   }
 
-  const item = buildInventoryItem({
-    itemID: nextItemID(charId, items, record),
-    typeID: itemType && itemType.typeID,
-    ownerID: charId,
-    locationID: locationId,
-    flagID: options.flagID ?? ITEM_FLAGS.HANGAR,
-    itemName: itemType && itemType.name,
-    quantity: options.quantity ?? 1,
-    stacksize: options.stacksize,
-    singleton: options.singleton ?? 0,
-    groupID: itemType && itemType.groupID,
-    categoryID: itemType && itemType.categoryID,
-    customInfo: options.customInfo ?? "",
-  });
+  const singleEntry = entries.length === 1 ? grantedEntries[0] || null : null;
+  return {
+    success: true,
+    data: {
+      itemType: singleEntry ? singleEntry.itemType : null,
+      quantity: singleEntry ? singleEntry.quantity : grantedEntries.reduce(
+        (sum, entry) => sum + entry.quantity,
+        0,
+      ),
+      items: createdItems,
+      changes,
+      grantedEntries,
+    },
+  };
+}
 
-  items[String(item.itemID)] = item;
+function grantItemToCharacterLocation(
+  charId,
+  locationId,
+  flagId,
+  itemType,
+  quantity = 1,
+  options = {},
+) {
+  return grantItemsToCharacterLocation(
+    charId,
+    locationId,
+    flagId,
+    [{
+      itemType,
+      quantity,
+      options,
+    }],
+  );
+}
+
+function grantItemToCharacterStationHangar(charId, stationId, itemType, quantity = 1) {
+  return grantItemToCharacterLocation(
+    charId,
+    stationId,
+    ITEM_FLAGS.HANGAR,
+    itemType,
+    quantity,
+  );
+}
+
+function grantItemsToCharacterStationHangar(charId, stationId, grantEntries = []) {
+  return grantItemsToCharacterLocation(
+    charId,
+    stationId,
+    ITEM_FLAGS.HANGAR,
+    grantEntries,
+  );
+}
+
+function resolveSpawnedSpaceItemRadius(itemType, options = {}) {
+  const explicitSpaceRadius = toFiniteNumber(options && options.spaceRadius, 0);
+  if (explicitSpaceRadius > 0) {
+    return explicitSpaceRadius;
+  }
+
+  const metadata = getItemMetadata(
+    itemType && itemType.typeID,
+    itemType && (itemType.itemName || itemType.name),
+  );
+  const groupName = String(
+    metadata && metadata.groupName || itemType && itemType.groupName || "",
+  ).trim().toLowerCase();
+  if (groupName !== "wreck") {
+    return 0;
+  }
+
+  return resolveRuntimeWreckRadius(metadata, toFiniteNumber(metadata && metadata.radius, 0));
+}
+
+function createSpaceItemForCharacter(charId, solarSystemId, itemType, options = {}) {
+  const normalizedSystemId = toNumber(solarSystemId, 0);
+  if (normalizedSystemId <= 0) {
+    return {
+      success: false,
+      errorMsg: "SOLAR_SYSTEM_NOT_FOUND",
+    };
+  }
+
+  const createResult = grantItemToCharacterLocation(
+    charId,
+    normalizedSystemId,
+    0,
+    itemType,
+    1,
+    {
+      ...options,
+      singleton: 1,
+      createdAtMs: options.createdAtMs ?? Date.now(),
+      expiresAtMs: options.expiresAtMs ?? null,
+      spaceRadius: (
+        resolveSpawnedSpaceItemRadius(itemType, options) || null
+      ),
+      spaceState: normalizeSpaceState({
+        systemID: normalizedSystemId,
+        position: options.position,
+        velocity: options.velocity,
+        direction: options.direction,
+        targetPoint: options.targetPoint,
+        speedFraction: options.speedFraction,
+        mode: options.mode || "STOP",
+        targetEntityID: options.targetEntityID,
+        followRange: options.followRange,
+        orbitDistance: options.orbitDistance,
+        orbitNormal: options.orbitNormal,
+        orbitSign: options.orbitSign,
+      }),
+    },
+  );
+  if (!createResult.success) {
+    return createResult;
+  }
+
+  return {
+    success: true,
+    data: createResult.data.items[0] || null,
+    changes: createResult.data.changes || [],
+  };
+}
+
+function takeItemTypeFromCharacterLocation(
+  charId,
+  locationId,
+  flagId,
+  typeId,
+  quantity = 1,
+) {
+  ensureMigrated();
+  const numericCharId = toNumber(charId, 0);
+  const numericLocationId = toNumber(locationId, 0);
+  const numericFlagId =
+    flagId === null || flagId === undefined ? null : toNumber(flagId, 0);
+  const numericTypeId = toNumber(typeId, 0);
+  const normalizedQuantity = normalizePositiveInteger(quantity, 1);
+  if (numericCharId <= 0 || numericTypeId <= 0) {
+    return {
+      success: false,
+      errorMsg: "ITEM_NOT_FOUND",
+    };
+  }
+
+  const items = readItems();
+  const matchingItems = Object.values(items)
+    .map((entry) => normalizeInventoryItem(entry))
+    .filter(
+      (entry) =>
+        entry &&
+        entry.ownerID === numericCharId &&
+        entry.locationID === numericLocationId &&
+        (numericFlagId === null || entry.flagID === numericFlagId) &&
+        entry.typeID === numericTypeId,
+    )
+    .sort((left, right) => left.itemID - right.itemID);
+
+  const availableQuantity = matchingItems.reduce(
+    (sum, entry) => sum + (entry.singleton === 1 ? 1 : toNumber(entry.quantity, 0)),
+    0,
+  );
+  if (availableQuantity < normalizedQuantity) {
+    return {
+      success: false,
+      errorMsg: "INSUFFICIENT_ITEMS",
+      data: {
+        availableQuantity,
+        requestedQuantity: normalizedQuantity,
+      },
+    };
+  }
+
+  let remaining = normalizedQuantity;
+  const changes = [];
+  for (const item of matchingItems) {
+    if (remaining <= 0) {
+      break;
+    }
+
+    const previousData = cloneValue(item);
+    if (item.singleton === 1) {
+      delete items[String(item.itemID)];
+      database.setTransientPath(ITEMS_TABLE, `/${String(item.itemID)}`, false);
+      changes.push({
+        removed: true,
+        previousData,
+        item: null,
+      });
+      remaining -= 1;
+      continue;
+    }
+
+    const currentQuantity = toNumber(item.quantity, 0);
+    if (currentQuantity <= remaining) {
+      delete items[String(item.itemID)];
+      database.setTransientPath(ITEMS_TABLE, `/${String(item.itemID)}`, false);
+      changes.push({
+        removed: true,
+        previousData,
+        item: null,
+      });
+      remaining -= currentQuantity;
+      continue;
+    }
+
+    const updatedQuantity = currentQuantity - remaining;
+    const updatedItem = buildInventoryItem({
+      ...item,
+      quantity: updatedQuantity,
+      stacksize: updatedQuantity,
+      singleton: 0,
+    });
+    items[String(updatedItem.itemID)] = updatedItem;
+    changes.push({
+      removed: false,
+      previousData,
+      item: cloneValue(updatedItem),
+    });
+    remaining = 0;
+  }
+
   if (!writeItems(items)) {
     return {
       success: false,
@@ -1053,100 +1512,29 @@ function createInventoryItemForCharacter(
 
   return {
     success: true,
-    created: true,
-    merged: false,
-    previousData: null,
-    data: cloneValue(item),
+    data: {
+      quantity: normalizedQuantity,
+      changes,
+    },
   };
 }
 
-function stackAllInventoryItemsInContainer(ownerId, locationId, flagId) {
-  ensureMigrated();
-
-  const numericOwnerId = toNumber(ownerId, 0);
-  const numericLocationId = toNumber(locationId, 0);
-  const numericFlagId = toNumber(flagId, 0);
-  if (numericOwnerId <= 0 || numericLocationId <= 0) {
-    return {
-      success: false,
-      errorMsg: "INVALID_CONTAINER",
-      data: [],
-    };
-  }
-
-  const items = readItems();
-  const containerItems = Object.values(items)
-    .map((entry) => normalizeInventoryItem(entry))
-    .filter(
-      (entry) =>
-        entry &&
-        entry.categoryID !== SHIP_CATEGORY_ID &&
-        entry.ownerID === numericOwnerId &&
-        entry.locationID === numericLocationId &&
-        entry.flagID === numericFlagId &&
-        entry.singleton === 0,
-    )
-    .sort((left, right) => left.itemID - right.itemID);
-
-  const groupedItems = new Map();
-  for (const item of containerItems) {
-    const groupKey = [
-      item.typeID,
-      item.ownerID,
-      item.locationID,
-      item.flagID,
-      item.customInfo || "",
-    ].join(":");
-    if (!groupedItems.has(groupKey)) {
-      groupedItems.set(groupKey, []);
-    }
-    groupedItems.get(groupKey).push(item);
-  }
-
-  const changes = [];
-  let mutated = false;
-  for (const groupItems of groupedItems.values()) {
-    if (!Array.isArray(groupItems) || groupItems.length < 2) {
-      continue;
-    }
-
-    const [targetItem, ...mergedItems] = groupItems;
-    const previousTarget = cloneValue(targetItem);
-    const totalUnits = groupItems.reduce(
-      (sum, item) =>
-        sum + Math.max(1, toNumber(item.stacksize, item.quantity)),
-      0,
-    );
-    const updatedTarget = buildInventoryItem({
-      ...targetItem,
-      quantity: totalUnits,
-      stacksize: totalUnits,
-    });
-
-    items[String(targetItem.itemID)] = updatedTarget;
-    for (const mergedItem of mergedItems) {
-      delete items[String(mergedItem.itemID)];
-    }
-
-    changes.push({
-      updatedItem: cloneValue(updatedTarget),
-      previousData: previousTarget,
-      removedItems: mergedItems.map((item) => cloneValue(item)),
-    });
-    mutated = true;
-  }
-
-  if (mutated && !writeItems(items)) {
-    return {
-      success: false,
-      errorMsg: "WRITE_ERROR",
-      data: [],
-    };
+function createShipItemForCharacter(charId, stationId, shipType) {
+  const createResult = grantItemToCharacterLocation(
+    charId,
+    stationId,
+    ITEM_FLAGS.HANGAR,
+    shipType,
+    1,
+  );
+  if (!createResult.success) {
+    return createResult;
   }
 
   return {
     success: true,
-    data: changes,
+    data: createResult.data.items[0] || null,
+    changes: createResult.data.changes,
   };
 }
 
@@ -1162,7 +1550,7 @@ function updateInventoryItem(itemId, updater) {
 
   const items = readItems();
   const currentItem = normalizeInventoryItem(items[String(numericItemId)]);
-  if (!currentItem || currentItem.categoryID === SHIP_CATEGORY_ID) {
+  if (!currentItem) {
     return {
       success: false,
       errorMsg: "ITEM_NOT_FOUND",
@@ -1172,7 +1560,7 @@ function updateInventoryItem(itemId, updater) {
   const updatedValue =
     typeof updater === "function" ? updater(cloneValue(currentItem)) : updater;
   const normalizedItem = normalizeInventoryItem(updatedValue, currentItem);
-  if (!normalizedItem || normalizedItem.categoryID === SHIP_CATEGORY_ID) {
+  if (!normalizedItem) {
     return {
       success: false,
       errorMsg: "INVALID_ITEM_STATE",
@@ -1194,7 +1582,7 @@ function updateInventoryItem(itemId, updater) {
   };
 }
 
-function moveInventoryItem(itemId, destination = {}) {
+function removeInventoryItem(itemId, options = {}) {
   ensureMigrated();
   const numericItemId = toNumber(itemId, 0);
   if (numericItemId <= 0) {
@@ -1205,113 +1593,61 @@ function moveInventoryItem(itemId, destination = {}) {
   }
 
   const items = readItems();
-  const currentItem = normalizeInventoryItem(items[String(numericItemId)]);
-  if (!currentItem || currentItem.categoryID === SHIP_CATEGORY_ID) {
+  const rootItem = normalizeInventoryItem(items[String(numericItemId)]);
+  if (!rootItem) {
     return {
       success: false,
       errorMsg: "ITEM_NOT_FOUND",
     };
   }
 
-  const nextLocationID = toNumber(
-    destination.locationID,
-    currentItem.locationID,
-  );
-  const nextFlagID = toNumber(destination.flagID, currentItem.flagID);
-  const nextSingleton = toNumber(
-    destination.singleton,
-    currentItem.singleton,
-  );
-  const currentUnits = Math.max(
-    1,
-    toNumber(currentItem.stacksize, currentItem.quantity),
-  );
+  const removeContents = options.removeContents !== false;
+  const orderedRemovalIDs = [];
+  const seen = new Set();
 
-  if (nextSingleton === 1 && currentItem.singleton === 0 && currentUnits > 1) {
-    const characters = readCharacters();
-    const ownerRecord = characters[String(currentItem.ownerID)] || null;
-    const updatedSourceItem = buildInventoryItem({
-      ...currentItem,
-      quantity: currentUnits - 1,
-      stacksize: currentUnits - 1,
-    });
-    const movedItem = buildInventoryItem({
-      ...currentItem,
-      itemID: nextItemID(currentItem.ownerID, items, ownerRecord),
-      locationID: nextLocationID,
-      flagID: nextFlagID,
-      quantity: toNumber(destination.quantity, -1),
-      stacksize: toNumber(destination.stacksize, 1),
-      singleton: 1,
-    });
-
-    items[String(currentItem.itemID)] = updatedSourceItem;
-    items[String(movedItem.itemID)] = movedItem;
-    if (!writeItems(items)) {
-      return {
-        success: false,
-        errorMsg: "WRITE_ERROR",
-      };
+  const collect = (currentID) => {
+    const normalizedCurrentID = toNumber(currentID, 0);
+    if (normalizedCurrentID <= 0 || seen.has(normalizedCurrentID)) {
+      return;
     }
 
-    return {
-      success: true,
-      split: true,
+    seen.add(normalizedCurrentID);
+    if (removeContents) {
+      for (const rawItem of Object.values(items)) {
+        const nestedItem = normalizeInventoryItem(rawItem);
+        if (
+          nestedItem &&
+          toNumber(nestedItem.locationID, 0) === normalizedCurrentID &&
+          toNumber(nestedItem.itemID, 0) !== normalizedCurrentID
+        ) {
+          collect(nestedItem.itemID);
+        }
+      }
+    }
+
+    orderedRemovalIDs.push(normalizedCurrentID);
+  };
+
+  collect(numericItemId);
+
+  const changes = [];
+  const removedItems = [];
+  for (const removalID of orderedRemovalIDs) {
+    const currentItem = normalizeInventoryItem(items[String(removalID)]);
+    if (!currentItem) {
+      continue;
+    }
+
+    delete items[String(removalID)];
+    database.setTransientPath(ITEMS_TABLE, `/${String(removalID)}`, false);
+    changes.push({
+      removed: true,
       previousData: cloneValue(currentItem),
-      data: cloneValue(movedItem),
-      sourcePreviousData: cloneValue(currentItem),
-      sourceItem: cloneValue(updatedSourceItem),
-    };
+      item: buildRemovedItemNotificationState(currentItem),
+    });
+    removedItems.push(cloneValue(currentItem));
   }
 
-  return updateInventoryItem(numericItemId, (item) => ({
-    ...item,
-    locationID: nextLocationID,
-    flagID: nextFlagID,
-    quantity: toNumber(
-      destination.quantity,
-      nextSingleton === 1 ? -1 : item.quantity,
-    ),
-    stacksize: toNumber(
-      destination.stacksize,
-      nextSingleton === 1
-        ? 1
-        : Math.max(1, toNumber(item.stacksize, item.quantity)),
-    ),
-    singleton: nextSingleton,
-  }));
-}
-
-function updateShipItem(shipId, updater) {
-  ensureMigrated();
-  const numericShipId = toNumber(shipId, 0);
-  if (numericShipId <= 0) {
-    return {
-      success: false,
-      errorMsg: "SHIP_NOT_FOUND",
-    };
-  }
-
-  const items = readItems();
-  const currentItem = normalizeShipItem(items[String(numericShipId)]);
-  if (!currentItem) {
-    return {
-      success: false,
-      errorMsg: "SHIP_NOT_FOUND",
-    };
-  }
-
-  const updatedValue =
-    typeof updater === "function" ? updater(cloneValue(currentItem)) : updater;
-  const normalizedItem = normalizeShipItem(updatedValue, currentItem);
-  if (!normalizedItem) {
-    return {
-      success: false,
-      errorMsg: "INVALID_SHIP_STATE",
-    };
-  }
-
-  items[String(numericShipId)] = normalizedItem;
   if (!writeItems(items)) {
     return {
       success: false,
@@ -1321,31 +1657,158 @@ function updateShipItem(shipId, updater) {
 
   return {
     success: true,
-    previousData: cloneValue(currentItem),
-    data: cloneValue(normalizedItem),
+    data: {
+      removedItems,
+      changes,
+    },
   };
 }
 
-function deleteShipItem(shipId) {
-  ensureMigrated();
-  const numericShipId = toNumber(shipId, 0);
-  if (numericShipId <= 0) {
+function updateShipItem(shipId, updater) {
+  const updateResult = updateInventoryItem(shipId, updater);
+  if (!updateResult.success) {
+    return {
+      ...updateResult,
+      errorMsg:
+        updateResult.errorMsg === "ITEM_NOT_FOUND"
+          ? "SHIP_NOT_FOUND"
+          : updateResult.errorMsg === "INVALID_ITEM_STATE"
+            ? "INVALID_SHIP_STATE"
+            : updateResult.errorMsg,
+    };
+  }
+
+  if (updateResult.data.categoryID !== SHIP_CATEGORY_ID) {
     return {
       success: false,
       errorMsg: "SHIP_NOT_FOUND",
+    };
+  }
+
+  return updateResult;
+}
+
+function buildRemovedItemNotificationState(item) {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+
+  return {
+    ...cloneValue(item),
+    // The client removes container rows most reliably when the disappearing
+    // item looks like it moved to a junk location, rather than an in-place
+    // zero-stack update inside the same container.
+    locationID: JUNK_LOCATION_ID,
+    quantity:
+      item.singleton === 1
+        ? -1
+        : toNumber(item.stacksize ?? item.quantity, 0),
+    stacksize:
+      item.singleton === 1
+        ? 1
+        : toNumber(item.stacksize ?? item.quantity, 0),
+  };
+}
+
+function buildCreatedItemNotificationPreviousState(item, fallbackFlagID = ITEM_FLAGS.HANGAR) {
+  return {
+    locationID: 0,
+    flagID: toNumber(item && item.flagID, fallbackFlagID),
+    quantity: 0,
+    stacksize: 0,
+    singleton: toNumber(item && item.singleton, 0),
+  };
+}
+
+function mergeItemStacks(sourceItemId, destinationItemId, quantity = null) {
+  ensureMigrated();
+  const numericSourceItemID = toNumber(sourceItemId, 0);
+  const numericDestinationItemID = toNumber(destinationItemId, 0);
+  if (numericSourceItemID <= 0 || numericDestinationItemID <= 0) {
+    return {
+      success: false,
+      errorMsg: "ITEM_NOT_FOUND",
     };
   }
 
   const items = readItems();
-  const currentItem = normalizeShipItem(items[String(numericShipId)]);
-  if (!currentItem) {
+  const sourceItem = normalizeInventoryItem(items[String(numericSourceItemID)]);
+  const destinationItem = normalizeInventoryItem(items[String(numericDestinationItemID)]);
+  if (!sourceItem || !destinationItem) {
     return {
       success: false,
-      errorMsg: "SHIP_NOT_FOUND",
+      errorMsg: "ITEM_NOT_FOUND",
     };
   }
 
-  delete items[String(numericShipId)];
+  if (sourceItem.singleton === 1 || destinationItem.singleton === 1) {
+    return {
+      success: false,
+      errorMsg: "STACK_REQUIRED",
+    };
+  }
+
+  if (
+    toNumber(sourceItem.typeID, 0) !== toNumber(destinationItem.typeID, 0) ||
+    toNumber(sourceItem.ownerID, 0) !== toNumber(destinationItem.ownerID, 0)
+  ) {
+    return {
+      success: false,
+      errorMsg: "STACK_MISMATCH",
+    };
+  }
+
+  const sourceQuantity = toNumber(sourceItem.stacksize ?? sourceItem.quantity, 0);
+  const destinationQuantity = toNumber(destinationItem.stacksize ?? destinationItem.quantity, 0);
+  const requestedQuantity =
+    quantity === null || quantity === undefined
+      ? sourceQuantity
+      : normalizePositiveInteger(quantity, 1);
+  if (requestedQuantity > sourceQuantity) {
+    return {
+      success: false,
+      errorMsg: "INSUFFICIENT_ITEMS",
+    };
+  }
+
+  const changes = [];
+  const destinationPreviousData = captureItemState(destinationItem);
+  const updatedDestination = buildInventoryItem({
+    ...destinationItem,
+    quantity: destinationQuantity + requestedQuantity,
+    stacksize: destinationQuantity + requestedQuantity,
+    singleton: 0,
+  });
+  items[String(updatedDestination.itemID)] = updatedDestination;
+  changes.push({
+    removed: false,
+    previousData: destinationPreviousData,
+    item: cloneValue(updatedDestination),
+  });
+
+  const sourcePreviousData = cloneValue(sourceItem);
+  if (requestedQuantity === sourceQuantity) {
+    delete items[String(sourceItem.itemID)];
+    changes.push({
+      removed: true,
+      previousData: sourcePreviousData,
+      item: buildRemovedItemNotificationState(sourceItem),
+    });
+  } else {
+    const updatedSource = buildInventoryItem({
+      ...sourceItem,
+      quantity: sourceQuantity - requestedQuantity,
+      stacksize: sourceQuantity - requestedQuantity,
+      singleton: 0,
+    });
+    items[String(updatedSource.itemID)] = updatedSource;
+    changes.push({
+      removed: false,
+      previousData: sourcePreviousData,
+      item: cloneValue(updatedSource),
+    });
+  }
+
   if (!writeItems(items)) {
     return {
       success: false,
@@ -1355,7 +1818,410 @@ function deleteShipItem(shipId) {
 
   return {
     success: true,
-    previousData: cloneValue(currentItem),
+    data: {
+      quantity: requestedQuantity,
+      changes,
+    },
+  };
+}
+
+function buildMovedItemState(currentItem, destinationLocationID, destinationFlagID) {
+  const nextState = {
+    ...currentItem,
+    locationID: destinationLocationID,
+    flagID: destinationFlagID,
+  };
+
+  const isCharge = toNumber(currentItem.categoryID, 0) === 8;
+  if (!isCharge && destinationFlagID >= 11 && destinationFlagID <= 132) {
+    // CCP parity: modules auto-online when fitted to a ship slot.  The client
+    // expects fitted modules to be online so that CPU/powergrid load is
+    // reflected correctly in the fitting window.  Charges (categoryID 8)
+    // placed in the same flag as their parent module are NOT modules and
+    // should not receive a moduleState at all.
+    nextState.moduleState = normalizeModuleState({
+      ...(currentItem.moduleState || {}),
+      online: true,
+    });
+  } else if (!isCharge) {
+    nextState.moduleState = normalizeModuleState({
+      ...(currentItem.moduleState || {}),
+      online: false,
+    });
+  }
+
+  return nextState;
+}
+
+function moveItemToLocation(
+  itemId,
+  destinationLocationId,
+  destinationFlagId,
+  quantity = null,
+) {
+  ensureMigrated();
+  const numericItemId = toNumber(itemId, 0);
+  const destinationLocationID = toNumber(destinationLocationId, 0);
+  const destinationFlagID = toNumber(destinationFlagId, ITEM_FLAGS.HANGAR);
+  if (numericItemId <= 0 || destinationLocationID <= 0) {
+    return {
+      success: false,
+      errorMsg: "ITEM_NOT_FOUND",
+    };
+  }
+
+  const items = readItems();
+  const characters = readCharacters();
+  const currentItem = normalizeInventoryItem(items[String(numericItemId)]);
+  if (!currentItem) {
+    return {
+      success: false,
+      errorMsg: "ITEM_NOT_FOUND",
+    };
+  }
+
+  const availableQuantity =
+    currentItem.singleton === 1
+      ? 1
+      : normalizePositiveInteger(currentItem.stacksize, 1);
+  const moveQuantity =
+    quantity === null || quantity === undefined
+      ? availableQuantity
+      : normalizePositiveInteger(quantity, 1);
+  if (moveQuantity > availableQuantity) {
+    return {
+      success: false,
+      errorMsg: "INSUFFICIENT_ITEMS",
+    };
+  }
+
+  const changes = [];
+  const movingWholeItem = currentItem.singleton === 1 || moveQuantity === availableQuantity;
+  const movedBase = buildMovedItemState(
+    currentItem,
+    destinationLocationID,
+    destinationFlagID,
+  );
+
+  const fittingDestination = isFittingFlag(destinationFlagID);
+  // CCP parity: only modules (categoryID 7) become singletons when fitted.
+  // Charges (categoryID 8) loaded into a module's flag keep their stack
+  // quantity — they are NOT singletons.
+  const isChargeCategory = toNumber(currentItem.categoryID, 0) === 8;
+  const convertToSingleton = fittingDestination && !isChargeCategory;
+
+  if (movingWholeItem) {
+    const previousData = cloneValue(currentItem);
+    const destinationSingleton = convertToSingleton ? 1 : currentItem.singleton;
+    const movedItem = buildInventoryItem({
+      ...movedBase,
+      quantity:
+        destinationSingleton === 1 ? null : moveQuantity,
+      stacksize:
+        destinationSingleton === 1 ? 1 : moveQuantity,
+      singleton: destinationSingleton,
+    });
+    items[String(movedItem.itemID)] = movedItem;
+    changes.push({
+      removed: false,
+      previousData,
+      item: cloneValue(movedItem),
+    });
+  } else {
+    const sourcePreviousData = cloneValue(currentItem);
+    const updatedSource = buildInventoryItem({
+      ...currentItem,
+      quantity: availableQuantity - moveQuantity,
+      stacksize: availableQuantity - moveQuantity,
+      singleton: 0,
+    });
+    items[String(updatedSource.itemID)] = updatedSource;
+    changes.push({
+      removed: false,
+      previousData: sourcePreviousData,
+      item: cloneValue(updatedSource),
+    });
+
+    const splitSingleton = convertToSingleton ? 1 : 0;
+    const nextItem = buildInventoryItem({
+      ...movedBase,
+      itemID: nextItemID(currentItem.ownerID, items, characters[String(currentItem.ownerID)]),
+      quantity: splitSingleton === 1 ? null : moveQuantity,
+      stacksize: splitSingleton === 1 ? 1 : moveQuantity,
+      singleton: splitSingleton,
+      stackOriginID:
+        toNumber(currentItem.stackOriginID, 0) > 0
+          ? toNumber(currentItem.stackOriginID, 0)
+          : currentItem.itemID,
+    });
+    items[String(nextItem.itemID)] = nextItem;
+    changes.push({
+      removed: false,
+      // CCP parity: a partial-stack move creates a brand-new item row in the
+      // destination inventory. The client never knew about this new itemID in
+      // the source container, so advertise it as arriving from "outside"
+      // instead of as a move from the source stack's previous location.
+      previousData: buildCreatedItemNotificationPreviousState(
+        nextItem,
+        sourcePreviousData.flagID,
+      ),
+      item: cloneValue(nextItem),
+    });
+  }
+
+  if (!writeItems(items)) {
+    return {
+      success: false,
+      errorMsg: "WRITE_ERROR",
+    };
+  }
+
+  return {
+    success: true,
+    data: {
+      quantity: moveQuantity,
+      changes,
+    },
+  };
+}
+
+function transferItemToOwnerLocation(
+  itemId,
+  destinationOwnerId,
+  destinationLocationId,
+  destinationFlagId,
+  quantity = null,
+) {
+  ensureMigrated();
+  const numericItemId = toNumber(itemId, 0);
+  const destinationOwnerID = toNumber(destinationOwnerId, 0);
+  const destinationLocationID = toNumber(destinationLocationId, 0);
+  const destinationFlagID = toNumber(destinationFlagId, ITEM_FLAGS.HANGAR);
+  if (
+    numericItemId <= 0 ||
+    destinationOwnerID <= 0 ||
+    destinationLocationID <= 0
+  ) {
+    return {
+      success: false,
+      errorMsg: "ITEM_NOT_FOUND",
+    };
+  }
+
+  const items = readItems();
+  const characters = readCharacters();
+  const currentItem = normalizeInventoryItem(items[String(numericItemId)]);
+  if (!currentItem) {
+    return {
+      success: false,
+      errorMsg: "ITEM_NOT_FOUND",
+    };
+  }
+
+  const availableQuantity =
+    currentItem.singleton === 1
+      ? 1
+      : normalizePositiveInteger(currentItem.stacksize, 1);
+  const moveQuantity =
+    quantity === null || quantity === undefined
+      ? availableQuantity
+      : normalizePositiveInteger(quantity, 1);
+  if (moveQuantity > availableQuantity) {
+    return {
+      success: false,
+      errorMsg: "INSUFFICIENT_ITEMS",
+    };
+  }
+
+  const changes = [];
+  const movingWholeItem =
+    currentItem.singleton === 1 || moveQuantity === availableQuantity;
+  const movedBase = buildMovedItemState(
+    currentItem,
+    destinationLocationID,
+    destinationFlagID,
+  );
+  const isChargeCategory = toNumber(currentItem.categoryID, 0) === 8;
+  const fittingDestination = isFittingFlag(destinationFlagID);
+  const convertToSingleton = fittingDestination && !isChargeCategory;
+
+  if (movingWholeItem) {
+    const previousData = cloneValue(currentItem);
+    const destinationSingleton = convertToSingleton ? 1 : currentItem.singleton;
+    const movedItem = buildInventoryItem({
+      ...movedBase,
+      ownerID: destinationOwnerID,
+      quantity: destinationSingleton === 1 ? null : moveQuantity,
+      stacksize: destinationSingleton === 1 ? 1 : moveQuantity,
+      singleton: destinationSingleton,
+    });
+    items[String(movedItem.itemID)] = movedItem;
+    changes.push({
+      removed: false,
+      previousData,
+      item: cloneValue(movedItem),
+    });
+  } else {
+    const sourcePreviousData = cloneValue(currentItem);
+    const updatedSource = buildInventoryItem({
+      ...currentItem,
+      quantity: availableQuantity - moveQuantity,
+      stacksize: availableQuantity - moveQuantity,
+      singleton: 0,
+    });
+    items[String(updatedSource.itemID)] = updatedSource;
+    changes.push({
+      removed: false,
+      previousData: sourcePreviousData,
+      item: cloneValue(updatedSource),
+    });
+
+    const splitSingleton = convertToSingleton ? 1 : 0;
+    const nextItem = buildInventoryItem({
+      ...movedBase,
+      itemID: nextItemID(
+        destinationOwnerID,
+        items,
+        characters[String(destinationOwnerID)] || null,
+      ),
+      ownerID: destinationOwnerID,
+      quantity: splitSingleton === 1 ? null : moveQuantity,
+      stacksize: splitSingleton === 1 ? 1 : moveQuantity,
+      singleton: splitSingleton,
+      stackOriginID:
+        toNumber(currentItem.stackOriginID, 0) > 0
+          ? toNumber(currentItem.stackOriginID, 0)
+          : currentItem.itemID,
+    });
+    items[String(nextItem.itemID)] = nextItem;
+    changes.push({
+      removed: false,
+      previousData: buildCreatedItemNotificationPreviousState(
+        nextItem,
+        sourcePreviousData.flagID,
+      ),
+      item: cloneValue(nextItem),
+    });
+  }
+
+  if (!writeItems(items)) {
+    return {
+      success: false,
+      errorMsg: "WRITE_ERROR",
+    };
+  }
+
+  return {
+    success: true,
+    data: {
+      quantity: moveQuantity,
+      changes,
+    },
+  };
+}
+
+function moveItemTypeFromCharacterLocation(
+  charId,
+  sourceLocationId,
+  sourceFlagId,
+  destinationLocationId,
+  destinationFlagId,
+  typeId,
+  quantity = 1,
+) {
+  ensureMigrated();
+  const numericCharId = toNumber(charId, 0);
+  const numericSourceLocationId = toNumber(sourceLocationId, 0);
+  const numericDestinationLocationId = toNumber(destinationLocationId, 0);
+  const numericDestinationFlagId = toNumber(destinationFlagId, ITEM_FLAGS.HANGAR);
+  const numericTypeId = toNumber(typeId, 0);
+  const numericQuantity = normalizePositiveInteger(quantity, 1);
+  const numericSourceFlagId =
+    sourceFlagId === null || sourceFlagId === undefined
+      ? null
+      : toNumber(sourceFlagId, 0);
+
+  if (
+    numericCharId <= 0 ||
+    numericSourceLocationId <= 0 ||
+    numericDestinationLocationId <= 0 ||
+    numericTypeId <= 0
+  ) {
+    return {
+      success: false,
+      errorMsg: "ITEM_NOT_FOUND",
+    };
+  }
+
+  const sourceItems = listContainerItems(
+    numericCharId,
+    numericSourceLocationId,
+    numericSourceFlagId,
+  )
+    .filter((item) => item && toNumber(item.typeID, 0) === numericTypeId)
+    .sort((left, right) => left.itemID - right.itemID);
+
+  const availableQuantity = sourceItems.reduce((sum, item) => (
+    sum + (toNumber(item.singleton, 0) === 1 ? 1 : normalizePositiveInteger(item.stacksize, 1))
+  ), 0);
+  if (availableQuantity < numericQuantity) {
+    return {
+      success: false,
+      errorMsg: "INSUFFICIENT_ITEMS",
+      data: {
+        availableQuantity,
+        requestedQuantity: numericQuantity,
+      },
+    };
+  }
+
+  const allChanges = [];
+  const movedItems = [];
+  let remaining = numericQuantity;
+
+  for (const sourceItem of sourceItems) {
+    if (remaining <= 0) {
+      break;
+    }
+
+    const movableQuantity =
+      toNumber(sourceItem.singleton, 0) === 1
+        ? 1
+        : Math.min(
+            remaining,
+            normalizePositiveInteger(sourceItem.stacksize, 1),
+          );
+    const moveResult = moveItemToLocation(
+      sourceItem.itemID,
+      numericDestinationLocationId,
+      numericDestinationFlagId,
+      movableQuantity,
+    );
+    if (!moveResult.success) {
+      return moveResult;
+    }
+
+    allChanges.push(...((moveResult.data && moveResult.data.changes) || []));
+    const movedChange = ((moveResult.data && moveResult.data.changes) || []).find((change) => (
+      change &&
+      change.item &&
+      toNumber(change.item.locationID, 0) === numericDestinationLocationId &&
+      toNumber(change.item.flagID, 0) === numericDestinationFlagId &&
+      toNumber(change.item.typeID, 0) === numericTypeId
+    ));
+    if (movedChange && movedChange.item) {
+      movedItems.push(cloneValue(movedChange.item));
+    }
+    remaining -= movableQuantity;
+  }
+
+  return {
+    success: true,
+    data: {
+      quantity: numericQuantity,
+      changes: allChanges,
+      items: movedItems,
+    },
   };
 }
 
@@ -1382,9 +2248,28 @@ function moveShipToSpace(shipId, solarSystemId, spaceState) {
 }
 
 function dockShipToStation(shipId, stationId) {
+  return dockShipToLocation(shipId, stationId);
+}
+
+function dockShipToLocation(shipId, locationId) {
+  const numericLocationId = toNumber(locationId, 0);
+  const station = worldData.getStationByID(numericLocationId);
+  const structure =
+    station || numericLocationId <= 0
+      ? null
+      : getStructureState().getStructureByID(numericLocationId, {
+          refresh: false,
+        });
+  if (!station && !structure) {
+    return {
+      success: false,
+      errorMsg: "DOCK_LOCATION_NOT_FOUND",
+    };
+  }
+
   return updateShipItem(shipId, (currentItem) => ({
     ...currentItem,
-    locationID: toNumber(stationId, currentItem.locationID),
+    locationID: numericLocationId,
     flagID: ITEM_FLAGS.HANGAR,
     spaceState: null,
   }));
@@ -1418,18 +2303,6 @@ function setActiveShipForCharacter(charId, shipId) {
     return syncResult;
   }
 
-    const characters = readCharacters();
-  const items = readItems();
-  const currentRecord = characters[String(toNumber(charId, 0))];
-  if (currentRecord && reconcileCharacterCapsules(charId, currentRecord, items)) {
-    if (!writeItems(items)) {
-      return {
-        success: false,
-        errorMsg: "WRITE_ERROR",
-      };
-    }
-  }
-
   return {
     success: true,
     data: shipItem,
@@ -1453,155 +2326,156 @@ function ensureCapsuleForCharacter(charId, stationId) {
 }
 
 function listContainerItems(ownerId, locationId, flagId = null) {
-  ensureMigrated();
-  const numericOwnerId = toNumber(ownerId, 0);
   const numericLocationId = toNumber(locationId, 0);
+  const numericOwnerId =
+    ownerId === null || ownerId === undefined ? null : toNumber(ownerId, 0);
   const numericFlagId =
     flagId === null || flagId === undefined ? null : toNumber(flagId, 0);
 
-  const matchedItems = [];
-  for (const rawEntry of Object.values(readItems())) {
-    const entry = normalizeInventoryItem(rawEntry);
+  return (ensureItemIndexes().byLocation.get(numericLocationId) || [])
+    .filter(
+      (entry) =>
+        entry &&
+        entry.locationID === numericLocationId &&
+        (numericOwnerId === null || entry.ownerID === numericOwnerId) &&
+        (numericFlagId === null || entry.flagID === numericFlagId),
+    )
+    .map((entry) => cloneValue(entry));
+}
+
+function listSystemSpaceItems(systemId) {
+  const numericSystemId = toNumber(systemId, 0);
+  if (numericSystemId <= 0) {
+    return [];
+  }
+
+  const now = Date.now();
+
+  return (ensureItemIndexes().byLocation.get(numericSystemId) || [])
+    .filter(
+      (entry) =>
+        entry &&
+        entry.locationID === numericSystemId &&
+        entry.flagID === 0 &&
+        entry.spaceState &&
+        toNumber(entry.spaceState.systemID, 0) === numericSystemId &&
+        (
+          !Number.isFinite(Number(entry.expiresAtMs)) ||
+          Number(entry.expiresAtMs) > now
+        ),
+    )
+    .map((entry) => cloneValue(entry));
+}
+
+function pruneExpiredSpaceItems(now = Date.now()) {
+  ensureMigrated();
+  const numericNow = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+  const items = Object.values(readItems())
+    .map((entry) => normalizeInventoryItem(entry))
+    .filter(Boolean)
+    .sort((left, right) => left.itemID - right.itemID);
+
+  const removedTopLevelItemIDs = [];
+  const removedChanges = [];
+  const seen = new Set();
+
+  for (const item of items) {
+    const itemID = toNumber(item && item.itemID, 0);
     if (
-      !entry ||
-      entry.ownerID !== numericOwnerId ||
-      entry.locationID !== numericLocationId ||
-      (numericFlagId !== null && entry.flagID !== numericFlagId)
+      itemID <= 0 ||
+      seen.has(itemID) ||
+      toNumber(item.locationID, 0) <= 0 ||
+      toNumber(item.flagID, 0) !== 0 ||
+      !item.spaceState ||
+      !Number.isFinite(Number(item.expiresAtMs)) ||
+      Number(item.expiresAtMs) > numericNow
     ) {
       continue;
     }
 
-    matchedItems.push(entry);
-  }
-
-  if (matchedItems.length > 1) {
-    matchedItems.sort((left, right) => left.itemID - right.itemID);
-  }
-
-  return matchedItems.map((entry) => cloneValue(entry));
-}
-
-function findContainerItem(ownerId, locationId, flagId, excludeItemId = 0) {
-  ensureMigrated();
-  const numericOwnerId = toNumber(ownerId, 0);
-  const numericLocationId = toNumber(locationId, 0);
-  const numericFlagId = toNumber(flagId, 0);
-  const numericExcludeItemId = toNumber(excludeItemId, 0);
-  if (numericOwnerId <= 0 || numericLocationId <= 0 || numericFlagId <= 0) {
-    return null;
-  }
-
-  for (const rawEntry of Object.values(readItems())) {
-    const entry = normalizeInventoryItem(rawEntry);
-    if (
-      !entry ||
-      entry.ownerID !== numericOwnerId ||
-      entry.locationID !== numericLocationId ||
-      entry.flagID !== numericFlagId ||
-      entry.itemID === numericExcludeItemId
-    ) {
+    const removeResult = removeInventoryItem(itemID, { removeContents: true });
+    if (!removeResult.success) {
       continue;
     }
 
-    return cloneValue(entry);
-  }
-
-  return null;
-}
-
-function getOccupiedContainerFlags(ownerId, locationId, candidateFlags = null) {
-  ensureMigrated();
-  const numericOwnerId = toNumber(ownerId, 0);
-  const numericLocationId = toNumber(locationId, 0);
-  if (numericOwnerId <= 0 || numericLocationId <= 0) {
-    return new Set();
-  }
-
-  const candidateFlagSet =
-    Array.isArray(candidateFlags) && candidateFlags.length > 0
-      ? new Set(
-          candidateFlags
-            .map((entry) => toNumber(entry, 0))
-            .filter((entry) => entry > 0),
-        )
-      : null;
-  const occupiedFlags = new Set();
-  if (candidateFlagSet && candidateFlagSet.size === 0) {
-    return occupiedFlags;
-  }
-
-  for (const rawEntry of Object.values(readItems())) {
-    const entry = normalizeInventoryItem(rawEntry);
-    if (
-      !entry ||
-      entry.ownerID !== numericOwnerId ||
-      entry.locationID !== numericLocationId
-    ) {
-      continue;
-    }
-
-    if (candidateFlagSet && !candidateFlagSet.has(entry.flagID)) {
-      continue;
-    }
-
-    occupiedFlags.add(entry.flagID);
-    if (candidateFlagSet && occupiedFlags.size >= candidateFlagSet.size) {
-      break;
+    removedTopLevelItemIDs.push(itemID);
+    removedChanges.push(...((removeResult.data && removeResult.data.changes) || []));
+    for (const removedItem of (removeResult.data && removeResult.data.removedItems) || []) {
+      seen.add(toNumber(removedItem && removedItem.itemID, 0));
     }
   }
 
-  return occupiedFlags;
-}
-
-function findItemById(itemId) {
-  ensureMigrated();
-  const numericItemId = toNumber(itemId, 0);
-  if (numericItemId <= 0) {
-    return null;
-  }
-
-  const entry = normalizeInventoryItem(readItems()[String(numericItemId)]);
-  return entry ? cloneValue(entry) : null;
+  return {
+    success: true,
+    data: {
+      removedTopLevelItemIDs,
+      changes: removedChanges,
+    },
+  };
 }
 
 function getShipConditionState(shipItem) {
   return normalizeShipConditionState(shipItem && shipItem.conditionState);
 }
 
+function resetInventoryStoreForTests() {
+  migrationComplete = false;
+  itemsTableCache = null;
+  itemIndexesDirty = true;
+  itemIndexesCache = null;
+  itemMutationVersion += 1;
+}
+
 module.exports = {
   ITEMS_TABLE,
   ITEM_FLAGS,
+  FIGHTER_TUBE_FLAGS,
   SHIP_CATEGORY_ID,
   CAPSULE_TYPE_ID,
   ensureMigrated,
   getAllItems,
+  listOwnedItems,
+  listCharacterItems,
   getCharacterShipItems,
   getCharacterHangarShipItems,
   findCharacterShipItem,
+  findItemById,
   findShipItemById,
   findCharacterShipByType,
   ensureCharacterActiveShipItem,
   getActiveShipItem,
+  grantItemsToCharacterLocation,
+  grantItemToCharacterLocation,
+  grantItemToCharacterStationHangar,
+  grantItemsToCharacterStationHangar,
+  createSpaceItemForCharacter,
+  takeItemTypeFromCharacterLocation,
   spawnShipInStationHangar,
-  createInventoryItemForCharacter,
-  stackAllInventoryItemsInContainer,
   updateInventoryItem,
-  moveInventoryItem,
+  removeInventoryItem,
+  pruneExpiredSpaceItems,
+  moveItemToLocation,
+  transferItemToOwnerLocation,
+  moveItemTypeFromCharacterLocation,
+  mergeItemStacks,
   updateShipItem,
-  deleteShipItem,
   setShipPackagingState,
   moveShipToSpace,
+  dockShipToLocation,
   dockShipToStation,
   setActiveShipForCharacter,
   ensureCapsuleForCharacter,
   listContainerItems,
-  findContainerItem,
-  getOccupiedContainerFlags,
-  findItemById,
-  buildShipItem,
+  listSystemSpaceItems,
   buildInventoryItem,
-  normalizeShipItem,
+  buildShipItem,
   normalizeInventoryItem,
+  normalizeShipItem,
+  captureItemState,
   getShipConditionState,
+  resetInventoryStoreForTests,
   normalizeShipConditionState,
+  normalizeModuleState,
+  getItemMetadata,
+  getItemMutationVersion,
 };

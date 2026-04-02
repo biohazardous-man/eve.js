@@ -21,6 +21,14 @@ const {
 const {
   flushPendingCommandSessionEffects,
 } = require(path.join(__dirname, "../chat/commandSessionEffects"));
+const {
+  getCynoJammerOnlineSimTime,
+} = require(path.join(__dirname, "../sovereignty/sovSuppressionState"));
+const fleetRuntime = require(path.join(__dirname, "../fleets/fleetRuntime"));
+const USER_ERROR_LOCALIZATION_LABEL = 101;
+const STARGATE_CLOSED_LABEL = "UI/GateIcons/GateClosed";
+const STARGATE_TOO_FAR_LABEL = "UI/Menusvc/MenuHints/NotWithingMaxJumpDist";
+const CRIMEWATCH_WARP_BLOCKED_MESSAGE = "Warp is disabled while the criminal timer is active.";
 
 function getKwargValue(kwargs, key) {
   const entries = extractDictEntries(kwargs);
@@ -42,13 +50,92 @@ function resolveBookmarkAlignTarget(session, bookmarkID) {
   return normalizeNumber(bookmark && bookmark.itemID, 0);
 }
 
+function isDockedStructureObserverSession(session) {
+  return Boolean(
+    !session?._space &&
+      Number(session && (session.structureID || session.structureid)) > 0 &&
+      Number(session && (session.solarsystemid || session.solarsystemid2)) > 0,
+  );
+}
+
+function bootstrapSessionBallpark(session, options = {}) {
+  if (isDockedStructureObserverSession(session)) {
+    return spaceRuntime.bootstrapDockedStructureView(session, options);
+  }
+
+  spaceRuntime.markBeyonceBound(session);
+  return spaceRuntime.ensureInitialBallpark(session, options);
+}
+
+function prepareSessionBallpark(session) {
+  if (
+    isDockedStructureObserverSession(session)
+  ) {
+    return spaceRuntime.prepareDockedStructureView(session);
+  }
+
+  return bootstrapSessionBallpark(session, {
+    allowDeferredJumpBootstrapVisuals: true,
+  });
+}
+
+function getSessionSolarSystemID(session) {
+  return normalizeNumber(
+    session &&
+      (
+        (session._space && session._space.systemID) ||
+        session.solarsystemid2 ||
+        session.solarsystemid
+      ),
+    0,
+  );
+}
+
 class BeyonceService extends BaseService {
   constructor() {
     super("beyonce");
   }
 
+  _throwStargateJumpUserError(errorMsg = "") {
+    switch (String(errorMsg || "").trim()) {
+      case "NOT_IN_SPACE":
+      case "SHIP_NOT_FOUND":
+      case "WRONG_SOLAR_SYSTEM":
+        throwWrappedUserError("DeniedShipChanged");
+        break;
+      case "STARGATE_NOT_FOUND":
+      case "STARGATE_DESTINATION_MISMATCH":
+        throwWrappedUserError("TargetingAttemptCancelled");
+        break;
+      case "TOO_FAR_FROM_STARGATE":
+        throwWrappedUserError("CustomInfo", {
+          info: [USER_ERROR_LOCALIZATION_LABEL, STARGATE_TOO_FAR_LABEL],
+        });
+        break;
+      case "STARGATE_NOT_ACTIVE":
+        throwWrappedUserError("CustomInfo", {
+          info: [USER_ERROR_LOCALIZATION_LABEL, STARGATE_CLOSED_LABEL],
+        });
+        break;
+      case "STARGATE_JUMP_IN_PROGRESS":
+        throwWrappedUserError("CustomInfo", {
+          info: "Stargate jump already in progress.",
+        });
+        break;
+      default:
+        throwWrappedUserError("CustomInfo", {
+          info: "The stargate jump could not be completed.",
+        });
+        break;
+    }
+  }
+
   Handle_GetFormations(args, session) {
-    spaceRuntime.markBeyonceBound(session);
+    // Docked structure exterior view is a view toggle, not a fresh space login.
+    // The stock client may return to hangar without re-fetching hangar state,
+    // so prepare a fresh exterior observer cache here and send the real
+    // ballpark bootstrap only once Michelle completes MachoBindObject.
+    prepareSessionBallpark(session);
 
     return [
       [
@@ -73,12 +160,35 @@ class BeyonceService extends BaseService {
   }
 
   Handle_UpdateStateRequest(args, session) {
+    if (isDockedStructureObserverSession(session)) {
+      bootstrapSessionBallpark(session, {
+        allowDeferredJumpBootstrapVisuals: true,
+      });
+      return null;
+    }
+
     spaceRuntime.markBeyonceBound(session);
-    // The client probes this repeatedly while already in space; forcing a
-    // full AddBalls2/SetState replay causes scene-object churn and visible
-    // respawn flicker.
-    spaceRuntime.ensureInitialBallpark(session);
+    const scene = spaceRuntime.getSceneForSession(session);
+    const egoEntity = scene && scene.getShipEntityForSession(session);
+    if (
+      scene &&
+      egoEntity &&
+      session &&
+      session._space &&
+      session._space.initialStateSent
+    ) {
+      scene.sendStateRefresh(session, egoEntity);
+      return null;
+    }
+
+    bootstrapSessionBallpark(session, {
+      allowDeferredJumpBootstrapVisuals: true,
+    });
     return null;
+  }
+
+  Handle_GetCynoJammerState(args, session) {
+    return getCynoJammerOnlineSimTime(getSessionSolarSystemID(session));
   }
 
   Handle_CmdGotoDirection(args, session) {
@@ -89,7 +199,37 @@ class BeyonceService extends BaseService {
     log.info(
       `[Beyonce] CmdGotoDirection char=${session && session.characterID} dir=(${x}, ${y}, ${z})`,
     );
-    spaceRuntime.gotoDirection(session, { x, y, z });
+    spaceRuntime.gotoDirection(session, { x, y, z }, {
+      commandSource: "CmdGotoDirection",
+      ownerLocallyPredictsHeading: false,
+    });
+    return null;
+  }
+
+  Handle_CmdSteerDirection(args, session) {
+    const x = normalizeNumber(args && args[0], 0);
+    const y = normalizeNumber(args && args[1], 0);
+    const z = normalizeNumber(args && args[2], 0);
+
+    log.info(
+      `[Beyonce] CmdSteerDirection char=${session && session.characterID} dir=(${x}, ${y}, ${z})`,
+    );
+    spaceRuntime.gotoDirection(session, { x, y, z }, {
+      commandSource: "CmdSteerDirection",
+      ownerLocallyPredictsHeading: true,
+    });
+    return null;
+  }
+
+  Handle_CmdGotoPoint(args, session) {
+    const x = normalizeNumber(args && args[0], 0);
+    const y = normalizeNumber(args && args[1], 0);
+    const z = normalizeNumber(args && args[2], 0);
+
+    log.info(
+      `[Beyonce] CmdGotoPoint char=${session && session.characterID} point=(${x}, ${y}, ${z})`,
+    );
+    spaceRuntime.gotoPoint(session, { x, y, z });
     return null;
   }
 
@@ -150,6 +290,16 @@ class BeyonceService extends BaseService {
     return null;
   }
 
+  Handle_CmdFleetTagTarget(args, session) {
+    const itemID = normalizeNumber(args && args[0], 0);
+    const tag = args && args.length > 1 ? args[1] : null;
+    log.info(
+      `[Beyonce] CmdFleetTagTarget char=${session && session.characterID} item=${itemID} tag=${tag === null || tag === undefined ? "<clear>" : String(tag)}`,
+    );
+    fleetRuntime.setFleetTargetTag(session, itemID, tag);
+    return null;
+  }
+
   Handle_CmdWarpToStuff(args, session, kwargs) {
     const warpType = String(args && args[0] ? args[0] : "");
     const rawTarget = args && args.length > 1 ? args[1] : null;
@@ -190,6 +340,11 @@ class BeyonceService extends BaseService {
       log.warn(
         `[Beyonce] CmdWarpToStuff failed for char=${session && session.characterID}: ${(result && result.errorMsg) || "UNKNOWN_ERROR"}`,
       );
+      if (result && result.errorMsg === "CRIMINAL_TIMER_ACTIVE") {
+        throwWrappedUserError("CustomInfo", {
+          info: CRIMEWATCH_WARP_BLOCKED_MESSAGE,
+        });
+      }
     }
 
     return null;
@@ -200,7 +355,17 @@ class BeyonceService extends BaseService {
     log.info(
       `[Beyonce] CmdWarpToStuffAutopilot char=${session && session.characterID} target=${targetID}`,
     );
-    spaceRuntime.warpToEntity(session, targetID, { minimumRange: 10000 });
+    const result = spaceRuntime.warpToEntity(session, targetID, { minimumRange: 10000 });
+    if (!result || !result.success) {
+      log.warn(
+        `[Beyonce] CmdWarpToStuffAutopilot failed for char=${session && session.characterID}: ${(result && result.errorMsg) || "UNKNOWN_ERROR"}`,
+      );
+      if (result && result.errorMsg === "CRIMINAL_TIMER_ACTIVE") {
+        throwWrappedUserError("CustomInfo", {
+          info: CRIMEWATCH_WARP_BLOCKED_MESSAGE,
+        });
+      }
+    }
     return null;
   }
 
@@ -252,7 +417,7 @@ class BeyonceService extends BaseService {
       log.warn(
         `[Beyonce] CmdStargateJump failed for char=${session && session.characterID}: ${result.errorMsg}`,
       );
-      return null;
+      this._throwStargateJumpUserError(result.errorMsg);
     }
 
     return result.data.boundResult || null;
@@ -263,13 +428,26 @@ class BeyonceService extends BaseService {
   }
 
   Handle_MachoBindObject(args, session, kwargs) {
-    spaceRuntime.markBeyonceBound(session);
-    return buildBoundObjectResponse(this, args, session, kwargs);
+    const response = buildBoundObjectResponse(this, args, session, kwargs);
+    const dockedStructureObserverSession = isDockedStructureObserverSession(session);
+    // Space login is race-sensitive: if the bind reply reaches the client
+    // before the first AddBalls2/SetState bootstrap, the inflight HUD can open
+    // against an empty ego-ball state and only recover later via Michelle's
+    // missing-module redraw path.
+    bootstrapSessionBallpark(session, {
+      force: dockedStructureObserverSession,
+      reset: Boolean(
+        dockedStructureObserverSession &&
+          session &&
+          session._structureViewSpace &&
+          session._structureViewSpace.pendingBallparkBind === true
+      ),
+    });
+    return response;
   }
 
   afterCallResponse(methodName, session) {
     if (methodName === "MachoBindObject") {
-      spaceRuntime.ensureInitialBallpark(session);
       flushPendingCommandSessionEffects(session);
       return;
     }

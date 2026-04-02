@@ -17,6 +17,14 @@ const {
 const {
   buildStationServiceMask,
 } = require(path.join(__dirname, "../_shared/stationStaticData"));
+const {
+  listCurrentSovData,
+  listRecentSovActivity,
+} = require(path.join(__dirname, "../sovereignty/sovState"));
+const {
+  buildCurrentSovDataPayload,
+  buildRecentSovActivityPayload,
+} = require(path.join(__dirname, "../sovereignty/sovPayloads"));
 
 class MapService extends BaseService {
   constructor() {
@@ -62,7 +70,7 @@ class MapService extends BaseService {
     );
   }
 
-    Handle_GetTriglavianMinorVictorySystems(args, session, kwargs) {
+  Handle_GetTriglavianMinorVictorySystems(args, session, kwargs) {
     log.debug("[MapService] GetTriglavianMinorVictorySystems called");
 
     return {
@@ -87,6 +95,17 @@ class MapService extends BaseService {
       type: "list",
       items: [],
     };
+  }
+
+  Handle_GetCurrentSovData(args, session) {
+    const locationID = Number(args && args.length > 0 ? args[0] : 0) || 0;
+    log.debug(`[MapService] GetCurrentSovData(${locationID})`);
+    return buildCurrentSovDataPayload(listCurrentSovData(locationID));
+  }
+
+  Handle_GetRecentSovActivity(args, session) {
+    log.debug("[MapService] GetRecentSovActivity called");
+    return buildRecentSovActivityPayload(listRecentSovActivity());
   }
 
   Handle_GetStationInfo(args, session) {

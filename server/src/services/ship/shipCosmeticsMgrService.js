@@ -3,6 +3,7 @@ const path = require("path");
 const BaseService = require(path.join(__dirname, "../baseService"));
 const log = require(path.join(__dirname, "../../utils/logger"));
 const {
+  buildDict,
   buildKeyVal,
   buildList,
   buildFiletimeLong,
@@ -18,6 +19,9 @@ const {
   expireSkin,
   applySkinToShip,
 } = require(path.join(__dirname, "./shipCosmeticsState"));
+const {
+  getEnabledCosmeticsEntries,
+} = require(path.join(__dirname, "./shipLogoFittingState"));
 const {
   publishShipStateSetNotice,
 } = require(path.join(__dirname, "../../_secondary/express/publicGatewayLocal"));
@@ -52,10 +56,12 @@ class ShipCosmeticsMgrService extends BaseService {
   Handle_GetEnabledCosmetics(args, session, kwargs) {
     const shipID = args && args.length > 0 ? args[0] : null;
     log.debug(`[ShipCosmeticsMgr] GetEnabledCosmetics(shipID=${shipID})`);
-    return {
-      type: "dict",
-      entries: [],
-    };
+    return buildDict(
+      getEnabledCosmeticsEntries(shipID).map((entry) => [
+        entry.backendSlot,
+        entry.cosmeticType,
+      ]),
+    );
   }
 
   Handle_GetLicencedSkins(args, session) {

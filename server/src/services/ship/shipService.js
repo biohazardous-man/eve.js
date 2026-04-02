@@ -13,27 +13,41 @@ const {
   ITEM_FLAGS,
   getShipConditionState,
   setShipPackagingState,
-  listContainerItems,
+  updateInventoryItem,
 } = require(path.join(__dirname, "../inventory/itemStore"));
 const {
   getCharacterSkillPointTotal,
 } = require(path.join(__dirname, "../skills/skillState"));
 const {
   undockSession,
+  ejectSession,
+  boardSpaceShip,
 } = require(path.join(__dirname, "../../space/transitions"));
 const {
-  isModuleOnline,
-} = require(path.join(__dirname, "../dogma/moduleOnlineState"));
+  disconnectCharacterSession,
+} = require(path.join(__dirname, "../_shared/sessionDisconnect"));
 const {
-  getPendingShipDirtTimestamp,
-  setShipDirtTimestamp,
-} = require(path.join(__dirname, "./shipDirtState"));
+  getDockedLocationID,
+  isDockedSession,
+} = require(path.join(__dirname, "../structure/structureLocation"));
+const {
+  listFittedItems,
+  getFittedModuleItems,
+  getTurretLikeModuleItems,
+  buildModuleStatusSnapshot,
+  buildChargeSublocationData,
+} = require(path.join(__dirname, "../fitting/liveFittingState"));
+const {
+  launchDronesForSession,
+  scoopDrone,
+} = require(path.join(__dirname, "../drone/droneRuntime"));
 const DBTYPE_I4 = 0x03;
 const DBTYPE_R8 = 0x05;
 const DBTYPE_BOOL = 0x0b;
 const DBTYPE_I8 = 0x14;
 const FILETIME_TICKS_PER_MS = 10000n;
 const FILETIME_EPOCH_OFFSET = 116444736000000000n;
+const SAFE_LOGOFF_TIMER_GRACE_TICKS = 10000000n;
 const INSTANCE_ROW_DESCRIPTOR_COLUMNS = [
   ["instanceID", DBTYPE_I8],
   ["online", DBTYPE_BOOL],
@@ -44,17 +58,58 @@ const INSTANCE_ROW_DESCRIPTOR_COLUMNS = [
   ["shieldCharge", DBTYPE_R8],
   ["incapacitated", DBTYPE_BOOL],
 ];
-const FITTED_SLOT_FLAGS = Object.freeze([
-  11, 12, 13, 14, 15, 16, 17, 18,
-  19, 20, 21, 22, 23, 24, 25, 26,
-  27, 28, 29, 30, 31, 32, 33, 34,
-  92, 93, 94,
-]);
-const TURRET_SLOT_FLAGS = Object.freeze([27, 28, 29, 30, 31, 32, 33, 34]);
-
 
 function buildCurrentFileTime() {
   return BigInt(Date.now()) * FILETIME_TICKS_PER_MS + FILETIME_EPOCH_OFFSET;
+}
+
+function normalizeMethodName(rawMethodName) {
+  if (typeof rawMethodName === "string") {
+    return rawMethodName;
+  }
+
+  if (Buffer.isBuffer(rawMethodName)) {
+    return rawMethodName.toString("utf8");
+  }
+
+  if (rawMethodName === null || rawMethodName === undefined) {
+    return "";
+  }
+
+  return String(rawMethodName);
+}
+
+function extractKwarg(kwargs, key) {
+  if (!kwargs) {
+    return undefined;
+  }
+
+  if (kwargs.type === "dict" && Array.isArray(kwargs.entries)) {
+    const match = kwargs.entries.find((entry) => entry[0] === key);
+    return match ? match[1] : undefined;
+  }
+
+  if (typeof kwargs === "object") {
+    return kwargs[key];
+  }
+
+  return undefined;
+}
+
+function collectMachoDictValues(rawValue) {
+  if (!rawValue) {
+    return [];
+  }
+
+  if (rawValue.type === "dict" && Array.isArray(rawValue.entries)) {
+    return rawValue.entries.map((entry) => entry[1]);
+  }
+
+  if (typeof rawValue === "object") {
+    return Object.values(rawValue);
+  }
+
+  return [];
 }
 
 class ShipService extends BaseService {
@@ -94,6 +149,51 @@ class ShipService extends BaseService {
     }
 
     return 0;
+  }
+
+  _syncRequestedOnlineModulesForUndock(session, shipID, kwargs) {
+    const requestedOnlineModules = collectMachoDictValues(
+      extractKwarg(kwargs, "onlineModules"),
+    )
+      .map((value) => this._extractShipId(value))
+      .filter((value) => value > 0);
+
+    if (requestedOnlineModules.length === 0) {
+      return 0;
+    }
+
+    const requestedSet = new Set(requestedOnlineModules);
+    const charID = session && session.characterID ? session.characterID : 0;
+    const fittedModules = getFittedModuleItems(charID, shipID).filter(
+      (item) => requestedSet.has(Number(item && item.itemID)),
+    );
+
+    let updatedCount = 0;
+    for (const moduleItem of fittedModules) {
+      if (moduleItem.moduleState && moduleItem.moduleState.online) {
+        continue;
+      }
+
+      const updateResult = updateInventoryItem(moduleItem.itemID, (currentItem) => ({
+        ...currentItem,
+        moduleState: {
+          ...(currentItem.moduleState || {}),
+          online: true,
+        },
+      }));
+
+      if (updateResult.success) {
+        updatedCount += 1;
+      }
+    }
+
+    if (updatedCount > 0) {
+      log.info(
+        `[Ship] Promoted ${updatedCount} requested online module(s) before undock for ship=${shipID}`,
+      );
+    }
+
+    return updatedCount;
   }
 
   _extractShipIds(rawValue) {
@@ -179,67 +279,42 @@ class ShipService extends BaseService {
       this._getShipID(session);
     const skillPoints = getCharacterSkillPointTotal(charID) || 0;
     const shipCondition = getShipConditionState(activeShip);
-    const fittedItems = this._getFittedItemsForShip(session, shipID);
-    const stateEntries = [
-      [
-        shipID,
-        this._buildPackedInstanceRow({
-          itemID: shipID,
-          damage: shipCondition.damage,
-          charge: shipCondition.charge,
-          armorDamage: shipCondition.armorDamage,
-          shieldCharge: shipCondition.shieldCharge,
-          incapacitated: shipCondition.incapacitated,
-        }),
-      ],
-      [
-        charID,
-        this._buildPackedInstanceRow({
-          itemID: charID,
-          online: true,
-          skillPoints,
-        }),
-      ],
-    ];
-
-    for (const fittedItem of fittedItems) {
-      stateEntries.push([
-        fittedItem.itemID,
-        this._buildPackedInstanceRow({
-          itemID: fittedItem.itemID,
-          online: isModuleOnline(fittedItem.itemID, true),
-        }),
-      ]);
-    }
+    const fittedItems = getFittedModuleItems(charID, shipID);
+    const moduleEntries = fittedItems.map((item) => [
+      item.itemID,
+      this._buildPackedInstanceRow(buildModuleStatusSnapshot(item)),
+    ]);
 
     return [
       {
         type: "dict",
-        entries: stateEntries,
+        entries: [
+          [
+            shipID,
+            this._buildPackedInstanceRow({
+              itemID: shipID,
+              damage: shipCondition.damage,
+              charge: shipCondition.charge,
+              armorDamage: shipCondition.armorDamage,
+              shieldCharge: shipCondition.shieldCharge,
+              incapacitated: shipCondition.incapacitated,
+            }),
+          ],
+          [
+            charID,
+            this._buildPackedInstanceRow({
+              itemID: charID,
+              online: true,
+              skillPoints,
+            }),
+          ],
+          ...moduleEntries,
+        ],
       },
-      this._buildModuleChargeCache(fittedItems),
-      this._buildWeaponBankCache(fittedItems),
+      this._buildChargeStateDict(charID, shipID),
+      { type: "dict", entries: [] },
       { type: "dict", entries: [] },
     ];
-  }
-
-    _buildModuleChargeCache(fittedItems = []) {
-    // The HUD asks for charge data for every visible slot. Modules without
-    // ammo still need an explicit empty entry so the client does not fall back
-    // to treating the module type as charge data.
-    return {
-      type: "dict",
-      entries: fittedItems.map((item) => [item.itemID, null]),
-    };
-  }
-
-    _buildWeaponBankCache(fittedItems = []) {
-    return {
-      type: "dict",
-      entries: fittedItems
-        .filter((item) => TURRET_SLOT_FLAGS.includes(Number(item.flagID || 0)))
-        .map((item) => [item.itemID, null]),
-    };
   }
 
   _buildStatusRow({
@@ -328,33 +403,50 @@ class ShipService extends BaseService {
     };
   }
 
-    _getFittedItemsForShip(session, shipID = null, slotFlags = FITTED_SLOT_FLAGS) {
-    const resolvedShipID = this._extractShipId(shipID) || this._getShipID(session);
-    const charID = session && session.characterID ? session.characterID : 0;
-    const seen = new Set();
-    const fittedItems = [];
-
-    for (const slotFlag of slotFlags) {
-      const slotItems = listContainerItems(charID, resolvedShipID, slotFlag);
-      for (const item of slotItems) {
-        if (!item || seen.has(item.itemID)) {
-          continue;
-        }
-
-        seen.add(item.itemID);
-        fittedItems.push(item);
-      }
-    }
-
-    return fittedItems.sort((left, right) => {
-      if ((left.flagID || 0) !== (right.flagID || 0)) {
-        return (left.flagID || 0) - (right.flagID || 0);
-      }
-
-      return (left.itemID || 0) - (right.itemID || 0);
-    });
+  _buildChargeSublocationRow({
+    locationID,
+    flagID,
+    typeID,
+    quantity,
+  }) {
+    return {
+      type: "object",
+      name: "util.Row",
+      args: {
+        type: "dict",
+        entries: [
+          ["header", ["instanceID", "flagID", "typeID", "quantity"]],
+          ["line", [locationID, flagID, typeID, quantity]],
+        ],
+      },
+    };
   }
 
+  _buildChargeStateDict(charID, shipID) {
+    const chargesByFlag = buildChargeSublocationData(charID, shipID);
+    if (chargesByFlag.length === 0) {
+      return { type: "dict", entries: [] };
+    }
+
+    return {
+      type: "dict",
+      entries: [[
+        shipID,
+        {
+          type: "dict",
+          entries: chargesByFlag.map((entry) => [
+            entry.flagID,
+            this._buildChargeSublocationRow({
+              locationID: shipID,
+              flagID: entry.flagID,
+              typeID: entry.typeID,
+              quantity: entry.quantity,
+            }),
+          ]),
+        },
+      ]],
+    };
+  }
 
   _getShipConfiguration(shipID) {
     const numericShipID = this._extractShipId(shipID);
@@ -417,7 +509,7 @@ class ShipService extends BaseService {
       return null;
     }
 
-    const stationID = session.stationid || session.stationID || 60003760;
+    const stationID = getDockedLocationID(session) || 60003760;
     const capsuleResult = ensureCapsuleForCharacter(session.characterID, stationID);
     if (!capsuleResult.success || !capsuleResult.data) {
       log.warn(`[Ship] ${sourceLabel} failed to ensure capsule`);
@@ -430,15 +522,6 @@ class ShipService extends BaseService {
       {
         emitNotifications: true,
         logSelection: true,
-                targetPreviousState: capsuleResult.created
-          ? {
-              locationID: 0,
-              flagID: 0,
-              quantity: 0,
-              singleton: 0,
-              stacksize: 0,
-            }
-          : null,
       },
     );
     if (!activationResult.success) {
@@ -494,21 +577,52 @@ class ShipService extends BaseService {
   Handle_GetFittedItems(args, session, kwargs) {
     const shipID = args && args.length > 0 ? args[0] : null;
     log.debug(`[Ship] GetFittedItems(shipID=${shipID})`);
-    const fittedItems = this._getFittedItemsForShip(session, shipID);
+    const charID = session && session.characterID ? session.characterID : 0;
+    const resolvedShipID = this._extractShipId(shipID) || this._getShipID(session);
     return {
       type: "dict",
-      entries: fittedItems.map((item) => [item.itemID, buildInventoryItemRow(item)]),
+      entries: listFittedItems(charID, resolvedShipID).map((item) => [
+        item.itemID,
+        buildInventoryItemRow(item),
+      ]),
     };
   }
 
   Handle_GetModules(args, session, kwargs) {
     log.debug("[Ship] GetModules");
-    const shipID = args && args.length > 0 ? args[0] : null;
-    const fittedItems = this._getFittedItemsForShip(session, shipID);
+    const charID = session && session.characterID ? session.characterID : 0;
+    const shipID = this._getShipID(session);
     return {
       type: "list",
-      items: fittedItems.map((item) => item.itemID),
+      items: getFittedModuleItems(charID, shipID).map((item) =>
+        buildInventoryItemRow(item),
+      ),
     };
+  }
+
+  Handle_LaunchDrones(args, session, kwargs) {
+    void kwargs;
+    const launchResult = launchDronesForSession(
+      session,
+      args && args.length > 0 ? args[0] : [],
+    );
+    if (!launchResult || launchResult.success !== true) {
+      log.warn(
+        `[Ship] LaunchDrones failed for char=${session ? session.characterID : "?"}: ${launchResult ? launchResult.errorMsg : "UNKNOWN_ERROR"}`,
+      );
+      return { type: "dict", entries: [] };
+    }
+    return launchResult && launchResult.response && launchResult.response.type === "dict"
+      ? launchResult.response
+      : { type: "dict", entries: [] };
+  }
+
+  Handle_ScoopDrone(args, session, kwargs) {
+    void kwargs;
+    return scoopDrone(
+      session,
+      args && args.length > 0 ? args[0] : [],
+    );
   }
 
   Handle_ActivateShip(args, session, kwargs) {
@@ -523,8 +637,7 @@ class ShipService extends BaseService {
 
   Handle_AssembleShip(args, session, kwargs) {
     const shipIds = this._extractShipIds(args && args.length > 0 ? args[0] : null);
-    const stationID =
-      (session && (session.stationid || session.stationID)) || 0;
+    const stationID = getDockedLocationID(session) || 0;
     const charID = session && session.characterID ? session.characterID : 0;
     const rows = [];
 
@@ -587,6 +700,18 @@ class ShipService extends BaseService {
   Handle_LeaveShip(args, session, kwargs) {
     const shipID = args && args.length > 0 ? args[0] : null;
     log.info(`[Ship] LeaveShip(shipID=${String(shipID)})`);
+    if (session && !isDockedSession(session)) {
+      const transitionResult = ejectSession(session);
+      if (!transitionResult.success) {
+        log.warn(
+          `[Ship] LeaveShip failed in space for char=${session && session.characterID}: ${transitionResult.errorMsg}`,
+        );
+        return null;
+      }
+      return transitionResult.data && transitionResult.data.capsule
+        ? transitionResult.data.capsule.itemID
+        : null;
+    }
     return this._leaveShip(session, shipID, "LeaveShip");
   }
 
@@ -607,6 +732,21 @@ class ShipService extends BaseService {
       `[Ship] Board(shipID=${String(shipID)}, oldShipID=${String(oldShipID)})`,
     );
 
+    if (session && !isDockedSession(session)) {
+      const transitionResult = boardSpaceShip(session, shipID);
+      if (!transitionResult.success) {
+        log.warn(
+          `[Ship] Board failed in space for shipID=${String(shipID)}: ${transitionResult.errorMsg}`,
+        );
+        return null;
+      }
+
+      const activeShip =
+        (transitionResult.data && transitionResult.data.ship) ||
+        getActiveShipRecord(session.characterID);
+      return this._buildActivationResponse(activeShip, session);
+    }
+
     return this._activateShipById(shipID, session, "Board");
   }
 
@@ -617,6 +757,8 @@ class ShipService extends BaseService {
     log.info(
       `[Ship] Undock(shipID=${String(shipID)}, ignoreContraband=${ignoreContraband})`,
     );
+
+    this._syncRequestedOnlineModulesForUndock(session, shipID, kwargs);
 
     const result = undockSession(session);
     if (!result.success) {
@@ -631,20 +773,28 @@ class ShipService extends BaseService {
 
   Handle_Eject(args, session, kwargs) {
     log.info("[Ship] Eject()");
+    if (session && !isDockedSession(session)) {
+      const transitionResult = ejectSession(session);
+      if (!transitionResult.success) {
+        log.warn(
+          `[Ship] Eject failed in space for char=${session && session.characterID}: ${transitionResult.errorMsg}`,
+        );
+        return null;
+      }
+      return transitionResult.data && transitionResult.data.capsule
+        ? transitionResult.data.capsule.itemID
+        : null;
+    }
     return this._leaveShip(session, null, "Eject");
   }
 
   Handle_GetTurretModules(args, session, kwargs) {
     log.debug("[Ship] GetTurretModules");
-    const shipID = args && args.length > 0 ? args[0] : null;
-    const fittedItems = this._getFittedItemsForShip(
-      session,
-      shipID,
-      TURRET_SLOT_FLAGS,
-    );
+    const charID = session && session.characterID ? session.characterID : 0;
+    const shipID = this._getShipID(session);
     return {
       type: "list",
-      items: fittedItems.map((item) => item.itemID),
+      items: getTurretLikeModuleItems(charID, shipID).map((item) => item.itemID),
     };
   }
 
@@ -749,6 +899,16 @@ class ShipService extends BaseService {
     return null;
   }
 
+  Handle_SafeLogoff(args, session, kwargs) {
+    log.info(
+      `[Ship] SafeLogoff requested for char=${session ? session.characterID : "?"} ship=${session ? this._getShipID(session) : "?"}`,
+    );
+
+    // The live client treats the SafeLogoff response as an iterable of failed
+    // condition labels. Returning an empty list means "all checks passed".
+    return [];
+  }
+
   Handle_MachoResolveObject(args, session, kwargs) {
     log.debug("[Ship] MachoResolveObject called");
     const config = require(path.join(__dirname, "../../config"));
@@ -779,12 +939,7 @@ class ShipService extends BaseService {
 
     let callResult = null;
     if (nestedCall && Array.isArray(nestedCall) && nestedCall.length >= 1) {
-      const methodName =
-        typeof nestedCall[0] === "string"
-          ? nestedCall[0]
-          : Buffer.isBuffer(nestedCall[0])
-            ? nestedCall[0].toString("utf8")
-            : String(nestedCall[0]);
+      const methodName = normalizeMethodName(nestedCall[0]);
       const callArgs = nestedCall.length > 1 ? nestedCall[1] : [];
       const callKwargs = nestedCall.length > 2 ? nestedCall[2] : null;
 
@@ -806,12 +961,101 @@ class ShipService extends BaseService {
     ];
   }
 
+  _isSafeLogoffRequest(methodName, context = {}) {
+    if (methodName === "SafeLogoff") {
+      return true;
+    }
+
+    if (methodName !== "MachoBindObject") {
+      return false;
+    }
+
+    const nestedCall =
+      context &&
+      Array.isArray(context.args) &&
+      context.args.length > 1
+        ? context.args[1]
+        : null;
+    if (!Array.isArray(nestedCall) || nestedCall.length === 0) {
+      return false;
+    }
+
+    return normalizeMethodName(nestedCall[0]) === "SafeLogoff";
+  }
+
+  _extractSafeLogoffFailedConditions(methodName, context = {}) {
+    if (methodName === "SafeLogoff") {
+      return Array.isArray(context.result) ? context.result : null;
+    }
+
+    if (methodName !== "MachoBindObject" || !Array.isArray(context.result)) {
+      return null;
+    }
+
+    return Array.isArray(context.result[1]) ? context.result[1] : null;
+  }
+
+  _emitInstantSafeLogoffNotifications(session) {
+    if (!session || typeof session.sendNotification !== "function") {
+      return false;
+    }
+
+    const safeLogoffTime = buildCurrentFileTime() + SAFE_LOGOFF_TIMER_GRACE_TICKS;
+    session.sendNotification("OnSafeLogoffTimerStarted", "clientID", [
+      safeLogoffTime,
+    ]);
+    session.sendNotification("OnSafeLogoffActivated", "clientID", []);
+    return true;
+  }
+
+  _completeInstantSafeLogoff(session, methodName) {
+    const characterID = Number(session && session.characterID) || 0;
+    if (characterID <= 0) {
+      return;
+    }
+
+    const notificationsSent = this._emitInstantSafeLogoffNotifications(session);
+    if (!notificationsSent) {
+      log.warn(
+        `[Ship] SafeLogoff could not notify client for char=${characterID}; continuing with server-side session clear`,
+      );
+    }
+
+    const disconnectResult = disconnectCharacterSession(session, {
+      broadcast: true,
+      clearSession: true,
+    });
+    if (!disconnectResult.success) {
+      log.warn(
+        `[Ship] SafeLogoff disconnect failed for char=${characterID}: ${disconnectResult.errorMsg}`,
+      );
+      return;
+    }
+
+    log.info(
+      `[Ship] SafeLogoff completed for char=${characterID} via ${methodName}`,
+    );
+  }
+
+  afterCallResponse(methodName, session, context = {}) {
+    if (!this._isSafeLogoffRequest(methodName, context)) {
+      return;
+    }
+
+    const failedConditions = this._extractSafeLogoffFailedConditions(
+      methodName,
+      context,
+    );
+    if (!Array.isArray(failedConditions) || failedConditions.length > 0) {
+      return;
+    }
+
+    this._completeInstantSafeLogoff(session, methodName);
+  }
+
   callMethod(method, args, session, kwargs) {
-    const handlerName = `Handle_${method}`;
-    const hasExplicitHandler =
-      typeof this[handlerName] === "function" || typeof this[method] === "function";
     const response = super.callMethod(method, args, session, kwargs);
-    if (hasExplicitHandler || response !== null) {
+    if (response !== null) {
       return response;
     }
 

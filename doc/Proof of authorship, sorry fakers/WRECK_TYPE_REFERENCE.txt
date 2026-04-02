@@ -1,0 +1,480 @@
+// Proof-of-authorship note: Primary authorship and project direction for this reference note belong to John Elysian.
+// This file is kept here as part of the EveJS proof-of-authorship record after repeated misattribution of the underlying work and claims that it was trivial.
+// If you reuse, discuss, or share this file, please credit it accurately.
+
+Wreck Type Reference for /wreck <typeID>
+
+Generated: 2026-03-16
+Total wreck types in current local item catalog: 442
+
+Notes:
+- Each line uses the slash-command format you can paste into chat.
+- Categories are heuristic groupings for readability; the source of truth is the local item type catalog.
+- You can also use /wreck list in game for a flat alphabetical dump.
+
+Titans (8)
+------------------------
+/wreck 26490 - Amarr Titan Wreck
+/wreck 41689 - Angel Titan Wreck
+/wreck 41691 - Blood Titan Wreck
+/wreck 26512 - Caldari Titan Wreck
+/wreck 26534 - Gallente Titan Wreck
+/wreck 41693 - Guristas Titan Wreck
+/wreck 26556 - Minmatar Titan Wreck
+/wreck 41700 - Serpentis Titan Wreck
+
+Capital Combat Hulls (38)
+-------------------------
+/wreck 26472 - Amarr Carrier Wreck
+/wreck 26475 - Amarr Dreadnought Wreck
+/wreck 40639 - Amarr Force Auxiliary Wreck
+/wreck 26487 - Amarr Supercarrier Wreck
+/wreck 41688 - Angel Dreadnought Wreck
+/wreck 41690 - Blood Dreadnought Wreck
+/wreck 72814 - Blood Force Auxiliary Wreck
+/wreck 73811 - Blood Raider Dreadnought Wreck
+/wreck 26494 - Caldari Carrier Wreck
+/wreck 26497 - Caldari Dreadnought Wreck
+/wreck 40640 - Caldari Force Auxiliary Wreck
+/wreck 26509 - Caldari Supercarrier Wreck
+/wreck 53271 - Federal Navy Dreadnought Wreck
+/wreck 26516 - Gallente Carrier Wreck
+/wreck 26519 - Gallente Dreadnought Wreck
+/wreck 40641 - Gallente Force Auxiliary Wreck
+/wreck 26531 - Gallente Supercarrier Wreck
+/wreck 41692 - Guristas Dreadnought Wreck
+/wreck 72816 - Guristas Force Auxiliary Wreck
+/wreck 53261 - Imperial Navy Dreadnought Wreck
+/wreck 26538 - Minmatar Carrier Wreck
+/wreck 26541 - Minmatar Dreadnought Wreck
+/wreck 40642 - Minmatar Force Auxiliary Wreck
+/wreck 26553 - Minmatar Supercarrier Wreck
+/wreck 27927 - Mission Amarr Carrier Wreck
+/wreck 27926 - Mission Caldari Carrier Wreck
+/wreck 27929 - Mission Gallente Carrier Wreck
+/wreck 27928 - Mission Minmatar Carrier Wreck
+/wreck 53276 - Republic Fleet Dreadnought Wreck
+/wreck 41694 - Rogue Carrier Wreck
+/wreck 41695 - Rogue Supercarrier Wreck
+/wreck 41696 - Sansha Dreadnought Wreck
+/wreck 3260 - Sanshas Supercarrier Wreck
+/wreck 41699 - Serpentis Dreadnought Wreck
+/wreck 72817 - Serpentis Supercarrier Wreck
+/wreck 53266 - State Navy Dreadnought Wreck
+/wreck 88156 - Strategos Dreadnought Wreck
+/wreck 53025 - Triglavian Dreadnought Wreck
+
+Subcapital Hulls (102)
+------------------------
+/wreck 30822 - Amarr Advanced Cruiser Wreck
+/wreck 34395 - Amarr Advanced Destroyer Wreck
+/wreck 26469 - Amarr Battlecruiser Wreck
+/wreck 26470 - Amarr Battleship Wreck
+/wreck 26473 - Amarr Cruiser Wreck
+/wreck 26474 - Amarr Destroyer Wreck
+/wreck 26476 - Amarr Elite Battlecruiser Wreck
+/wreck 26477 - Amarr Elite Battleship Wreck
+/wreck 26478 - Amarr Elite Cruiser Wreck
+/wreck 26479 - Amarr Elite Destroyer Wreck
+/wreck 26480 - Amarr Elite Frigate Wreck
+/wreck 26484 - Amarr Frigate Wreck
+/wreck 84928 - Angel Officer Cruiser Wreck
+/wreck 84927 - Angel Officer Frigate Wreck
+/wreck 26559 - Battleship Wreck
+/wreck 84930 - Blood Officer Cruiser Wreck
+/wreck 84929 - Blood Officer Frigate Wreck
+/wreck 30823 - Caldari Advanced Cruiser Wreck
+/wreck 37861 - Caldari Advanced Destroyer Wreck
+/wreck 26491 - Caldari Battlecruiser Wreck
+/wreck 26492 - Caldari Battleship Wreck
+/wreck 26495 - Caldari Cruiser Wreck
+/wreck 26496 - Caldari Destroyer Wreck
+/wreck 26498 - Caldari Elite Battlecruiser Wreck
+/wreck 26499 - Caldari Elite Battleship Wreck
+/wreck 26500 - Caldari Elite Cruiser Wreck
+/wreck 26501 - Caldari Elite Destroyer Wreck
+/wreck 26502 - Caldari Elite Frigate Wreck
+/wreck 26506 - Caldari Frigate Wreck
+/wreck 26558 - Cruiser Wreck
+/wreck 34768 - Drifter Battleship Wreck
+/wreck 56741 - Drifter Battleship Wreck
+/wreck 47560 - Drifter Cruiser Wreck
+/wreck 56740 - Drifter Cruiser Wreck
+/wreck 37531 - Drifter Response Battleship Wreck
+/wreck 55750 - EDENCOM Battleship Wreck
+/wreck 55749 - EDENCOM Cruiser Wreck
+/wreck 55748 - EDENCOM Frigate Wreck
+/wreck 53269 - Federal Navy Battlecruiser Wreck
+/wreck 53270 - Federal Navy Battleship Wreck
+/wreck 53268 - Federal Navy Elite Cruiser Wreck
+/wreck 53267 - Federal Navy Elite Frigate Wreck
+/wreck 26557 - Frigate Wreck
+/wreck 30824 - Gallente Advanced Cruiser Wreck
+/wreck 37862 - Gallente Advanced Destroyer Wreck
+/wreck 26513 - Gallente Battlecruiser Wreck
+/wreck 26514 - Gallente Battleship Wreck
+/wreck 26517 - Gallente Cruiser Wreck
+/wreck 26518 - Gallente Destroyer Wreck
+/wreck 26520 - Gallente Elite Battlecruiser Wreck
+/wreck 26521 - Gallente Elite Battleship Wreck
+/wreck 26522 - Gallente Elite Cruiser Wreck
+/wreck 26523 - Gallente Elite Destroyer Wreck
+/wreck 26524 - Gallente Elite Frigate Wreck
+/wreck 26528 - Gallente Frigate Wreck
+/wreck 84932 - Guristas Officer Cruiser Wreck
+/wreck 84931 - Guristas Officer Frigate Wreck
+/wreck 53259 - Imperial Navy Battlecruiser Wreck
+/wreck 53260 - Imperial Navy Battleship Wreck
+/wreck 53258 - Imperial Navy Elite Cruiser Wreck
+/wreck 53257 - Imperial Navy Elite Frigate Wreck
+/wreck 30825 - Minmatar Advanced Cruiser Wreck
+/wreck 34584 - Minmatar Advanced Destroyer Wreck
+/wreck 26535 - Minmatar Battlecruiser Wreck
+/wreck 26536 - Minmatar Battleship Wreck
+/wreck 26539 - Minmatar Cruiser Wreck
+/wreck 26540 - Minmatar Destroyer Wreck
+/wreck 26542 - Minmatar Elite Battlecruiser Wreck
+/wreck 26543 - Minmatar Elite Battleship Wreck
+/wreck 26544 - Minmatar Elite Cruiser Wreck
+/wreck 26545 - Minmatar Elite Destroyer Wreck
+/wreck 26546 - Minmatar Elite Frigate Wreck
+/wreck 26550 - Minmatar Frigate Wreck
+/wreck 26920 - Overseer Battleship Wreck
+/wreck 26919 - Overseer Cruiser Wreck
+/wreck 26918 - Overseer Frigate Wreck
+/wreck 53274 - Republic Fleet Battlecruiser Wreck
+/wreck 53275 - Republic Fleet Battleship Wreck
+/wreck 53273 - Republic Fleet Elite Cruiser Wreck
+/wreck 53272 - Republic Fleet Elite Frigate Wreck
+/wreck 26595 - Rogue Elite Medium Wreck
+/wreck 26594 - Rogue Elite Small Wreck
+/wreck 84934 - Sansha Officer Cruiser Wreck
+/wreck 84933 - Sansha Officer Frigate Wreck
+/wreck 84936 - Serpentis Officer Cruiser Wreck
+/wreck 84935 - Serpentis Officer Frigate Wreck
+/wreck 53264 - State Navy Battlecruiser Wreck
+/wreck 53265 - State Navy Battleship Wreck
+/wreck 53263 - State Navy Elite Cruiser Wreck
+/wreck 53262 - State Navy Elite Frigate Wreck
+/wreck 53072 - Triglavian Battlecruiser Wreck
+/wreck 47977 - Triglavian Battleship Wreck
+/wreck 54565 - Triglavian Battleship Wreck
+/wreck 54566 - Triglavian Battleship Wreck
+/wreck 54567 - Triglavian Battleship Wreck
+/wreck 48372 - Triglavian Cruiser Wreck
+/wreck 53068 - Triglavian Destroyer Wreck
+/wreck 88002 - Triglavian Elite Battleship Wreck
+/wreck 53070 - Triglavian Elite Cruiser Wreck
+/wreck 53071 - Triglavian Elite Destroyer Wreck
+/wreck 53069 - Triglavian Elite Frigate Wreck
+/wreck 48373 - Triglavian Frigate Wreck
+
+Industrial and Utility Hulls (40)
+---------------------------------
+/wreck 29033 - Amarr Elite Freighter Wreck
+/wreck 26481 - Amarr Elite Hauler Wreck
+/wreck 26482 - Amarr Elite Mining Barge Wreck
+/wreck 26483 - Amarr Freighter Wreck
+/wreck 26485 - Amarr Hauler Wreck
+/wreck 26486 - Amarr Mining Barge Wreck
+/wreck 26488 - Amarr Rookie ship Wreck
+/wreck 26489 - Amarr Shuttle Wreck
+/wreck 90202 - Automated Extraction Shuttle Wreck
+/wreck 29034 - Caldari Elite Freighter Wreck
+/wreck 26503 - Caldari Elite Hauler Wreck
+/wreck 26504 - Caldari Elite Mining Barge Wreck
+/wreck 26505 - Caldari Freighter Wreck
+/wreck 26507 - Caldari Hauler Wreck
+/wreck 26508 - Caldari Mining Barge Wreck
+/wreck 26510 - Caldari Rookie ship Wreck
+/wreck 26511 - Caldari Shuttle Wreck
+/wreck 77889 - Escaping Hauler Wreck
+/wreck 29035 - Gallente Elite Freighter Wreck
+/wreck 26525 - Gallente Elite Hauler Wreck
+/wreck 26526 - Gallente Elite Mining Barge Wreck
+/wreck 26527 - Gallente Freighter Wreck
+/wreck 26529 - Gallente Hauler Wreck
+/wreck 26530 - Gallente Mining Barge Wreck
+/wreck 26532 - Gallente Rookie ship Wreck
+/wreck 26533 - Gallente Shuttle Wreck
+/wreck 29036 - Minmatar Elite Freighter Wreck
+/wreck 26547 - Minmatar Elite Hauler Wreck
+/wreck 26548 - Minmatar Elite Mining Barge Wreck
+/wreck 26549 - Minmatar Freighter Wreck
+/wreck 26551 - Minmatar Hauler Wreck
+/wreck 26552 - Minmatar Mining Barge Wreck
+/wreck 26554 - Minmatar Rookie ship Wreck
+/wreck 26555 - Minmatar Shuttle Wreck
+/wreck 28255 - Mission Faction Freighter Wreck
+/wreck 29365 - Mission Faction Hauler Wreck
+/wreck 34884 - ORE Freighter Wreck
+/wreck 81052 - Upwell Elite Hauler Wreck
+/wreck 81055 - Upwell Freighter Wreck
+/wreck 81053 - Upwell Hauler Wreck
+
+Upwell and Sovereignty Structures (17)
+--------------------------------------
+/wreck 47518 - 'Draccous' Fortizar Wreck
+/wreck 47519 - 'Horizon' Fortizar Wreck
+/wreck 47520 - 'Marginis' Fortizar Wreck
+/wreck 47517 - 'Moreau' Fortizar Wreck
+/wreck 47521 - 'Prometheus' Fortizar Wreck
+/wreck 49627 - Ansiblex Jump Bridge Wreck
+/wreck 40644 - Astrahus Wreck
+/wreck 40705 - Athanor Wreck
+/wreck 40703 - Azbel Wreck
+/wreck 40645 - Fortizar Wreck
+/wreck 40646 - Keepstar Wreck
+/wreck 49628 - Pharolux Cyno Beacon Wreck
+/wreck 40702 - Raitaru Wreck
+/wreck 40704 - Sotiyo Wreck
+/wreck 40706 - Tatara Wreck
+/wreck 49629 - Tenebrex Cyno Jammer Wreck
+/wreck 40647 - Upwell Palatine Keepstar Wreck
+
+NPC Structures and Site Wrecks (31)
+-----------------------------------
+/wreck 71112 - Amarr Forward Operating Base Wreck
+/wreck 79385 - Angel FOB Wreck
+/wreck 64112 - Angel Structure Ruins
+/wreck 64148 - Angel Tower Wreck
+/wreck 64128 - Angel Warehouse Wreck
+/wreck 77742 - Ashes Sympathizer's Clan Commons Wreck
+/wreck 49692 - Biocombinative Cache Wreck
+/wreck 64104 - Blood Raider Structure Ruins
+/wreck 46606 - Blood Raiders Forward Operating Base Wreck
+/wreck 64140 - Bloodraider Tower Wreck
+/wreck 64120 - Bloodraider Warehouse Wreck
+/wreck 71113 - Caldari Forward Operating Base Wreck
+/wreck 49693 - Cladistic Cache Wreck
+/wreck 77424 - Clan Commons Wreck
+/wreck 87295 - Clan Holding Wreck
+/wreck 53320 - CONCORD Stellar Observatory Wreck
+/wreck 79825 - Counter-Insurgency Sentry Gun Wreck
+/wreck 84467 - Faulty Triglavian Cache Wreck
+/wreck 71114 - Gallente Forward Operating Base Wreck
+/wreck 79386 - Guristas FOB Wreck
+/wreck 46605 - Guristas Forward Operating Base Wreck
+/wreck 64116 - Guristas Structure Ruins
+/wreck 64152 - Guristas Tower Wreck
+/wreck 64132 - Guristas Warehouse Wreck
+/wreck 71115 - Minmatar Forward Operating Base Wreck
+/wreck 64108 - Serpentis Structure Ruins
+/wreck 64144 - Serpentis Tower Wreck
+/wreck 64124 - Serpentis Warehouse Wreck
+/wreck 48120 - Triglavian Bioadaptive Cache Wreck
+/wreck 52784 - Triglavian Stellar Observatory Wreck
+/wreck 55818 - Xordazh Invasion Cache Wreck
+
+Faction and NPC Hull Wrecks (91)
+--------------------------------
+/wreck 27050 - Amarr Large Wreck
+/wreck 27051 - Amarr Medium Wreck
+/wreck 27052 - Amarr Small Wreck
+/wreck 26565 - Angel Large Commander Wreck
+/wreck 26563 - Angel Large Wreck
+/wreck 26699 - Angel Medium Commander Wreck
+/wreck 26562 - Angel Medium Wreck
+/wreck 26566 - Angel Officer Wreck
+/wreck 26564 - Angel Small Commander Wreck
+/wreck 26561 - Angel Small Wreck
+/wreck 26700 - Blood Large Commander Wreck
+/wreck 26569 - Blood Large Wreck
+/wreck 26571 - Blood Medium Commander Wreck
+/wreck 26568 - Blood Medium Wreck
+/wreck 26572 - Blood Officer Wreck
+/wreck 26570 - Blood Small Commander Wreck
+/wreck 26567 - Blood Small Wreck
+/wreck 27047 - Caldari Large Wreck
+/wreck 27048 - Caldari Medium Wreck
+/wreck 27049 - Caldari Small Wreck
+/wreck 26939 - CONCORD Large Wreck
+/wreck 26940 - CONCORD Medium Wreck
+/wreck 26941 - CONCORD Small Wreck
+/wreck 87305 - Drifter Collection Wreck
+/wreck 87685 - Drifter Medium Structure Wreck
+/wreck 87317 - Drifter Sentry Wreck
+/wreck 88275 - Drifter Small Wreck
+/wreck 54923 - EDENCOM Heavy GunStar Wreck
+/wreck 60437 - EDENCOM power generator wreck
+/wreck 27053 - Gallente Large Wreck
+/wreck 27054 - Gallente Medium Wreck
+/wreck 27055 - Gallente Small Wreck
+/wreck 26701 - Guristas Large Commander Wreck
+/wreck 26575 - Guristas Large Wreck
+/wreck 26577 - Guristas Medium Commander Wreck
+/wreck 26574 - Guristas Medium Wreck
+/wreck 26578 - Guristas Officer Wreck
+/wreck 26576 - Guristas Small Commander Wreck
+/wreck 26573 - Guristas Small Wreck
+/wreck 27041 - Minmatar Large Wreck
+/wreck 27042 - Minmatar Medium Wreck
+/wreck 27043 - Minmatar Small Wreck
+/wreck 27060 - Mordu Large Wreck
+/wreck 27061 - Mordu Medium Wreck
+/wreck 27062 - Mordu Small Wreck
+/wreck 33907 - Mordus Large Commander Wreck
+/wreck 33908 - Mordus Medium Commander Wreck
+/wreck 33909 - Mordus Small Commander Wreck
+/wreck 26702 - Sanshas Large Commander Wreck
+/wreck 26581 - Sanshas Large Wreck
+/wreck 26583 - Sanshas Medium Commander Wreck
+/wreck 26580 - Sanshas Medium Wreck
+/wreck 26584 - Sanshas Officer Wreck
+/wreck 26582 - Sanshas Small Commander Wreck
+/wreck 26579 - Sanshas Small Wreck
+/wreck 26703 - Serpentis Large Commander Wreck
+/wreck 26587 - Serpentis Large Wreck
+/wreck 26589 - Serpentis Medium Commander Wreck
+/wreck 26586 - Serpentis Medium Wreck
+/wreck 26590 - Serpentis Officer Wreck
+/wreck 26588 - Serpentis Small Commander Wreck
+/wreck 26585 - Serpentis Small Wreck
+/wreck 30496 - Sleeper Large Advanced Wreck
+/wreck 30494 - Sleeper Large Basic Wreck
+/wreck 30495 - Sleeper Large Intermediate Wreck
+/wreck 30459 - Sleeper Large Wreck
+/wreck 56744 - Sleeper Large Wreck
+/wreck 30458 - Sleeper Medium Advanced Wreck
+/wreck 30492 - Sleeper Medium Basic Wreck
+/wreck 30493 - Sleeper Medium Intermediate Wreck
+/wreck 34440 - Sleeper Medium Wreck
+/wreck 46604 - Sleeper Medium Wreck
+/wreck 56743 - Sleeper Medium Wreck
+/wreck 30457 - Sleeper Small Advanced Wreck
+/wreck 30484 - Sleeper Small Basic Wreck
+/wreck 30485 - Sleeper Small Intermediate Wreck
+/wreck 47758 - Sleeper Small Wreck
+/wreck 56742 - Sleeper Small Wreck
+/wreck 37596 - Sleeper Upgraded Avenger Wreck
+/wreck 54730 - Triglavian Autominer Wreck
+/wreck 52416 - Triglavian Large Wreck
+/wreck 52665 - Triglavian Large Wreck
+/wreck 52662 - Triglavian Major Wreck
+/wreck 52415 - Triglavian Medium Wreck
+/wreck 52664 - Triglavian Medium Wreck
+/wreck 52660 - Triglavian Minor Wreck
+/wreck 52661 - Triglavian Moderate Wreck
+/wreck 52414 - Triglavian Small Wreck
+/wreck 52663 - Triglavian Small Wreck
+/wreck 47795 - Triglavian Support Pylon Wreck
+/wreck 42662 - Wrecked Amarr Battleship
+
+Miscellaneous and Special Wrecks (115)
+--------------------------------------
+/wreck 49125 - Armageddon Hulk Wreck
+/wreck 77393 - Bane Wreck
+/wreck 87218 - Battle Wreckage
+/wreck 62255 - Biomechanoid Saucer Wreck
+/wreck 80246 - CD Boss Wreck
+/wreck 80247 - CD Boss Wreck (lootable)
+/wreck 77511 - Charon Repatriator Wreck
+/wreck 27275 - Civilian Transport Ship Wreck
+/wreck 27202 - Convoy Wreck
+/wreck 52355 - Dampening Field Effect Subpylon Wreck
+/wreck 53300 - Dazh Liminality Locus Wreckage
+/wreck 77498 - Decommissioned Base wreck
+/wreck 87306 - Destructive Scrutinizer Wreck
+/wreck 57579 - Drone-Collected Wreckage
+/wreck 52358 - Energy Pulse Field Effect Subpylon Wreck
+/wreck 54922 - Entropic Disintegrator Werpost Wreck
+/wreck 49666 - Extraction Nexus Wreck
+/wreck 49665 - Extraction Node Wreck
+/wreck 49664 - Extraction SubNode Wreck
+/wreck 26972 - Faction Drone Wreck
+/wreck 44273 - Faithful Shield Wreck
+/wreck 44277 - Fateweaver Wreck
+/wreck 87298 - Federal Administration Wreck
+/wreck 76923 - Federation Shipcaster Beacon Wreck
+/wreck 91025 - FW Medium Wreck
+/wreck 91024 - FW Small Wreck
+/wreck 77423 - Holy Mission Wreck
+/wreck 64183 - Hotel Wreck
+/wreck 77394 - Hubris Wreck
+/wreck 76438 - Imperial Shipcaster Beacon Wreck
+/wreck 77391 - Karura Wreck
+/wreck 27044 - Khanid Large Wreck
+/wreck 27045 - Khanid Medium Wreck
+/wreck 27046 - Khanid Small Wreck
+/wreck 47978 - Large Wreck
+/wreck 44276 - Liberty Wreck
+/wreck 53277 - Liminal Zirnitra Wreck
+/wreck 77277 - Longshot Relay Wreck
+/wreck 44275 - Market Forces Wreck
+/wreck 77425 - Master Controller Wreck
+/wreck 87297 - Megacorp Exchange Wreck
+/wreck 77279 - Megafinance Siphoner Wreck
+/wreck 49123 - Megathron Hulk Wreck
+/wreck 86175 - Mercenary Den Wreck
+/wreck 81921 - Metenox Moon Drill Wreck
+/wreck 29347 - Mission Faction Vessels Wreck
+/wreck 26933 - Mission Generic Large Wreck
+/wreck 26934 - Mission Generic Medium Wreck
+/wreck 26935 - Mission Generic Small Wreck
+/wreck 90038 - Mobile Phase Anchor Wreck
+/wreck 33538 - Mobile Structure Wreck
+/wreck 73868 - Moros Navy Issue Wreck
+/wreck 54224 - Mysterious Capsule Wreck
+/wreck 73866 - Naglfar Fleet Issue Wreck
+/wreck 48970 - November Wreck
+/wreck 77492 - Occupied Industrial Housing Wreck
+/wreck 89638 - Odysseus Wreck
+/wreck 83844 - Orbital Skyhook Wreck
+/wreck 33766 - Orca ORE Development Edition Wreck
+/wreck 29639 - Orca Wreck
+/wreck 46338 - Orca Wreck
+/wreck 46339 - Orca Wreck
+/wreck 46341 - Orca Wreck
+/wreck 46342 - Orca Wreck
+/wreck 79586 - ORE Rorqual Wreck
+/wreck 53306 - Overcharge Node Wreck
+/wreck 73865 - Phoenix Navy Issue Wreck
+/wreck 27286 - Pirate Drone Wreck
+/wreck 26560 - Pirate Wreck
+/wreck 86509 - Planetary Trustbreaker Array Wreck
+/wreck 75781 - QA - Shady Wreck
+/wreck 77278 - Quantum-Override Broadcaster Wreck
+/wreck 49119 - Raven Hulk Wreck
+/wreck 76924 - Republic Shipcaster Beacon Wreck
+/wreck 73864 - Revelation Navy Issue Wreck
+/wreck 49117 - Revenant Wreck
+/wreck 28221 - Rogue Large Commander Wreck
+/wreck 26593 - Rogue Large Wreck
+/wreck 28222 - Rogue Medium Commander Wreck
+/wreck 26592 - Rogue Medium Wreck
+/wreck 26596 - Rogue Officer Wreck
+/wreck 28223 - Rogue Small Commander Wreck
+/wreck 26591 - Rogue Small Wreck
+/wreck 48742 - Rogue Swarm Overmind Wreck
+/wreck 33765 - Rorqual ORE Development Edition Wreck
+/wreck 28603 - Rorqual Wreck
+/wreck 77280 - Sacred Exploiter Wreck
+/wreck 58916 - Salvageable Nursery Nest
+/wreck 87382 - Sarathiel Wreck
+/wreck 87296 - Secluded Monastery Wreck
+/wreck 33489 - Ship Maintenance Array Wreck
+/wreck 77397 - Shipcaster Beacon Constructor Wreck
+/wreck 83843 - Sovereignty Hub Wreck
+/wreck 52356 - Stasis Field Effect Subpylon Wreck
+/wreck 76922 - State Shipcaster Beacon Wreck
+/wreck 27056 - Thukker Large Wreck
+/wreck 27057 - Thukker Medium Wreck
+/wreck 27058 - Thukker Small Wreck
+/wreck 52357 - Transport Field Effect Subpylon Wreck
+/wreck 49121 - Typhoon Hulk Wreck
+/wreck 79412 - Upwell Large Wreck
+/wreck 79411 - Upwell Medium Wreck
+/wreck 49632 - Upwell Monument 1F Wreck
+/wreck 49631 - Upwell Monument 1M Wreck
+/wreck 49630 - Upwell Monument AM Wreck
+/wreck 91110 - Upwell Research Structure Wreck
+/wreck 79410 - Upwell Small Wreck
+/wreck 77392 - Valravn Wreck
+/wreck 85057 - Vigilance Spire Wreck
+/wreck 87312 - Vigilant Dreamer Wreck
+/wreck 87311 - Wormhole Research Outpost Wreck
+/wreck 26468 - Wreck
+/wreck 81438 - Wreckage
+/wreck 40707 - X-Large Laboratory Wreck
+/wreck 33490 - X-Large Ship Maintenance Array Wreck
+

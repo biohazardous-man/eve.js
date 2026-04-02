@@ -20,7 +20,10 @@ class AlertService extends BaseService {
   }
 
   Handle_SendClientStackTraceAlert(args, session) {
-    log.debug("[AlertService] SendClientStackTraceAlert (error report)");
+    const traceData = args && args.length > 0 ? args : [];
+    log.warn(
+      `[AlertService] SendClientStackTraceAlert char=${session && session.characterID} trace=${JSON.stringify(traceData).slice(0, 2000)}`,
+    );
     return null;
   }
 }

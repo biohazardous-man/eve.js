@@ -17,6 +17,32 @@ const {
   getStationManagementServiceCostModifiers,
   getRentableItems,
 } = require(path.join(__dirname, "../_shared/stationStaticData"));
+const {
+  getCorporationOffices,
+  getOfficesAtStation,
+  normalizePositiveInteger,
+  updateCorporationRecord,
+} = require(path.join(__dirname, "./corporationRuntimeState"));
+
+function resolveCorporationID(session) {
+  return (session && (session.corporationID || session.corpid)) || 0;
+}
+
+function resolveStationID(args, session) {
+  return normalizePositiveInteger(
+    (args && args[0]) ||
+      (session &&
+        (session.stationID ||
+          session.stationid ||
+          session.structureID ||
+          session.structureid)),
+    null,
+  );
+}
+
+function listStationOffices(stationID) {
+  return getOfficesAtStation(stationID);
+}
 
 class CorpStationMgrService extends BaseService {
   constructor() {
@@ -148,9 +174,9 @@ class CorpStationMgrService extends BaseService {
     return null;
   }
 
-  Handle_GetNumberOfUnrentedOffices() {
+  Handle_GetNumberOfUnrentedOffices(args, session) {
     log.debug("[CorpStationMgr] GetNumberOfUnrentedOffices");
-    return 24;
+    return Math.max(0, 24 - listStationOffices(resolveStationID(args, session)).length);
   }
 
   Handle_GetQuoteForRentingAnOffice(args, session) {
@@ -158,20 +184,35 @@ class CorpStationMgrService extends BaseService {
     return getStationRecord(session).officeRentalCost;
   }
 
-  Handle_GetCorporateStationOffice() {
+  Handle_GetCorporateStationOffice(args, session) {
     log.debug("[CorpStationMgr] GetCorporateStationOffice");
+    const corporationID = resolveCorporationID(session);
+    const stationID = resolveStationID(args, session);
+    const office = getCorporationOffices(corporationID).find(
+      (entry) => Number(entry.stationID) === Number(stationID),
+    );
     return buildRowset(
       ["corporationID", "itemID", "officeFolderID"],
-      [],
+      office
+        ? [
+            buildList([
+              office.corporationID,
+              office.itemID,
+              office.officeFolderID,
+            ]),
+          ]
+        : [],
       "eve.common.script.sys.rowset.Rowset",
     );
   }
 
-  Handle_GetStationOffices() {
+  Handle_GetStationOffices(args, session) {
     log.debug("[CorpStationMgr] GetStationOffices");
     return buildRowset(
       ["corporationID", "itemID", "officeFolderID"],
-      [],
+      listStationOffices(resolveStationID(args, session)).map((office) =>
+        buildList([office.corporationID, office.itemID, office.officeFolderID]),
+      ),
       "eve.common.script.sys.rowset.Rowset",
     );
   }
@@ -210,6 +251,18 @@ class CorpStationMgrService extends BaseService {
       ["improvementTier2bTypeID", null],
       ["improvementTier1cTypeID", null],
     ]);
+  }
+
+  Handle_MoveCorpHQHere(args, session) {
+    const stationID = resolveStationID(args, session);
+    const corporationID = resolveCorporationID(session);
+    if (!stationID || !corporationID) {
+      return null;
+    }
+    updateCorporationRecord(corporationID, {
+      stationID,
+    });
+    return null;
   }
 }
 

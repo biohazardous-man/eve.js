@@ -1,29 +1,42 @@
 const path = require("path");
 
-const database = require(path.join(__dirname, "../../database"));
+const database = require(path.join(__dirname, "../../newDatabase"));
 const log = require(path.join(__dirname, "../../utils/logger"));
 
 const TABLE = Object.freeze({
+  ITEM_TYPES: "itemTypes",
+  FIGHTER_ABILITIES: "fighterAbilities",
+  TYPE_DOGMA: "typeDogma",
   SHIP_TYPES: "shipTypes",
   SHIP_DOGMA_ATTRIBUTES: "shipDogmaAttributes",
   SKILL_TYPES: "skillTypes",
+  SOVEREIGNTY_STATIC: "sovereigntyStatic",
+  CHARACTER_CREATION_RACES: "characterCreationRaces",
+  CHARACTER_CREATION_BLOODLINES: "characterCreationBloodlines",
   SOLAR_SYSTEMS: "solarSystems",
   STATIONS: "stations",
   STATION_TYPES: "stationTypes",
   STARGATE_TYPES: "stargateTypes",
   CELESTIALS: "celestials",
+  ASTEROID_BELTS: "asteroidBelts",
+  ASTEROID_FIELD_STYLES: "asteroidFieldStyles",
   STARGATES: "stargates",
   MOVEMENT_ATTRIBUTES: "movementAttributes",
 });
 
 const ROW_KEY = Object.freeze({
+  [TABLE.ITEM_TYPES]: "types",
   [TABLE.SHIP_TYPES]: "ships",
   [TABLE.SKILL_TYPES]: "skills",
+  [TABLE.CHARACTER_CREATION_RACES]: "races",
+  [TABLE.CHARACTER_CREATION_BLOODLINES]: "bloodlines",
   [TABLE.SOLAR_SYSTEMS]: "solarSystems",
   [TABLE.STATIONS]: "stations",
   [TABLE.STATION_TYPES]: "stationTypes",
   [TABLE.STARGATE_TYPES]: "stargateTypes",
   [TABLE.CELESTIALS]: "celestials",
+  [TABLE.ASTEROID_BELTS]: "belts",
+  [TABLE.ASTEROID_FIELD_STYLES]: "fieldStyles",
   [TABLE.STARGATES]: "stargates",
   [TABLE.MOVEMENT_ATTRIBUTES]: "attributes",
 });
@@ -69,8 +82,16 @@ function readStaticRows(tableName) {
   return Array.isArray(rows) ? rows : [];
 }
 
-function clearReferenceCache() {
-  cache.clear();
+function clearReferenceCache(tableNames = null) {
+  if (!tableNames) {
+    cache.clear();
+    return;
+  }
+
+  const targets = Array.isArray(tableNames) ? tableNames : [tableNames];
+  for (const tableName of targets) {
+    cache.delete(tableName);
+  }
 }
 
 module.exports = {

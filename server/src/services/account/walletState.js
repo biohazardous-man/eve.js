@@ -12,6 +12,13 @@ const {
   getCharacterRecord,
   updateCharacterRecord,
 } = require(path.join(__dirname, "../character/characterState"));
+const {
+  PLEX_LOG_CATEGORY,
+  getFileTimeNowString,
+  getTransactionID,
+  appendCharacterPlexTransaction,
+  fileTimeStringToDate,
+} = require(path.join(__dirname, "./plexVaultLogState"));
 
 const ACCOUNT_KEY = {
   CASH: 1000,
@@ -22,9 +29,16 @@ const ACCOUNT_KEY_NAME = {
   AURUM: "AURUM",
 };
 const JOURNAL_ENTRY_TYPE = {
-  ADMIN_ADJUSTMENT: 1,
+  PLAYER_TRADING: 1,
+  MARKET_TRANSACTION: 2,
+  GM_CASH_TRANSFER: 3,
   PLAYER_DONATION: 10,
+  MARKET_ESCROW: 42,
+  BROKERS_FEE: 46,
+  TRANSACTION_TAX: 54,
+  MARKET_PROVIDER_TAX: 149,
 };
+JOURNAL_ENTRY_TYPE.ADMIN_ADJUSTMENT = JOURNAL_ENTRY_TYPE.GM_CASH_TRANSFER;
 const JOURNAL_CURRENCY = {
   ISK: 1,
   AURUM: 2,
@@ -36,6 +50,7 @@ const DEFAULT_WALLET = {
   balanceChange: 0.0,
 };
 const MAX_JOURNAL_ENTRIES = 100;
+const MAX_MARKET_TRANSACTION_ENTRIES = 2000;
 
 function cloneValue(value) {
   return JSON.parse(JSON.stringify(value));
@@ -68,12 +83,11 @@ function normalizePlexDelta(value, fallback = 0) {
   return Math.trunc(numeric);
 }
 
-function getFileTimeNowString() {
-  return (BigInt(Date.now()) * 10000n + 116444736000000000n).toString();
-}
-
-function getTransactionID() {
-  return Date.now() * 1000 + Math.floor(Math.random() * 1000);
+function resolveLedgerReason(options = {}, fallback = "No details given") {
+  const explicitReason = [options.reason, options.description].find(
+    (value) => typeof value === "string" && value.trim() !== "",
+  );
+  return explicitReason || fallback;
 }
 
 function getCharacterWallet(charId) {
@@ -103,12 +117,133 @@ function getCharacterWalletJournal(charId) {
   return record.walletJournal.map((entry) => cloneValue(entry));
 }
 
-function appendWalletJournalEntry(record, entry) {
-  const nextJournal = Array.isArray(record.walletJournal)
-    ? record.walletJournal.map((candidate) => cloneValue(candidate))
+function appendLimitedRecordEntry(record, fieldName, entry, maxEntries) {
+  const nextEntries = Array.isArray(record && record[fieldName])
+    ? record[fieldName].map((candidate) => cloneValue(candidate))
     : [];
-  nextJournal.unshift(entry);
-  record.walletJournal = nextJournal.slice(0, MAX_JOURNAL_ENTRIES);
+  nextEntries.unshift(cloneValue(entry));
+  record[fieldName] = nextEntries.slice(0, maxEntries);
+}
+
+function appendWalletJournalEntry(record, entry) {
+  appendLimitedRecordEntry(record, "walletJournal", entry, MAX_JOURNAL_ENTRIES);
+}
+
+function normalizeFileTimeString(value, fallback = null) {
+  if (typeof value === "string" && value.trim() !== "") {
+    return value;
+  }
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(Math.trunc(value));
+  }
+  return fallback || getFileTimeNowString();
+}
+
+function normalizeMarketTransactionEntry(entry = {}) {
+  const transactionID = Number(entry.transactionID);
+  return {
+    transactionID: Number.isFinite(transactionID) ? Math.trunc(transactionID) : getTransactionID(),
+    transactionDate: normalizeFileTimeString(entry.transactionDate),
+    typeID: Math.max(0, Math.trunc(Number(entry.typeID) || 0)),
+    quantity: Math.max(0, Math.trunc(Number(entry.quantity) || 0)),
+    price: normalizeMoney(entry.price, 0),
+    stationID: Math.max(0, Math.trunc(Number(entry.stationID) || 0)),
+    locationID: Math.max(
+      0,
+      Math.trunc(Number(entry.locationID ?? entry.stationID) || 0),
+    ),
+    buyerID: Math.max(0, Math.trunc(Number(entry.buyerID) || 0)),
+    sellerID: Math.max(0, Math.trunc(Number(entry.sellerID) || 0)),
+    clientID: Math.max(0, Math.trunc(Number(entry.clientID) || 0)),
+    accountID: Math.max(
+      0,
+      Math.trunc(Number(entry.accountID || ACCOUNT_KEY.CASH) || ACCOUNT_KEY.CASH),
+    ),
+    buyerAccountID: Math.max(
+      0,
+      Math.trunc(
+        Number(entry.buyerAccountID || ACCOUNT_KEY.CASH) || ACCOUNT_KEY.CASH,
+      ),
+    ),
+    sellerAccountID: Math.max(
+      0,
+      Math.trunc(
+        Number(entry.sellerAccountID || ACCOUNT_KEY.CASH) || ACCOUNT_KEY.CASH,
+      ),
+    ),
+    journalRefID: Math.trunc(Number(entry.journalRefID ?? entry.journal_ref_id) || -1),
+  };
+}
+
+function getCharacterMarketTransactions(charId) {
+  const record = getCharacterRecord(charId);
+  if (!record || !Array.isArray(record.marketTransactions)) {
+    return [];
+  }
+
+  return [...record.marketTransactions]
+    .map((entry) => normalizeMarketTransactionEntry(cloneValue(entry)))
+    .sort((left, right) => right.transactionID - left.transactionID);
+}
+
+function appendCharacterMarketTransaction(charId, entry) {
+  const normalizedEntry = normalizeMarketTransactionEntry(entry);
+  const writeResult = updateCharacterRecord(charId, (record) => {
+    appendLimitedRecordEntry(
+      record,
+      "marketTransactions",
+      normalizedEntry,
+      MAX_MARKET_TRANSACTION_ENTRIES,
+    );
+    return record;
+  });
+
+  return {
+    ...writeResult,
+    entry: normalizedEntry,
+  };
+}
+
+function normalizeTransactionDateParts(entry) {
+  const date = fileTimeStringToDate(entry && entry.transactionDate);
+  return {
+    year: date.getFullYear(),
+    month: date.getMonth() + 1,
+  };
+}
+
+function isEntryWithinLast30Days(entry) {
+  const entryDate = fileTimeStringToDate(entry && entry.transactionDate);
+  if (Number.isNaN(entryDate.valueOf())) {
+    return false;
+  }
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  return entryDate.getTime() >= thirtyDaysAgo;
+}
+
+function getCharacterWalletTransactions(charId, options = {}) {
+  const accountKey = Number(options.accountKey || ACCOUNT_KEY.CASH) || ACCOUNT_KEY.CASH;
+  const year = Number(options.year);
+  const month = Number(options.month);
+  const hasMonthFilter = Number.isFinite(year) && Number.isFinite(month);
+
+  return getCharacterWalletJournal(charId).filter((entry) => {
+    if (
+      (Number(entry && entry.accountKey) || ACCOUNT_KEY.CASH) !== accountKey
+    ) {
+      return false;
+    }
+
+    if (hasMonthFilter) {
+      const dateParts = normalizeTransactionDateParts(entry);
+      return dateParts.year === year && dateParts.month === month;
+    }
+
+    return isEntryWithinLast30Days(entry);
+  });
 }
 
 function syncWalletToSession(session, wallet) {
@@ -159,18 +294,20 @@ function notifyCharacterWalletChange(charId, wallet, options = {}) {
   }
 }
 
-function emitPlexBalanceChangeToSession(session, balance) {
+function emitPlexBalanceChangeToSession(session, balance, delta = 0) {
   if (!session || typeof session.sendNotification !== "function") {
     return;
   }
 
   const normalizedBalance = normalizePlex(balance, 0);
-  // The client assets reference both spellings, so send both safe variants.
-  session.sendNotification("PlexBalanceChanged", "clientID", [normalizedBalance]);
-  session.sendNotification("PLEXBalanceChanged", "clientID", [normalizedBalance]);
+  const normalizedDelta = normalizePlexDelta(delta, 0);
+  session.sendNotification("OnPLEXBalanceChanged", "clientID", [
+    normalizedBalance,
+    normalizedDelta,
+  ]);
 }
 
-function notifyCharacterPlexBalanceChange(charId, wallet) {
+function notifyCharacterPlexBalanceChange(charId, wallet, delta = 0) {
   const sessions = sessionRegistry
     .getSessions()
     .filter(
@@ -179,7 +316,7 @@ function notifyCharacterPlexBalanceChange(charId, wallet) {
 
   for (const session of sessions) {
     syncWalletToSession(session, wallet);
-    emitPlexBalanceChangeToSession(session, wallet.plexBalance);
+    emitPlexBalanceChangeToSession(session, wallet.plexBalance, delta);
   }
 }
 
@@ -212,7 +349,7 @@ function setCharacterBalance(charId, nextBalance, options = {}) {
     accountKey: Number(options.accountKey || ACCOUNT_KEY.CASH) || ACCOUNT_KEY.CASH,
     amount: delta,
     balance: normalizedBalance,
-    description: String(options.description || "Wallet balance change"),
+    description: resolveLedgerReason(options, "Wallet balance change"),
     currency:
       Number(options.currency || JOURNAL_CURRENCY.ISK) || JOURNAL_CURRENCY.ISK,
     sortValue: 1,
@@ -244,6 +381,7 @@ function setCharacterBalance(charId, nextBalance, options = {}) {
     data: updatedWallet,
     previousBalance: currentWallet.balance,
     delta,
+    journalEntry,
   };
 }
 
@@ -259,9 +397,10 @@ function adjustCharacterBalance(charId, amount, options = {}) {
   const delta = normalizeMoney(amount, 0);
   return setCharacterBalance(charId, currentWallet.balance + delta, {
     ...options,
-    description:
-      options.description ||
-      (delta >= 0 ? "Wallet credit" : "Wallet debit"),
+    description: resolveLedgerReason(
+      options,
+      delta >= 0 ? "Wallet credit" : "Wallet debit",
+    ),
   });
 }
 
@@ -322,7 +461,7 @@ function transferCharacterBalance(fromCharId, toCharId, amount, options = {}) {
   };
 }
 
-function setCharacterPlexBalance(charId, nextBalance) {
+function setCharacterPlexBalance(charId, nextBalance, options = {}) {
   const currentWallet = getCharacterWallet(charId);
   if (!currentWallet) {
     return {
@@ -347,22 +486,44 @@ function setCharacterPlexBalance(charId, nextBalance) {
     ...currentWallet,
     plexBalance: normalizedBalance,
   };
-  notifyCharacterPlexBalanceChange(charId, updatedWallet);
+  const delta = normalizedBalance - currentWallet.plexBalance;
+  let plexTransaction = null;
+  if (delta !== 0 && options.recordTransaction !== false) {
+    const reason = resolveLedgerReason(options, "No details given");
+    const categoryMessageID =
+      Number(options.categoryMessageID || 0) || PLEX_LOG_CATEGORY.CCP;
+    const logResult = appendCharacterPlexTransaction(charId, {
+      transactionID: Number(options.transactionID || 0) || getTransactionID(),
+      transactionDate: normalizeFileTimeString(options.transactionDate),
+      amount: delta,
+      balance: normalizedBalance,
+      categoryMessageID,
+      summaryMessageID:
+        Number(options.summaryMessageID || 0) || categoryMessageID,
+      summaryText: options.summaryText || reason,
+      reason,
+    });
+    if (logResult && logResult.success) {
+      plexTransaction = logResult.entry;
+    }
+  }
+  notifyCharacterPlexBalanceChange(charId, updatedWallet, delta);
   publishPlexBalanceChangedNotice(
     charId,
     updatedWallet.plexBalance,
-    normalizedBalance - currentWallet.plexBalance,
+    delta,
   );
 
   return {
     success: true,
     data: updatedWallet,
     previousBalance: currentWallet.plexBalance,
-    delta: normalizedBalance - currentWallet.plexBalance,
+    delta,
+    transaction: plexTransaction,
   };
 }
 
-function adjustCharacterPlexBalance(charId, amount) {
+function adjustCharacterPlexBalance(charId, amount, options = {}) {
   const currentWallet = getCharacterWallet(charId);
   if (!currentWallet) {
     return {
@@ -374,6 +535,7 @@ function adjustCharacterPlexBalance(charId, amount) {
   return setCharacterPlexBalance(
     charId,
     currentWallet.plexBalance + normalizePlexDelta(amount, 0),
+    options,
   );
 }
 
@@ -384,6 +546,9 @@ module.exports = {
   JOURNAL_CURRENCY,
   getCharacterWallet,
   getCharacterWalletJournal,
+  getCharacterWalletTransactions,
+  getCharacterMarketTransactions,
+  appendCharacterMarketTransaction,
   syncWalletToSession,
   emitAccountChangeToSession,
   emitPlexBalanceChangeToSession,

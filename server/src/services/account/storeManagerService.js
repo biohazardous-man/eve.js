@@ -1,246 +1,26 @@
 const path = require("path");
 
 const BaseService = require(path.join(__dirname, "../baseService"));
-const { normalizeNumber, normalizeText } = require(path.join(
-  __dirname,
-  "../_shared/serviceHelpers",
-));
 const log = require(path.join(__dirname, "../../utils/logger"));
 const {
-  getCharacterWallet,
-  setCharacterPlexBalance,
-} = require(path.join(__dirname, "./walletState"));
+  getKwarg,
+  toMarshalValue,
+} = require(path.join(__dirname, "../newEdenStore/storeMarshal"));
+const {
+  getLegacyCatalog,
+} = require(path.join(__dirname, "../newEdenStore/storeState"));
+const {
+  purchaseLegacyOffer,
+} = require(path.join(__dirname, "../newEdenStore/storeFulfillment"));
 
 const STORE_ID_INGAME = 4;
-const PLEX_CURRENCY = "PLX";
-const CATEGORY_ROOT_SERVICES = 9000000;
-const CATEGORY_GAMETIME = 9000001;
-const CATEGORY_ACCOUNT_SERVICES = 9000002;
-const PRODUCT_OMEGA = 9100001;
-const PRODUCT_MCT = 9100002;
-const PRODUCT_SOULBOUND_MCT = 9100003;
-const OFFER_OMEGA = 9200001;
-const OFFER_MCT = 9200002;
-const OFFER_SOULBOUND_MCT = 9200003;
 
-function getKwarg(kwargs, key) {
-  if (!kwargs || kwargs.type !== "dict" || !Array.isArray(kwargs.entries)) {
-    return undefined;
+function toPositiveInteger(value, fallback = 0) {
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric <= 0) {
+    return fallback;
   }
-
-  const match = kwargs.entries.find((entry) => entry[0] === key);
-  return match ? match[1] : undefined;
-}
-
-function cloneValue(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-function toMarshalValue(value) {
-  if (
-    value === null ||
-    value === undefined ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    typeof value === "bigint"
-  ) {
-    return value ?? null;
-  }
-
-  if (Array.isArray(value)) {
-    return {
-      type: "list",
-      items: value.map((entry) => toMarshalValue(entry)),
-    };
-  }
-
-  if (typeof value === "object") {
-    if (typeof value.type === "string") {
-      return value;
-    }
-
-    return {
-      type: "dict",
-      entries: Object.entries(value).map(([key, entryValue]) => [
-        key,
-        toMarshalValue(entryValue),
-      ]),
-    };
-  }
-
-  return null;
-}
-
-function buildCatalog(storeId = STORE_ID_INGAME) {
-  const hrefPrefix = `/store/${storeId}`;
-
-  const categories = [
-    {
-      id: CATEGORY_ROOT_SERVICES,
-      name: "Services",
-      href: `${hrefPrefix}/categories/services`,
-      parent: null,
-      tags: [],
-    },
-    {
-      id: CATEGORY_GAMETIME,
-      name: "Game Time",
-      href: `${hrefPrefix}/categories/game-time`,
-      parent: { id: CATEGORY_ROOT_SERVICES },
-      tags: ["gametime"],
-    },
-    {
-      id: CATEGORY_ACCOUNT_SERVICES,
-      name: "Account Services",
-      href: `${hrefPrefix}/categories/account-services`,
-      parent: { id: CATEGORY_ROOT_SERVICES },
-      tags: [],
-    },
-  ];
-
-  const products = [
-    {
-      id: PRODUCT_OMEGA,
-      name: "Omega Clone State",
-      href: `${hrefPrefix}/products/omega-clone-state`,
-    },
-    {
-      id: PRODUCT_MCT,
-      name: "Multiple Character Training",
-      href: `${hrefPrefix}/products/multiple-character-training`,
-    },
-    {
-      id: PRODUCT_SOULBOUND_MCT,
-      name: "Multiple Character Training Slot",
-      href: `${hrefPrefix}/products/multiple-character-training-slot`,
-    },
-  ];
-
-  const offers = [
-    {
-      id: OFFER_OMEGA,
-      name: "Omega Clone State",
-      description: "Activate Omega clone state access.",
-      href: `${hrefPrefix}/offers/omega-clone-state`,
-      offerPricings: [
-        {
-          currency: PLEX_CURRENCY,
-          price: 500,
-          basePrice: 500,
-        },
-      ],
-      imageUrl: "res:/UI/Texture/classes/PlexVault/UpgradeOmega.png",
-      products: [
-        {
-          id: PRODUCT_OMEGA,
-          typeId: 0,
-          quantity: 1,
-          productName: "Omega Clone State",
-          imageUrl: "res:/UI/Texture/classes/PlexVault/UpgradeOmega.png",
-        },
-      ],
-      categories: [{ id: CATEGORY_GAMETIME }],
-      label: null,
-      thirdpartyinfo: null,
-      canPurchase: true,
-      singlePurchase: false,
-    },
-    {
-      id: OFFER_MCT,
-      name: "Multiple Character Training",
-      description: "Unlock an additional training slot.",
-      href: `${hrefPrefix}/offers/multiple-character-training`,
-      offerPricings: [
-        {
-          currency: PLEX_CURRENCY,
-          price: 485,
-          basePrice: 485,
-        },
-      ],
-      imageUrl: "res:/UI/Texture/Icons/multiple_training.png",
-      products: [
-        {
-          id: PRODUCT_MCT,
-          typeId: 34133,
-          quantity: 1,
-          productName: "Multiple Character Training",
-          imageUrl: "res:/UI/Texture/Icons/multiple_training.png",
-        },
-      ],
-      categories: [{ id: CATEGORY_ACCOUNT_SERVICES }],
-      label: null,
-      thirdpartyinfo: null,
-      canPurchase: true,
-      singlePurchase: false,
-    },
-    {
-      id: OFFER_SOULBOUND_MCT,
-      name: "Multiple Character Training Slot",
-      description: "Unlock an additional training slot.",
-      href: `${hrefPrefix}/offers/multiple-character-training-slot`,
-      offerPricings: [
-        {
-          currency: PLEX_CURRENCY,
-          price: 485,
-          basePrice: 485,
-        },
-      ],
-      imageUrl: "res:/UI/Texture/Icons/multiple_training.png",
-      products: [
-        {
-          id: PRODUCT_SOULBOUND_MCT,
-          typeId: 63188,
-          quantity: 1,
-          productName: "Multiple Character Training Slot",
-          imageUrl: "res:/UI/Texture/Icons/multiple_training.png",
-        },
-      ],
-      categories: [{ id: CATEGORY_ACCOUNT_SERVICES }],
-      label: null,
-      thirdpartyinfo: null,
-      canPurchase: true,
-      singlePurchase: false,
-    },
-  ];
-
-  return {
-    categories,
-    products,
-    offers,
-  };
-}
-
-function getCatalogForStore(storeId) {
-  const normalizedStoreId = normalizeNumber(storeId, STORE_ID_INGAME);
-  return buildCatalog(normalizedStoreId || STORE_ID_INGAME);
-}
-
-function findOfferById(storeId, offerId) {
-  const catalog = getCatalogForStore(storeId);
-  const numericOfferId = normalizeNumber(offerId, 0);
-  return (
-    catalog.offers.find((offer) => normalizeNumber(offer.id, 0) === numericOfferId) ||
-    null
-  );
-}
-
-function getOfferPrice(offer, currency) {
-  if (!offer || !Array.isArray(offer.offerPricings)) {
-    return null;
-  }
-
-  const normalizedCurrency = normalizeText(currency, PLEX_CURRENCY).toUpperCase();
-  const pricing = offer.offerPricings.find(
-    (candidate) =>
-      normalizeText(candidate && candidate.currency, "").toUpperCase() ===
-      normalizedCurrency,
-  );
-  if (!pricing) {
-    return null;
-  }
-
-  return Math.max(0, Math.trunc(normalizeNumber(pricing.price, 0)));
+  return numeric;
 }
 
 class StoreManagerService extends BaseService {
@@ -249,100 +29,84 @@ class StoreManagerService extends BaseService {
   }
 
   Handle_get_offers(args) {
-    const storeId = normalizeNumber(args && args[0], STORE_ID_INGAME);
-    const offers = cloneValue(getCatalogForStore(storeId).offers);
-    log.info(`[StoreManager] get_offers store_id=${storeId} count=${offers.length}`);
-    return toMarshalValue(offers);
+    const storeID = toPositiveInteger(args && args[0], STORE_ID_INGAME);
+    const catalog = getLegacyCatalog(storeID);
+    log.info(
+      `[StoreManager] get_offers store_id=${storeID} count=${catalog.offers.length}`,
+    );
+    return toMarshalValue(catalog.offers);
   }
 
   Handle_get_categories(args) {
-    const storeId = normalizeNumber(args && args[0], STORE_ID_INGAME);
-    const categories = cloneValue(getCatalogForStore(storeId).categories);
+    const storeID = toPositiveInteger(args && args[0], STORE_ID_INGAME);
+    const catalog = getLegacyCatalog(storeID);
     log.info(
-      `[StoreManager] get_categories store_id=${storeId} count=${categories.length}`,
+      `[StoreManager] get_categories store_id=${storeID} count=${catalog.categories.length}`,
     );
-    return toMarshalValue(categories);
+    return toMarshalValue(catalog.categories);
   }
 
   Handle_get_products(args) {
-    const storeId = normalizeNumber(args && args[0], STORE_ID_INGAME);
-    const products = cloneValue(getCatalogForStore(storeId).products);
+    const storeID = toPositiveInteger(args && args[0], STORE_ID_INGAME);
+    const catalog = getLegacyCatalog(storeID);
     log.info(
-      `[StoreManager] get_products store_id=${storeId} count=${products.length}`,
+      `[StoreManager] get_products store_id=${storeID} count=${catalog.products.length}`,
     );
-    return toMarshalValue(products);
+    return toMarshalValue(catalog.products);
   }
 
   Handle_buy_offer(args, session, kwargs) {
-    const offerId = normalizeNumber(args && args[0], 0);
-    const currency = normalizeText(args && args[1], PLEX_CURRENCY).toUpperCase();
-    const quantity = Math.max(1, Math.trunc(normalizeNumber(args && args[2], 1)));
-    const storeId = normalizeNumber(
-      getKwarg(kwargs, "store_id"),
-      STORE_ID_INGAME,
-    );
-    const characterId = normalizeNumber(
+    const offerID = toPositiveInteger(args && args[0], 0);
+    const currency = String(args && args[1] ? args[1] : "PLX").toUpperCase();
+    const quantity = Math.max(1, Math.trunc(Number(args && args[2]) || 1));
+    const storeID = toPositiveInteger(getKwarg(kwargs, "store_id"), STORE_ID_INGAME);
+    const payerCharacterID = toPositiveInteger(
       getKwarg(kwargs, "from_character_id"),
-      session && session.characterID,
+      toPositiveInteger(session && (session.characterID || session.charid), 0),
+    );
+    const targetCharacterID = toPositiveInteger(getKwarg(kwargs, "to_character_id"), 0);
+    const accountID = toPositiveInteger(
+      session && (session.userid || session.userID),
+      0,
     );
 
-    if (!characterId || currency !== PLEX_CURRENCY) {
+    const result = purchaseLegacyOffer({
+      storeID,
+      offerID,
+      currency,
+      quantity,
+      characterID: payerCharacterID,
+      targetCharacterID,
+      accountID,
+      session,
+    });
+    if (!result.success) {
       log.warn(
-        `[StoreManager] buy_offer rejected offer_id=${offerId} currency=${currency} character=${characterId}`,
+        `[StoreManager] buy_offer rejected offer_id=${offerID} store_id=${storeID} ` +
+          `currency=${currency} quantity=${quantity} payer=${payerCharacterID} ` +
+          `target=${targetCharacterID} account=${accountID} error=${result.errorMsg}`,
       );
       return null;
     }
 
-    const offer = findOfferById(storeId, offerId);
-    if (!offer) {
-      log.warn(
-        `[StoreManager] buy_offer missing offer_id=${offerId} store_id=${storeId}`,
-      );
-      return null;
-    }
-
-    const unitPrice = getOfferPrice(offer, currency);
-    if (unitPrice === null) {
-      log.warn(
-        `[StoreManager] buy_offer unsupported currency offer_id=${offerId} currency=${currency}`,
-      );
-      return null;
-    }
-
-    const currentWallet = getCharacterWallet(characterId);
-    if (!currentWallet) {
-      return null;
-    }
-
-    const totalPrice = unitPrice * quantity;
-    if (currentWallet.plexBalance < totalPrice) {
-      log.warn(
-        `[StoreManager] buy_offer insufficient PLEX character=${characterId} price=${totalPrice} balance=${currentWallet.plexBalance}`,
-      );
-      return null;
-    }
-
-    const balanceResult = setCharacterPlexBalance(
-      characterId,
-      currentWallet.plexBalance - totalPrice,
-    );
-    if (!balanceResult.success) {
-      return null;
-    }
+    const responsePayload = {
+      success: true,
+      offer_id: Number(result.data.offer_id || offerID),
+      store_offer_id: result.data.store_offer_id || null,
+      quantity: Number(result.data.quantity || quantity),
+      currency,
+      spent: Number(result.data.spent || 0),
+      balance: Number(result.data.balance || 0),
+      payer_character_id: Number(result.data.payerCharacterID || 0),
+      character_id: Number(result.data.characterID || 0),
+    };
 
     log.info(
-      `[StoreManager] buy_offer character=${characterId} offer_id=${offerId} qty=${quantity} ` +
-        `price=${totalPrice} remaining=${balanceResult.data.plexBalance}`,
+      `[StoreManager] buy_offer payer=${responsePayload.payer_character_id} ` +
+        `target=${responsePayload.character_id} offer_id=${offerID} ` +
+        `store_id=${storeID} quantity=${quantity} currency=${currency}`,
     );
-
-    return toMarshalValue({
-      success: true,
-      offer_id: offerId,
-      quantity,
-      currency,
-      spent: totalPrice,
-      balance: balanceResult.data.plexBalance,
-    });
+    return toMarshalValue(responsePayload);
   }
 
   Handle_GetOffers(args, session, kwargs) {

@@ -1,35 +1,18 @@
 const http = require("http");
 const fs = require("fs");
-const path = require("path");
 const config = require("../../config");
 const log = require("../../utils/logger");
+const { resolveImageRequest } = require("./imageRequestResolver");
 
 function startImageServer() {
   const server = http.createServer((req, res) => {
     const url = String(req.url || "/");
-    const normalizedUrl = url.toLowerCase();
 
     log.debug(`image request: ${url}`);
 
-    let filePath = path.join(__dirname, "images", "CAT.jpeg");
-    let contentType = "image/jpeg";
-
-    if (
-      normalizedUrl.includes("/character/") ||
-      normalizedUrl.includes("/portrait/")
-    ) {
-      filePath = path.join(__dirname, "images", "hi.jpg");
-      contentType = "image/jpeg";
-    } else if (normalizedUrl.includes("/corporation/")) {
-      filePath = path.join(__dirname, "images", "hi.png");
-      contentType = "image/png";
-    } else if (normalizedUrl.includes("/alliance/")) {
-      filePath = path.join(__dirname, "images", "alliance-default.png");
-      contentType = "image/png";
-    } else if (normalizedUrl.endsWith(".png")) {
-      filePath = path.join(__dirname, "images", "hi.png");
-      contentType = "image/png";
-    }
+    const resolved = resolveImageRequest(url);
+    const filePath = resolved.filePath;
+    const contentType = resolved.contentType;
 
     if (!fs.existsSync(filePath)) {
       res.writeHead(404);
@@ -56,7 +39,7 @@ function startImageServer() {
     log.err(`[ImageServer] listen error: ${err.message}`);
   });
 
-  server.listen(port);
+  server.listen(port, host);
 }
 
 module.exports = {

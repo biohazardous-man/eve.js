@@ -4,6 +4,7 @@
 
 const path = require("path");
 const net = require("net");
+const pc = require("picocolors");
 
 const log = require(path.join(__dirname, "../../utils/logger"));
 const config = require(path.join(__dirname, "../../config"));
@@ -15,11 +16,17 @@ const sessionRegistry = require(path.join(
   __dirname,
   "../../services/chat/sessionRegistry",
 ));
-const chatHub = require(path.join(__dirname, "../../services/chat/chatHub"));
+const {
+  disconnectCharacterSession,
+} = require(path.join(__dirname, "../../services/_shared/sessionDisconnect"));
 const spaceRuntime = require(path.join(__dirname, "../../space/runtime"));
 const { logStartupDataSummary } = require(path.join(
   __dirname,
   "../../utils/startupDataSummary",
+));
+const tidiAutoscaler = require(path.join(
+  __dirname,
+  "../../utils/tidiAutoscaler",
 ));
 const { MACHONETMSG_TYPE } = require(
   path.join(__dirname, "../../common/packetTypes"),
@@ -27,6 +34,10 @@ const { MACHONETMSG_TYPE } = require(
 const { encodeAddress } = require(
   path.join(__dirname, "../../common/machoAddress"),
 );
+const { normalizeCountryCode } = require(path.join(
+  __dirname,
+  "../../services/machoNet/globalConfig",
+));
 
 /**
  * start the tcp server.
@@ -34,6 +45,35 @@ const { encodeAddress } = require(
  */
 module.exports = function (serviceManager) {
   const dispatcher = new PacketDispatcher(serviceManager);
+  const startupPreloadPlan = spaceRuntime.getStartupSolarSystemPreloadPlan();
+
+  log.startupSection(
+    "NEW EDEN SYSTEM LOADING",
+    [
+      {
+        label: "Mode",
+        value: `${startupPreloadPlan.mode}  ${startupPreloadPlan.modeName}`,
+      },
+      {
+        label: "Rule",
+        value: startupPreloadPlan.selectionRule,
+      },
+      {
+        label: "Targets",
+        value: startupPreloadPlan.targetSummary,
+      },
+      {
+        label: "Systems",
+        value: `${startupPreloadPlan.systemIDs.length} queued for startup preload`,
+      },
+    ],
+    {
+      accentColor: pc.cyan,
+      titleRenderer: (value) => pc.bgCyan(pc.black(value)),
+      valueColor: pc.white,
+      subtitle: "after DB cache, before scene bootstrap",
+    },
+  );
 
   spaceRuntime.preloadStartupSolarSystems({ broadcast: false });
 
@@ -99,7 +139,11 @@ module.exports = function (serviceManager) {
                     userId: handshake.userId,
                     userName: handshake.userName,
                     clientId: handshake.clientId,
+                    accountRole: handshake.accountRole,
+                    chatRole: handshake.role,
                     role: handshake.role,
+                    languageId: handshake.languageId,
+                    countryCode: handshake.countryCode,
                     sessionId: handshake.sessionId,
                   },
                   socket,
@@ -166,8 +210,11 @@ module.exports = function (serviceManager) {
                 }).substring(0, 500)}`,
               );
 
-              // dispatch through the packet dispatcher
-              dispatcher.dispatch(decoded, clientSession);
+              // Dispatch asynchronously so services can await external RPC calls
+              Promise.resolve(dispatcher.dispatch(decoded, clientSession)).catch((err) => {
+                log.err(`[TCP] async packet dispatch error: ${err.message}`);
+                logDebug(`[TCP] async dispatch stack: ${err.stack}`);
+              });
             } catch (err) {
               log.err(`[TCP] packet processing error: ${err.message}`);
               logDebug(`[TCP] stack: ${err.stack}`);
@@ -181,8 +228,10 @@ module.exports = function (serviceManager) {
 
       socket.on("close", () => {
         if (clientSession) {
-          spaceRuntime.detachSession(clientSession, { broadcast: true });
-          chatHub.unregisterSession(clientSession);
+          disconnectCharacterSession(clientSession, {
+            broadcast: true,
+            clearSession: true,
+          });
           sessionRegistry.unregister(clientSession);
         }
         logInfo(
@@ -192,8 +241,10 @@ module.exports = function (serviceManager) {
 
       socket.on("error", (err) => {
         if (clientSession) {
-          spaceRuntime.detachSession(clientSession, { broadcast: true });
-          chatHub.unregisterSession(clientSession);
+          disconnectCharacterSession(clientSession, {
+            broadcast: true,
+            clearSession: true,
+          });
           sessionRegistry.unregister(clientSession);
         }
         log.err(`[TCP] socket error: ${err.message}`);
@@ -209,7 +260,25 @@ module.exports = function (serviceManager) {
           `[Startup] Failed to print data summary: ${error.message}`,
         );
       }
+      tidiAutoscaler.init();
     });
+
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      const pc = require("picocolors");
+      console.error("");
+      console.error(pc.red("  ╔══════════════════════════════════════════════════════════════╗"));
+      console.error(pc.red("  ║") + pc.bold(pc.yellowBright("   ⚠  EVE.JS SERVER ALREADY RUNNING  ⚠                      ")) + pc.red("║"));
+      console.error(pc.red("  ╠══════════════════════════════════════════════════════════════╣"));
+      console.error(pc.red("  ║") + pc.white(`   Port ${err.port || config.serverPort} is already in use.`) + " ".repeat(Math.max(0, 37 - String(err.port || config.serverPort).length)) + pc.red("║"));
+      console.error(pc.red("  ║") + pc.white("   Kill the other instance first, then try again.          ") + pc.red("║"));
+      console.error(pc.red("  ╚══════════════════════════════════════════════════════════════╝"));
+      console.error("");
+      process.exit(1);
+    } else {
+      log.err(`[TCP] server error: ${err.message}`);
+    }
+  });
 };
 
 /**
@@ -237,7 +306,11 @@ function _sendSessionInitNotification(session, config) {
         },
       ],
       ["address", session.address || "127.0.0.1"],
-      ["languageID", "EN"],
+      ["languageID", session.languageID || "EN"],
+      [
+        "countryCode",
+        normalizeCountryCode(session.countryCode, config.defaultCountryCode),
+      ],
     ],
   };
 
@@ -280,8 +353,6 @@ function _sendSessionInitNotification(session, config) {
     args: responseTuple,
   };
 
-  log.info(
-    `[SessionInit] Sending initial session state for user ${session.userid}`,
-  );
+  log.pktOut("SessionInit", `initial state for user ${session.userid}`);
   session.sendPacket(packet);
 }

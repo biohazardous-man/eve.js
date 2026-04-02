@@ -14,6 +14,9 @@ const {
   buildKeyVal,
   currentFileTime,
 } = require(path.join(__dirname, "../_shared/serviceHelpers"));
+const {
+  resolveOmegaLicenseState,
+} = require(path.join(__dirname, "../newEdenStore/storeState"));
 
 const CLONE_STATE_ALPHA = 0;
 const CLONE_STATE_OMEGA = 1;
@@ -46,11 +49,16 @@ class SubscriptionMgrService extends BaseService {
     return null;
   }
 
-  _resolveCloneGrade() {
+  _resolveCloneGrade(session) {
     // This client build only cleanly recognizes Alpha (0) and Omega (1).
     const override = this._readCloneGradeOverride();
     if (override !== null) {
       return override;
+    }
+
+    const omegaState = resolveOmegaLicenseState(session && session.userid);
+    if (omegaState && omegaState.hasLicense) {
+      return CLONE_STATE_OMEGA;
     }
 
     return config.omegaLicenseEnabled === false
@@ -58,10 +66,16 @@ class SubscriptionMgrService extends BaseService {
       : CLONE_STATE_OMEGA;
   }
 
-  _getSubscriptionState() {
-    const cloneGrade = this._resolveCloneGrade();
+  _getSubscriptionState(session) {
+    const cloneGrade = this._resolveCloneGrade(session);
     const isSubscribed = cloneGrade === CLONE_STATE_OMEGA;
-    const subscriptionEndTime = isSubscribed ? OMEGA_EXPIRY_FILETIME : null;
+    const omegaState = resolveOmegaLicenseState(session && session.userid);
+    const subscriptionEndTime =
+      isSubscribed && omegaState && omegaState.expiryFileTime
+        ? BigInt(omegaState.expiryFileTime)
+        : isSubscribed
+          ? OMEGA_EXPIRY_FILETIME
+          : null;
     let subscriptionDaysRemaining = 0;
 
     if (subscriptionEndTime !== null) {
@@ -82,7 +96,7 @@ class SubscriptionMgrService extends BaseService {
   }
 
   Handle_GetSubscriptionStatus(args, session) {
-    const state = this._getSubscriptionState();
+    const state = this._getSubscriptionState(session);
     log.debug(
       `[SubscriptionMgr] GetSubscriptionStatus -> subscribed=${state.isSubscribed} daysRemaining=${state.subscriptionDaysRemaining}`,
     );
@@ -99,7 +113,7 @@ class SubscriptionMgrService extends BaseService {
   }
 
   Handle_GetSubscriptionInfo(args, session) {
-    const state = this._getSubscriptionState();
+    const state = this._getSubscriptionState(session);
     log.debug(
       `[SubscriptionMgr] GetSubscriptionInfo -> subscribed=${state.isSubscribed} cloneGrade=${state.cloneGrade}`,
     );
@@ -117,7 +131,7 @@ class SubscriptionMgrService extends BaseService {
   }
 
   Handle_GetSubscriptionTime(args, session) {
-    const state = this._getSubscriptionState();
+    const state = this._getSubscriptionState(session);
     log.debug(
       `[SubscriptionMgr] GetSubscriptionTime -> ${state.subscriptionEndTime !== null ? state.subscriptionEndTime.toString() : "null"}`,
     );
@@ -127,7 +141,7 @@ class SubscriptionMgrService extends BaseService {
   }
 
   Handle_GetCloneGrade(args, session) {
-    const state = this._getSubscriptionState();
+    const state = this._getSubscriptionState(session);
     log.debug(`[SubscriptionMgr] GetCloneGrade -> ${state.cloneGrade}`);
     return state.cloneGrade;
   }

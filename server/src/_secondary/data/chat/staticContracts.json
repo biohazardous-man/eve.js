@@ -1,0 +1,3607 @@
+{
+  "version": 1,
+  "observations": {
+    "alliance_99000001": [
+      {
+        "observedAtMs": 1774894968577,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel inferred from active alliance membership"
+      },
+      {
+        "observedAtMs": 1774896090177,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel inferred from active alliance membership"
+      },
+      {
+        "observedAtMs": 1774898634644,
+        "source": "runtime_ensure",
+        "reason": "provisioned_from_client_request",
+        "scope": "alliance",
+        "entityID": 99000001
+      },
+      {
+        "observedAtMs": 1774898634644,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774898634736,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774898635074,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774898997651,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774899179288,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774899361603,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774899938111,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774899938161,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774899938368,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774900314114,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774900314127,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774900314321,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774900677188,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774900858842,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774901039282,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774901219495,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774901402240,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774904913758,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774904913845,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774904913960,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774905277334,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774906102151,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774906102245,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774906102294,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774911585058,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774911585140,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774911585304,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774911900500,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774911900570,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774911900724,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774912262938,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774912445749,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774912836096,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774912836139,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774912836207,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774914411194,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774914411292,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774914411702,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774915137444,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774915319676,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774915500009,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774915680125,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774916042715,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774916224255,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774916405779,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774916586143,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774916768518,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774916950087,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774917030403,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774917030494,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774917030610,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774917391876,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774917573508,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774917753866,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774917936355,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774918118706,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774918298995,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774920073571,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774920073604,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774920073726,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774920873267,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774920873273,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774920873367,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774921234218,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774921417216,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774921598866,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774921779977,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774921960583,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774922052260,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774922052289,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774922052396,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774922415049,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774922716163,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774922716190,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774922716281,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774924149286,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774924149298,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774924149352,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774924240371,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774924240395,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774924240479,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774948222567,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774948222580,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774948222714,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774950711082,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774950711140,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774950711242,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774950991458,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774950991647,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774950991723,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774951607951,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774951607987,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774951608080,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774951705381,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774951705467,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774951705515,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774952069194,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774952249938,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774952571225,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774952571287,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774952571331,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774953847303,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774953847320,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774953847382,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774953960376,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774953960408,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774953960531,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774954144450,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774954144486,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774954144586,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774954507169,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774954994113,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774954994131,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774954994199,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774955509364,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774959781812,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774959781856,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774959781958,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774968124899,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774968124912,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774968124989,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774968742433,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774968742459,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774968742560,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774969508577,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774969508594,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774969508647,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774970355519,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774970355578,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774970355659,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774970769699,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774970769750,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774970769883,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774971131845,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774971314264,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774971495122,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774971676303,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774972830627,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774972830643,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774972830807,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774973195205,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774973375984,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774973547209,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774973547246,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774973547292,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774973797887,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774973797927,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774973798038,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774973847656,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774973847691,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774973847763,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774974294044,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774974294059,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774974294136,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774974655568,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774976476553,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774976476617,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774976476717,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774976838655,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774977091197,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774977091219,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774977091336,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774977592000,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774977592037,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774977592101,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774984519199,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774984519237,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774984519356,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774984880262,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774985061163,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774985243161,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774985425855,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774985608773,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774985791775,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774985972375,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774986153009,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774986334000,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774987622403,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774987622425,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774987622497,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774988007425,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774988007442,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774988007593,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774988369986,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774988550576,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774988743818,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774988743879,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774988744047,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774989603688,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774989603701,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774989603812,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774990568417,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774990568428,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774990568483,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774990930006,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774991111931,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774991814094,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774991814168,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774991814233,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774992832082,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774992832112,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774992832185,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774993194755,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774993376443,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774993558812,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774993739806,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774993920779,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775001885910,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775001885953,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775001886096,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775002247683,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775003537041,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775003537164,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775003537226,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775004814063,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775004814220,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775004814364,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775004976524,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775004976553,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775004976642,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775005337635,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775005484172,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775005484185,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775005484220,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775005852371,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775005852405,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775005852447,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775044712470,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775044712563,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775044712672,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775071296851,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775071296875,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775071296983,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775071661301,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775071843069,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775073317760,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775073317803,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775073317902,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775073677658,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775130227409,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775130227426,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775130227527,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775130588388,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775133766716,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775133766753,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775133766886,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775134327770,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775134327846,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775134327954,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775135071638,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775135071652,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775135071724,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775135433959,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775136938981,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775136939047,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775136939146,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775137906331,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775137906343,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775137906421,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775138269253,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775138451485,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775141891160,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775141891174,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775141891266,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775143238075,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775143238150,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775143238229,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775143404717,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775143404737,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775143404832,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775143956317,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775143956339,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775143956719,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775146198875,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775146198921,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775146198994,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775146558961,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775146739964,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775147825907,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775147825916,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775147825978,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775151295675,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775151295690,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775151295785,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775152501629,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775152501640,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775152501678,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775152864141,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775153577756,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775153577770,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775153577885,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775155455312,
+        "source": "resync_discovery",
+        "characterID": 140000008,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775155455495,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775155455554,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775155813900,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775155994473,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775156176952,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775156359717,
+        "source": "channel_join",
+        "characterID": 140000008,
+        "corporationID": 98000002,
+        "allianceID": 99000001,
+        "warFactionID": 0
+      }
+    ],
+    "alliance_99000000": [
+      {
+        "observedAtMs": 1774955016518,
+        "source": "runtime_ensure",
+        "reason": "provisioned_from_client_request",
+        "scope": "alliance",
+        "entityID": 99000000
+      },
+      {
+        "observedAtMs": 1774955016518,
+        "source": "resync_discovery",
+        "characterID": 140000003,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1774955016601,
+        "source": "channel_join",
+        "characterID": 140000003,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774955016730,
+        "source": "channel_join",
+        "characterID": 140000003,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774955228297,
+        "source": "channel_join",
+        "characterID": 140000003,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1774955411211,
+        "source": "channel_join",
+        "characterID": 140000003,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775041862886,
+        "source": "resync_discovery",
+        "characterID": 140000003,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775041862943,
+        "source": "channel_join",
+        "characterID": 140000003,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775041862983,
+        "source": "channel_join",
+        "characterID": 140000003,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775042225197,
+        "source": "channel_join",
+        "characterID": 140000003,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775061096855,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775061280271,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775061462201,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775061643368,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775061984423,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775061984476,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775061984582,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775062994400,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775062994425,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775062994530,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775063756255,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775063756294,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775063756680,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775064032643,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775064032654,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775064032737,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775064483606,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775064483644,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775064483700,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775065096921,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775065096931,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775065097017,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775065731465,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775065731517,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775065731611,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775067117657,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775067117691,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775067117893,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775068091226,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775068091269,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775068091337,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775068489572,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775068489582,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775068489708,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775068852018,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775069034619,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775074554072,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775074554111,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775074554170,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775074914266,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775075094821,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775075275700,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775075457731,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775075640612,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775075822887,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775076004237,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775076186244,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775076368398,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775076550913,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775076731570,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775076911700,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775077092056,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775077272917,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775077454529,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775077634802,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775077816027,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775077894493,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775077894506,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775077894660,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775078258011,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775078438307,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775078620336,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775078800665,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775078982141,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775079165121,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775079347975,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775080690791,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775080690807,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775080690864,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775081053620,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775081235776,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775081598769,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775081812360,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775081812372,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775081812459,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775082679645,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775082679678,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775082679791,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775083670637,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775083670670,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775083670774,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775084518248,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775084518263,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775084518366,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775084880614,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775085062742,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775085245052,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775085426892,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775085609203,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775085791526,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775085972332,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775086153863,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775086334954,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775086515967,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775086715372,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775086715382,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775086715442,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775086961579,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775086961592,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775086961707,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775087323074,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775087505242,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775087687717,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775087869098,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775088050143,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775088231059,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775088410969,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775090010198,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775090010218,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775090010379,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775090898089,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775090898150,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775090898285,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775092942490,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775092942571,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775092942752,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775093304461,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775093486416,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775093842712,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775093842755,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775093842891,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775094204215,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775094386215,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775094566557,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775094782320,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775094782331,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775094782458,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775095902093,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775095902148,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775095902193,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775096263870,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775096445373,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775096625539,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775096806843,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775096989571,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775097568162,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775097568197,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775097568289,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775125975639,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775125976296,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775125977056,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775126021164,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775126021179,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775126021259,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775126378989,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775126562984,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775126748298,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775127624313,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775127624411,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775127624494,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775127987202,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775128169447,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775128351247,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775128546801,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775128741916,
+        "source": "resync_discovery",
+        "characterID": 140000002,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775128741925,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775128742028,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775129102387,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775129290924,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775129472770,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775129656099,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775129840890,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775130023571,
+        "source": "channel_join",
+        "characterID": 140000002,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775156506157,
+        "source": "resync_discovery",
+        "characterID": 140000003,
+        "note": "alliance channel served via active alliance membership"
+      },
+      {
+        "observedAtMs": 1775156507260,
+        "source": "channel_join",
+        "characterID": 140000003,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      },
+      {
+        "observedAtMs": 1775156512008,
+        "source": "channel_join",
+        "characterID": 140000003,
+        "corporationID": 98000000,
+        "allianceID": 99000000,
+        "warFactionID": 0
+      }
+    ]
+  }
+}

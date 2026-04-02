@@ -1,5 +1,4 @@
 const path = require("path");
-const database = require("../database")
 
 const log = require(path.join(__dirname, "../utils/logger"));
 const {
@@ -8,26 +7,9 @@ const {
 } = require(path.join(__dirname, "../services/_shared/referenceData"));
 
 let cache = null;
-let cacheSignature = "";
-let lastSignatureCheckAt = 0;
-const WORLD_DATA_SIGNATURE_CHECK_INTERVAL_MS = 1000;
 
-function getTableRevisionSafe(tableName) {
-  return typeof database.getTableRevision === "function"
-    ? database.getTableRevision(tableName)
-    : 0;
-}
-
-function getWorldDataSignature() {
-  return [
-    TABLE.SOLAR_SYSTEMS,
-    TABLE.STATIONS,
-    TABLE.CELESTIALS,
-    TABLE.STARGATES,
-    TABLE.MOVEMENT_ATTRIBUTES,
-  ]
-    .map((tableName) => `${tableName}:${getTableRevisionSafe(tableName)}`)
-    .join("|");
+function getStructureState() {
+  return require(path.join(__dirname, "../services/structure/structureState"));
 }
 
 function buildMaps() {
@@ -36,6 +18,7 @@ function buildMaps() {
   const stationTypes = readStaticRows(TABLE.STATION_TYPES);
   const stargateTypes = readStaticRows(TABLE.STARGATE_TYPES);
   const celestials = readStaticRows(TABLE.CELESTIALS);
+  const asteroidBelts = readStaticRows(TABLE.ASTEROID_BELTS);
   const stargates = readStaticRows(TABLE.STARGATES);
   const attributes = readStaticRows(TABLE.MOVEMENT_ATTRIBUTES);
 
@@ -44,8 +27,8 @@ function buildMaps() {
   const stationTypesById = new Map();
   const stargateTypesById = new Map();
   const stationsBySystem = new Map();
-  const celestialsById = new Map();
   const celestialsBySystem = new Map();
+  const asteroidBeltsBySystem = new Map();
   const stargatesById = new Map();
   const stargatesBySystem = new Map();
   const movementByTypeId = new Map();
@@ -77,6 +60,13 @@ function buildMaps() {
     celestialsBySystem.get(celestial.solarSystemID).push(celestial);
   }
 
+  for (const asteroidBelt of asteroidBelts) {
+    if (!asteroidBeltsBySystem.has(asteroidBelt.solarSystemID)) {
+      asteroidBeltsBySystem.set(asteroidBelt.solarSystemID, []);
+    }
+    asteroidBeltsBySystem.get(asteroidBelt.solarSystemID).push(asteroidBelt);
+  }
+
   for (const stargate of stargates) {
     stargatesById.set(stargate.itemID, stargate);
     if (!stargatesBySystem.has(stargate.solarSystemID)) {
@@ -95,6 +85,9 @@ function buildMaps() {
   for (const value of celestialsBySystem.values()) {
     value.sort((left, right) => left.itemID - right.itemID);
   }
+  for (const value of asteroidBeltsBySystem.values()) {
+    value.sort((left, right) => left.itemID - right.itemID);
+  }
   for (const value of stargatesBySystem.values()) {
     value.sort((left, right) => left.itemID - right.itemID);
   }
@@ -105,6 +98,7 @@ function buildMaps() {
     stationTypes,
     stargateTypes,
     celestials,
+    asteroidBelts,
     stargates,
     attributes,
     solarSystemsById,
@@ -112,8 +106,8 @@ function buildMaps() {
     stationTypesById,
     stargateTypesById,
     stationsBySystem,
-    celestialsById,
     celestialsBySystem,
+    asteroidBeltsBySystem,
     stargatesById,
     stargatesBySystem,
     movementByTypeId,
@@ -121,21 +115,11 @@ function buildMaps() {
 }
 
 function ensureLoaded() {
-  const now = Date.now();
-  const shouldCheckSignature =
-    !cache ||
-    (now - lastSignatureCheckAt) >= WORLD_DATA_SIGNATURE_CHECK_INTERVAL_MS;
-
-  if (shouldCheckSignature) {
-    const nextSignature = getWorldDataSignature();
-    lastSignatureCheckAt = now;
-    if (!cache || cacheSignature !== nextSignature) {
-      cache = buildMaps();
-      cacheSignature = nextSignature;
-      log.info(
-        `[SpaceWorld] Loaded ${cache.solarSystems.length} systems, ${cache.stations.length} stations, ${cache.celestials.length} celestials, ${cache.stargates.length} stargates`,
-      );
-    }
+  if (!cache) {
+    cache = buildMaps();
+    log.info(
+      `[SpaceWorld] Loaded ${cache.solarSystems.length} systems, ${cache.stations.length} stations, ${cache.stationTypes.length} station types, ${cache.celestials.length} celestials, ${cache.asteroidBelts.length} asteroid belts, ${cache.stargates.length} stargates`,
+    );
   }
 
   return cache;
@@ -167,8 +151,10 @@ function getStationsForSystem(solarSystemID) {
   ];
 }
 
-function getCelestialByID(celestialID) {
-  return ensureLoaded().celestialsById.get(Number(celestialID)) || null;
+function getAsteroidBeltsForSystem(solarSystemID) {
+  return [
+    ...(ensureLoaded().asteroidBeltsBySystem.get(Number(solarSystemID)) || []),
+  ];
 }
 
 function getCelestialsForSystem(solarSystemID) {
@@ -183,10 +169,20 @@ function getStargatesForSystem(solarSystemID) {
   ];
 }
 
+function getStructureByID(structureID) {
+  return getStructureState().getStructureByID(structureID);
+}
+
+function getStructuresForSystem(solarSystemID) {
+  return getStructureState().listStructuresForSystem(solarSystemID);
+}
+
 function getStaticSceneForSystem(solarSystemID) {
   const numericSystemID = Number(solarSystemID);
   return [
     ...getStationsForSystem(numericSystemID),
+    ...getStructuresForSystem(numericSystemID),
+    ...getAsteroidBeltsForSystem(numericSystemID),
     ...getCelestialsForSystem(numericSystemID),
     ...getStargatesForSystem(numericSystemID),
   ];
@@ -208,7 +204,9 @@ module.exports = {
   getStationTypeByID,
   getStargateTypeByID,
   getStationsForSystem,
-  getCelestialByID,
+  getAsteroidBeltsForSystem,
+  getStructureByID,
+  getStructuresForSystem,
   getCelestialsForSystem,
   getStargatesForSystem,
   getStaticSceneForSystem,

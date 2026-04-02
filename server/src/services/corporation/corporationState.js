@@ -1,13 +1,20 @@
 const fs = require("fs");
 const path = require("path");
 
-const database = require(path.join(__dirname, "../../database"));
+const database = require(path.join(__dirname, "../../newDatabase"));
 const {
   currentFileTime,
 } = require(path.join(__dirname, "../_shared/serviceHelpers"));
 const {
-  updateCharacterRecord,
-} = require(path.join(__dirname, "../character/characterState"));
+  getFactionOwnerRecord,
+} = require(path.join(__dirname, "../faction/factionState"));
+const {
+  getCorporationWarPermitStatus,
+} = require(path.join(__dirname, "./warPermitState"));
+const {
+  readAggressionSettings,
+  resolveFriendlyFireLegalAtTime,
+} = require(path.join(__dirname, "./aggressionSettingsState"));
 
 const CORPORATIONS_TABLE = "corporations";
 const ALLIANCES_TABLE = "alliances";
@@ -39,6 +46,23 @@ const NPC_CHARACTER_SOURCE = path.join(
 
 let npcCorporationCache = null;
 let npcCharacterCache = null;
+let corporationsBootstrapComplete = false;
+let alliancesBootstrapComplete = false;
+let corporationMembersIndexCache = null;
+let corporationMembersIndexDirty = true;
+let allianceCorporationsIndexCache = null;
+let allianceCorporationsIndexDirty = true;
+
+function getCharacterStateService() {
+  return require(path.join(__dirname, "../character/characterState"));
+}
+
+function updateCharacterStateRecord(characterID, mutator) {
+  const characterState = getCharacterStateService();
+  return characterState && typeof characterState.updateCharacterRecord === "function"
+    ? characterState.updateCharacterRecord(characterID, mutator)
+    : { success: false, errorMsg: "CHARACTER_STATE_UNAVAILABLE" };
+}
 
 function cloneValue(value) {
   return JSON.parse(JSON.stringify(value));
@@ -126,8 +150,24 @@ function readTable(tableName, defaultPayload) {
   return cloneValue(result.data);
 }
 
+function readTableView(tableName, defaultPayload) {
+  const result = database.read(tableName, "/");
+  if (!result.success || !result.data || typeof result.data !== "object") {
+    return defaultPayload;
+  }
+
+  return result.data;
+}
+
 function writeTable(tableName, payload) {
-  return database.write(tableName, "/", payload);
+  const writeResult = database.write(tableName, "/", payload);
+  if (writeResult && writeResult.success) {
+    if (tableName === CORPORATIONS_TABLE || tableName === ALLIANCES_TABLE) {
+      allianceCorporationsIndexDirty = true;
+      allianceCorporationsIndexCache = null;
+    }
+  }
+  return writeResult;
 }
 
 function normalizeCorporationTable(payload = {}) {
@@ -219,6 +259,112 @@ function readCharacters() {
   }
 
   return result.data;
+}
+
+function markCorporationMembersIndexDirty() {
+  corporationMembersIndexDirty = true;
+  corporationMembersIndexCache = null;
+}
+
+function ensureCorporationMembersIndex() {
+  if (!corporationMembersIndexDirty && corporationMembersIndexCache) {
+    return corporationMembersIndexCache;
+  }
+
+  const nextIndex = new Map();
+  for (const [characterID, characterRecord] of Object.entries(readCharacters())) {
+    const corporationID = normalizePositiveInteger(
+      characterRecord && characterRecord.corporationID,
+      null,
+    );
+    const numericCharacterID = normalizePositiveInteger(characterID, null);
+    if (!corporationID || !numericCharacterID) {
+      continue;
+    }
+    if (!nextIndex.has(corporationID)) {
+      nextIndex.set(corporationID, []);
+    }
+    nextIndex.get(corporationID).push(numericCharacterID);
+  }
+
+  for (const members of nextIndex.values()) {
+    members.sort((left, right) => left - right);
+  }
+
+  corporationMembersIndexCache = nextIndex;
+  corporationMembersIndexDirty = false;
+  return corporationMembersIndexCache;
+}
+
+function ensureAllianceCorporationsIndex() {
+  if (!allianceCorporationsIndexDirty && allianceCorporationsIndexCache) {
+    return allianceCorporationsIndexCache;
+  }
+
+  ensureAlliancesInitialized();
+  ensureCorporationsInitialized();
+
+  const nextIndex = new Map();
+  const allianceRecordsResult = database.read(ALLIANCES_TABLE, "/records");
+  const corporationRecordsResult = database.read(CORPORATIONS_TABLE, "/records");
+  const allianceRecords =
+    allianceRecordsResult.success &&
+    allianceRecordsResult.data &&
+    typeof allianceRecordsResult.data === "object"
+      ? allianceRecordsResult.data
+      : {};
+  const corporationRecords =
+    corporationRecordsResult.success &&
+    corporationRecordsResult.data &&
+    typeof corporationRecordsResult.data === "object"
+      ? corporationRecordsResult.data
+      : {};
+
+  for (const [allianceID, allianceRecord] of Object.entries(allianceRecords)) {
+    const numericAllianceID = normalizePositiveInteger(allianceID, null);
+    if (!numericAllianceID) {
+      continue;
+    }
+    const members = new Set(
+      (Array.isArray(allianceRecord && allianceRecord.memberCorporationIDs)
+        ? allianceRecord.memberCorporationIDs
+        : []
+      )
+        .map((corporationID) => normalizePositiveInteger(corporationID, null))
+        .filter(Boolean),
+    );
+    nextIndex.set(numericAllianceID, members);
+  }
+
+  for (const corporationRecord of Object.values(corporationRecords)) {
+    const corporationID = normalizePositiveInteger(
+      corporationRecord && corporationRecord.corporationID,
+      null,
+    );
+    const allianceID = normalizePositiveInteger(
+      corporationRecord && corporationRecord.allianceID,
+      null,
+    );
+    if (!corporationID || !allianceID) {
+      continue;
+    }
+    if (!nextIndex.has(allianceID)) {
+      nextIndex.set(allianceID, new Set());
+    }
+    nextIndex.get(allianceID).add(corporationID);
+  }
+
+  allianceCorporationsIndexCache = nextIndex;
+  allianceCorporationsIndexDirty = false;
+  return allianceCorporationsIndexCache;
+}
+
+function getCorporationMemberCount(corporationID) {
+  const numericCorporationID = normalizePositiveInteger(corporationID, 0) || 0;
+  if (!numericCorporationID) {
+    return 0;
+  }
+  return (ensureCorporationMembersIndex().get(numericCorporationID) || []).length;
 }
 
 function readStations() {
@@ -326,6 +472,21 @@ function buildNpcCorporationRecord(rawRecord) {
 }
 
 function ensureCorporationsInitialized() {
+  if (corporationsBootstrapComplete) {
+    const table = readTableView(CORPORATIONS_TABLE, {
+      _meta: {
+        nextCustomCorporationID: CUSTOM_CORPORATION_ID_START,
+        npcSeedVersion: NPC_CORPORATION_SEED_VERSION,
+      },
+      records: {},
+    });
+    table._meta =
+      table._meta && typeof table._meta === "object" ? table._meta : {};
+    table.records =
+      table.records && typeof table.records === "object" ? table.records : {};
+    return table;
+  }
+
   const table = normalizeCorporationTable(
     readTable(CORPORATIONS_TABLE, {
       _meta: {
@@ -362,10 +523,25 @@ function ensureCorporationsInitialized() {
     writeTable(CORPORATIONS_TABLE, table);
   }
 
+  corporationsBootstrapComplete = true;
   return table;
 }
 
 function ensureAlliancesInitialized() {
+  if (alliancesBootstrapComplete) {
+    const table = readTableView(ALLIANCES_TABLE, {
+      _meta: {
+        nextCustomAllianceID: CUSTOM_ALLIANCE_ID_START,
+      },
+      records: {},
+    });
+    table._meta =
+      table._meta && typeof table._meta === "object" ? table._meta : {};
+    table.records =
+      table.records && typeof table.records === "object" ? table.records : {};
+    return table;
+  }
+
   const table = normalizeAllianceTable(
     readTable(ALLIANCES_TABLE, {
       _meta: {
@@ -384,6 +560,7 @@ function ensureAlliancesInitialized() {
     writeTable(ALLIANCES_TABLE, table);
   }
 
+  alliancesBootstrapComplete = true;
   return table;
 }
 
@@ -393,15 +570,9 @@ function getCharacterIDsInCorporation(corporationID) {
     return [];
   }
 
-  return Object.entries(readCharacters())
-    .filter(([, characterRecord]) =>
-      normalizePositiveInteger(
-        characterRecord && characterRecord.corporationID,
-        0,
-      ) === numericCorporationID,
-    )
-    .map(([characterID]) => normalizePositiveInteger(characterID, 0))
-    .filter(Boolean);
+  return cloneValue(
+    ensureCorporationMembersIndex().get(numericCorporationID) || [],
+  );
 }
 
 function getAllianceCorporationIDs(allianceID) {
@@ -410,27 +581,11 @@ function getAllianceCorporationIDs(allianceID) {
     return [];
   }
 
-  const alliances = ensureAlliancesInitialized();
-  const storedRecord = alliances.records[String(numericAllianceID)];
-  const directCorporations = Object.values(ensureCorporationsInitialized().records)
-    .filter(
-      (corporationRecord) =>
-        normalizePositiveInteger(corporationRecord && corporationRecord.allianceID, 0) ===
-        numericAllianceID,
-    )
-    .map((corporationRecord) =>
-      normalizePositiveInteger(corporationRecord.corporationID, 0),
-    )
-    .filter(Boolean);
-  const storedCorporations = Array.isArray(storedRecord && storedRecord.memberCorporationIDs)
-    ? storedRecord.memberCorporationIDs
-        .map((corporationID) => normalizePositiveInteger(corporationID, 0))
-        .filter(Boolean)
-    : [];
-
-  return Array.from(new Set([...storedCorporations, ...directCorporations])).sort(
-    (left, right) => left - right,
-  );
+  const members = ensureAllianceCorporationsIndex().get(numericAllianceID);
+  if (!members) {
+    return [];
+  }
+  return [...members].sort((left, right) => left - right);
 }
 
 function getCorporationRecord(corporationID) {
@@ -439,8 +594,15 @@ function getCorporationRecord(corporationID) {
     return null;
   }
 
-  const table = ensureCorporationsInitialized();
-  const storedRecord = table.records[String(numericCorporationID)];
+  ensureCorporationsInitialized();
+  const result = database.read(
+    CORPORATIONS_TABLE,
+    `/records/${String(numericCorporationID)}`,
+  );
+  const storedRecord =
+    result.success && result.data && typeof result.data === "object"
+      ? result.data
+      : null;
   if (!storedRecord) {
     return null;
   }
@@ -448,7 +610,7 @@ function getCorporationRecord(corporationID) {
   const record = normalizeCorporationLogo(cloneValue(storedRecord));
   record.corporationID = numericCorporationID;
   record.allianceID = normalizePositiveInteger(record.allianceID, null);
-  record.memberCount = getCharacterIDsInCorporation(numericCorporationID).length;
+  record.memberCount = getCorporationMemberCount(numericCorporationID);
   return record;
 }
 
@@ -458,8 +620,15 @@ function getAllianceRecord(allianceID) {
     return null;
   }
 
-  const table = ensureAlliancesInitialized();
-  const storedRecord = table.records[String(numericAllianceID)];
+  ensureAlliancesInitialized();
+  const result = database.read(
+    ALLIANCES_TABLE,
+    `/records/${String(numericAllianceID)}`,
+  );
+  const storedRecord =
+    result.success && result.data && typeof result.data === "object"
+      ? result.data
+      : null;
   if (!storedRecord) {
     return null;
   }
@@ -469,7 +638,7 @@ function getAllianceRecord(allianceID) {
   record.memberCorporationIDs = getAllianceCorporationIDs(numericAllianceID);
   record.memberCount = record.memberCorporationIDs.reduce(
     (count, corporationID) =>
-      count + getCharacterIDsInCorporation(corporationID).length,
+      count + getCorporationMemberCount(corporationID),
     0,
   );
   return record;
@@ -487,6 +656,7 @@ function getCorporationOwnerRecord(corporationID) {
     typeID: OWNER_TYPE_CORPORATION,
     gender: 0,
     tickerName: record.tickerName || null,
+    factionID: normalizePositiveInteger(record.factionID, null),
   };
 }
 
@@ -532,6 +702,7 @@ function getOwnerLookupRecord(ownerID) {
   return (
     getCorporationOwnerRecord(ownerID) ||
     getAllianceOwnerRecord(ownerID) ||
+    getFactionOwnerRecord(ownerID) ||
     getNpcCharacterOwnerRecord(ownerID) ||
     null
   );
@@ -555,23 +726,38 @@ function getCorporationStationSolarSystems(corporationID) {
     return [];
   }
 
-  return Array.from(
-    new Set(
-      readStations()
-        .filter(
-          (stationRecord) =>
-            normalizePositiveInteger(
-              stationRecord &&
-                (stationRecord.corporationID || stationRecord.ownerID),
-              0,
-            ) === numericCorporationID,
-        )
-        .map((stationRecord) =>
-          normalizePositiveInteger(stationRecord && stationRecord.solarSystemID, 0),
-        )
-        .filter(Boolean),
-    ),
-  ).sort((left, right) => left - right);
+  const stationCountBySystemID = new Map();
+
+  for (const stationRecord of readStations()) {
+    const ownerID = normalizePositiveInteger(
+      stationRecord && (stationRecord.corporationID || stationRecord.ownerID),
+      0,
+    );
+    if (ownerID !== numericCorporationID) {
+      continue;
+    }
+
+    const solarSystemID = normalizePositiveInteger(
+      stationRecord && stationRecord.solarSystemID,
+      0,
+    );
+    if (!solarSystemID) {
+      continue;
+    }
+
+    stationCountBySystemID.set(
+      solarSystemID,
+      (stationCountBySystemID.get(solarSystemID) || 0) + 1,
+    );
+  }
+
+  return [...stationCountBySystemID.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .map(([solarSystemID, stationCount]) => ({
+      ownerID: numericCorporationID,
+      solarSystemID,
+      stationCount,
+    }));
 }
 
 function getCorporationPublicInfo(corporationID) {
@@ -579,6 +765,15 @@ function getCorporationPublicInfo(corporationID) {
   if (!record) {
     return null;
   }
+
+  const aggressionSettings = readAggressionSettings(record.corporationID, {
+    isNpcCorporation: Boolean(record.isNPC),
+  });
+  const currentFriendlyFire = resolveFriendlyFireLegalAtTime(aggressionSettings, {
+    isNpcCorporation: Boolean(record.isNPC),
+  })
+    ? 1
+    : 0;
 
   return {
     corporationID: record.corporationID,
@@ -599,10 +794,15 @@ function getCorporationPublicInfo(corporationID) {
     url: record.url || "",
     taxRate: Number(record.taxRate || 0),
     loyaltyPointTaxRate: Number(record.loyaltyPointTaxRate || 0),
-    friendlyFire: normalizeInteger(record.friendlyFire, 0),
+    friendlyFire: currentFriendlyFire,
+    allowWar: getCorporationWarPermitStatus(record.corporationID),
     memberCount: normalizeInteger(record.memberCount, 0),
     isNPC: Boolean(record.isNPC),
     factionID: normalizePositiveInteger(record.factionID, null),
+    warFactionID: normalizePositiveInteger(
+      record.warFactionID,
+      normalizePositiveInteger(record.factionID, null),
+    ),
     raceID: normalizePositiveInteger(record.raceID, null),
     shape1: normalizeLogoPart(record.shape1),
     shape2: normalizeLogoPart(record.shape2),
@@ -637,8 +837,12 @@ function getCorporationInfoRecord(corporationID) {
     taxRate: publicInfo.taxRate,
     loyaltyPointTaxRate: publicInfo.loyaltyPointTaxRate,
     friendlyFire: publicInfo.friendlyFire,
+    allowWar: publicInfo.allowWar,
     memberCount: publicInfo.memberCount,
     isNPC: publicInfo.isNPC,
+    factionID: publicInfo.factionID,
+    warFactionID: publicInfo.warFactionID,
+    raceID: publicInfo.raceID,
     shape1: publicInfo.shape1,
     shape2: publicInfo.shape2,
     shape3: publicInfo.shape3,
@@ -712,7 +916,7 @@ function setCharacterAffiliation(characterID, corporationID, allianceID = null) 
     };
   }
 
-  return updateCharacterRecord(numericCharacterID, (record) => {
+  const updateResult = updateCharacterStateRecord(numericCharacterID, (record) => {
     const nowFiletime = filetimeNowString();
     const currentCorporationID = normalizePositiveInteger(record.corporationID, 0);
     const corporationChanged = currentCorporationID !== numericCorporationID;
@@ -747,6 +951,10 @@ function setCharacterAffiliation(characterID, corporationID, allianceID = null) 
     updatedRecord.employmentHistory = employmentHistory;
     return updatedRecord;
   });
+  if (updateResult && updateResult.success) {
+    markCorporationMembersIndexDirty();
+  }
+  return updateResult;
 }
 
 function setCorporationAlliance(corporationID, allianceID = null) {
@@ -1068,5 +1276,6 @@ module.exports = {
   getOwnerLookupRecord,
   isNpcCorporationID,
   joinCorporationToAllianceByName,
+  setCharacterAffiliation,
   setCorporationAlliance,
 };

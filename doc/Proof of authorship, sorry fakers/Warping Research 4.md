@@ -1,0 +1,2784 @@
+<!--
+Proof-of-authorship note: Primary authorship and project direction for this research note belong to John Elysian.
+This file is kept here as part of the EveJS proof-of-authorship record after repeated misattribution of the underlying work and claims that it was trivial.
+If you reuse, discuss, or share this file, please credit it accurately.
+-->
+
+# Warp Native Activation RE - 2026-03-13
+
+## Scope
+
+This document records the current boundary after `warplogs228.txt` and the full-client-code review in `_local/codeccpFULL/code`.
+
+The goal is to stop revisiting closed warp branches and focus only on the remaining native activation path behind:
+
+- `0x180036a20`
+- `0x1800374ed`
+- `0x18003755a` (`OnActivatingWarp`)
+- `0x180042850`
+- `0x180042b20`
+- `0x180043140`
+
+## Executive Conclusion
+
+`warplogs228.txt` is the boundary.
+
+The corrected `148`-byte raw mode-3/bootstrap-lite branch really did land, and it still failed with the same wrapper-only behavior:
+
+- ego-only `AddBalls2`
+- ego-only `SetState`
+- Michelle immediately clearing out-of-date entries
+- `effects.Warping`
+- `Space::OnSpecialFX ... -1 None`
+- tunnel assets loading
+- no `OnWarpActive`
+- no `OnWarpStarted2`
+- no `TravelTunnelProgress`
+- final snap/anchor at destination
+
+That closes bootstrap-lite in both meaningful raw forms:
+
+- old fake `148`-byte branch
+- corrected `148`-byte branch
+
+This means the remaining target is not another mode-3 state variant, not another `SetMaxSpeed` seed, and not another FX-order tweak.
+
+The remaining target is the native activation/countdown chain that makes `ball.effectStamp` go positive and unlocks the real active-warp path.
+
+It also means one older RE branch is now closed:
+
+- mode `12` / `0x180042300`
+- mode `10` / `0x180043f00`
+
+Those helpers are real, but the direct DLL pass now shows they are formation/field state, not warp activation.
+
+## What `228` Proved
+
+### 1. The corrected raw mode-3 branch was really exercised
+
+Server-side proof from `server/logs/space-ball-debug.log`:
+
+- `warp.started.ego` on the `228` run emitted `encodedLength: 148`
+- the encoded summary carried:
+  - `targetPoint`
+  - `effectStamp`
+  - `totalDistance`
+  - `stopDistance`
+  - `warpFactor`
+
+Client-side proof from `client/warplogs228.txt`:
+
+- ego-only `AddBalls2`
+- ego-only `SetState`
+- same-stamp normal warp-start batch
+
+### 2. Correct raw mode-3 state still did not unlock active warp
+
+The client still showed:
+
+- Michelle history clear right after `SetState`
+- `effects.Warping`
+- `Space::OnSpecialFX ... -1 None`
+- tunnel asset load
+- no active-warp markers
+
+So the corrected mode-3 wire content is not the missing live activation step.
+
+### 3. Bootstrap-lite is now closed
+
+Bootstrap-lite is dead in all tested forms:
+
+- old legacy tail
+- truncated `goto + warpFactor`
+- corrected `goto + effectStamp + totalDistance + stopDistance + warpFactor`
+
+## Hard Facts From The Full Client Code
+
+### `Warp.py` only enters the true active path when `ball.effectStamp > 0`
+
+Relevant file:
+
+- `_local/codeccpFULL/code/eve/client/script/environment/effects/Warp.py`
+
+The active tunnel path is not entered when the effect starts. It is entered later inside `WarpLoop()` only when:
+
+- `ball.mode == destiny.DSTBALL_WARP`
+- `ball.effectStamp > 0`
+
+That branch is what triggers:
+
+- `OnWarpActive`
+- `TravelTunnelProgress`
+- `warpSpeedModifier`
+- `OnWarpStarted2`
+- `OnWarpDecelerate`
+
+So if `effectStamp` never goes positive, the client can still show wrapper/tunnel behavior while never entering the real active-warp loop.
+
+### Michelle `SetState` is a reset/rebase path, not a harmless live initializer
+
+Relevant file:
+
+- `_local/codeccpFULL/code/eve/client/script/remote/michelle.py`
+
+`SetState()` does all of the following:
+
+- `DoBallClear`
+- `ClearAll()`
+- full-state stream reload
+- `_parent_Start()`
+- `FlushSimulationHistory()`
+- queue re-add of ball/slim data
+- reapply effect states
+
+`FlushState()` also explicitly does this when it sees a `SetState` action:
+
+- stores `latestSetStateTime`
+- logs that Michelle received `SetState`
+- clears out-of-date history entries
+
+This exactly matches the live `warplogs228` behavior. That is why bootstrap-lite now has to be treated as toxic, not as a safe live activation helper.
+
+### The public script/client surface does not expose the native activation fields
+
+Relevant files:
+
+- `_local/codeccpFULL/code/eve/devtools/script/svc_ballparkExporter.py`
+- `_local/codeccpFULL/code/destiny/__init__.py`
+
+The full client exporter only exposes public ball data like:
+
+- `x/y/z`
+- `vx/vy/vz`
+
+It does not expose native hidden fields like:
+
+- `effectStamp`
+- `warpDistance`
+- activation countdown state
+
+Also, `packages/destiny/__init__.py` simply loads the native `_destiny` extension. There is no Python implementation of the activation chain to patch or inspect there.
+
+### There is no Python-layer hook for `OnActivatingWarp`
+
+Searches across `_local/codeccpFULL/code` found:
+
+- `Warp.py` and the decompiled warp effect consuming `ball.effectStamp`
+- no Python definition of `OnActivatingWarp`
+- no Python handler for the mode `10/12` activation family
+
+That keeps the remaining problem inside the native `_destiny` layer, not in a missed script service.
+
+## Critical Correction About "Mode 10 / Mode 12"
+
+This needs to be stated clearly because it is easy to get wrong.
+
+From `C:/evemu_Crucible/src/eve-common/destiny/DestinyStructs.h`:
+
+- public ball mode `10` = `FIELD`
+- public ball mode `12` = `FORMATION`
+
+In the same header, separate destiny event/dispatch constants are listed:
+
+- `DST_WARPACTIVATION = 10`
+- `DST_WARPEXIT = 11`
+
+So the existing notes about:
+
+- mode `12` helper `0x180042300`
+- mode `10` helper `0x180043f00`
+
+need a stronger correction than before.
+
+They should **not** be interpreted as:
+
+- "send AddBalls2 ball mode 10 or 12"
+- "the remaining warp-native activation family"
+
+The direct DLL work now shows these helpers are real, but they are formation/field plumbing rather than warp activation.
+
+Also, the direct DLL work now shows that the real function starts are:
+
+- mode-12 helper starting at `0x180042300`
+- mode-10 helper starting at `0x180043f00`
+
+The older `0x180042400` / `0x180043f20` labels came from landing inside those functions rather than at their true entries.
+
+## New Inbound-Path Findings
+
+These are the most important native findings after moving off the mode-10/12 dead end.
+
+### `0x180036a20` has one direct caller: the main tick/update loop
+
+Direct call search against `_destiny.dll` shows exactly one direct call into:
+
+- `0x180036a20`
+
+That caller is:
+
+- `0x18003565b`
+
+inside the main ballpark tick/update loop around `0x180035650`.
+
+This matters because it means the activation gate is not some separate network/event entry point. It is part of the normal per-tick native update path.
+
+### The `0x180036a20` mode dispatch table is now recovered
+
+The jump table inside `0x180036a20` dispatches public ball modes like this:
+
+- mode `0` (`GOTO`) -> `0x180036cd3`
+- mode `1` (`FOLLOW`) -> `0x180036ed3`
+- mode `2` (`STOP`) -> `0x180037076`
+- mode `3` (`WARP`) -> `0x180036aca`
+- mode `4` (`ORBIT`) -> `0x18003702a`
+- mode `5` (`MISSILE`) -> `0x180036d0a`
+- mode `6` -> falls through
+- mode `7` -> falls through
+- mode `8` -> falls through
+- mode `9` -> falls through
+- mode `10` -> falls through
+- mode `11` -> falls through
+- mode `12` (`FORMATION`) -> `0x180036ebe`
+
+This is useful because it separates the real mode-3 warp branch from the other native countdown-ish branches that also reuse `+0x88`.
+
+### `0x180042850` still has only two direct callers
+
+Direct call search now confirms `0x180042850` is only reached directly from:
+
+- `0x1800375b3`
+- `0x1800431fd`
+
+Those are:
+
+- the align/countdown activation helper (`0x1800374ed / 0x18003755a`)
+- the richer warp initializer (`0x180043140`)
+
+That is a very strong narrowing result. It means the real live activation problem is not hidden behind a large family of callers. Native warp init still fans in through only those two places.
+
+### `0x180042b20` is fed from the tick loop only after `+0x88 >= 0`
+
+Inside the main tick loop at `0x180035650`:
+
+- the ball must be mode `3`
+- `ball+0x88` must be nonnegative
+- only then does it compute elapsed time and call `0x180042b20`
+
+That direct path is:
+
+- `0x1800357cc -> 0x180042b20`
+
+So a plain `WarpTo` ball with `+0x88 = -1` will never enter the in-warp solver through the main tick loop until something else changes that field first.
+
+### The mode-3 predictor/helper at `0x1800372e0` is now clearer
+
+This helper is reached from the mode-3 branch inside `0x180036a20`.
+
+It has three important behaviors:
+
+1. If the ball is mode `3` and `+0x88 >= 0`, it writes a zero vector and returns immediately.
+2. If the ball is mode `3` and `+0x88 < 0`, it computes pre-activation alignment data from:
+   - current warp target (`+0x1a8/+0x1b0/+0x1b8`)
+   - current position (`+0x28/+0x30/+0x38`)
+   - current motion vector (`+0x178/+0x180/+0x188`)
+3. From that state it either:
+   - jumps into the immediate activation path at `0x180037553`
+   - or falls through the countdown path at `0x18003750e -> 0x1800375ce`
+
+That countdown path is the one that decrements `+0x88` and calls `0x180038870`.
+
+So the real mode-3 behavior is now tighter than the old notes:
+
+- plain `WarpTo` seeds `+0x88 = -1`
+- the native mode-3 helper sees that negative state and treats it as pre-activation
+- only if the activation test passes does it jump to `OnActivatingWarp -> 0x180042850`
+- otherwise it keeps using the negative-countdown path
+
+### The `+0xd2 / +0x478` failure latch is directly tied to the in-warp solver
+
+The bad branch in `0x180042b20` now has a direct write signature:
+
+- `ball+0xd2 = 1`
+- `ball+0x478 = 1`
+- then `0x180043920`
+
+The tick loop later sees `+0xd2` and forces:
+
+- `warpDistance(+0x110) = -1.0`
+
+This is the cleanest native explanation yet for the long-running "extended warp / warpDistance:-1" evidence.
+
+### A second `+0x88` writer exists, but it is not yet proven to be the warp path
+
+There is a native helper around `0x18004591c` that does this:
+
+- clears `ball+0xd2`
+- writes `ball+0x88 = currentTick + delta`
+
+That superficially looks like a countdown seed. But its call graph is broader:
+
+- `0x18004410f -> 0x180045970`
+- `0x1800454c3 -> 0x180045970`
+- `0x1800465a7 -> 0x180045970`
+- `0x180098f97 -> 0x180045970`
+
+and the surrounding helper uses generic scheduler/container state rather than obviously warp-local state.
+
+So this path is worth remembering, but it should **not** be treated as the missing warp answer yet. It is a candidate shared countdown/scheduler primitive, not a proven warp-only initializer.
+
+## Dynamic Trace Workflow
+
+Static RE is now narrow enough that the next honest step is dynamic tracing of the live ego ball.
+
+To support that, there is now a local Frida-based tracer:
+
+- `scripts/internal/warp_native_trace.py`
+- `scripts/internal/warp_native_trace.js`
+
+### What the tracer records
+
+It resolves `_destiny.dll` at runtime and traces the warp-relevant native path for the ego ball only.
+
+It records:
+
+- the first plain `WarpTo` write of `+0x88 = -1`
+- any later writes to `+0x88` from the known native write sites
+- writes to `+0x110`
+- writes to `+0xd2`
+- branch hits for:
+  - mode-3 activation
+  - mode-3 countdown
+  - warp solver entry
+  - warp solver failure latch
+
+Each JSON event includes:
+
+- writer RIP
+- field name
+- old/new value
+- ball mode
+- current tick when available
+- ball/entity snapshot
+- short native call stack
+
+The Python runner also derives one high-value summary event:
+
+- `first-post-warp-write-88`
+
+That marks the first writer that touches `+0x88` after plain `WarpTo` seeds it to `-1`.
+
+### Run command
+
+From the repo root:
+
+```powershell
+python scripts/internal/warp_native_trace.py --process exefile.exe
+```
+
+If the active ship entity ID is known, pin it explicitly:
+
+```powershell
+python scripts/internal/warp_native_trace.py --process exefile.exe --ship-id 140000137
+```
+
+Output is written to:
+
+- `server/logs/warp-native-frida.jsonl`
+
+### Why this is the right next move
+
+The remaining unknown is no longer packet order or bootstrap shape.
+
+The real question is:
+
+- who first changes `+0x88` after plain `WarpTo` writes `-1`
+
+because:
+
+- the main tick loop will not feed mode-3 into `0x180042b20` until `+0x88 >= 0`
+- `0x180042850` is still the real warp initializer
+- `0x180042b20` is still where the bad failure latch is set
+
+So the next decisive evidence should come from a live trace, not another runtime experiment.
+
+## First Valid Dynamic Trace Result
+
+The first stable ego-ball hit from the live Frida tracer was noisy for stability, but it still proved one important thing.
+
+On the real piloting ship ball:
+
+- plain `WarpTo` write site `0x1800427e1` really did write `+0x88 = -1`
+- the same ball then entered the mode-3 helper at `0x1800372e0`
+- at that point the snapshot already showed:
+  - `mode = 3`
+  - `value88 = -1`
+  - `stopDistance = 6110526`
+  - `warpFactor = 35`
+  - `d2 = 0`
+  - `warpDistance = -1`
+
+That means the live server/client path is definitely doing all of the following on the correct ego ball:
+
+- entering mode `3`
+- storing stop distance
+- storing warp factor
+- keeping `+0x88` negative at initial mode-3 entry
+
+So the remaining question is narrower than before:
+
+- not "does live `WarpTo` reach the correct ego ball?"
+- but "what, if anything, changes that live mode-3 ball from `+0x88 = -1` into the nonnegative activation state afterward?"
+
+That is why the next rerun only needs the lighter trace on:
+
+- `warp-to-write-minus-one`
+- countdown writes to `+0x88`
+- `0x180042850` write to `+0x88`
+- failure latch / forced `warpDistance = -1`
+
+The first dynamic session that produced this result was still using an older, heavier hook set:
+
+- it still had stack capture enabled
+- it still hooked mode-3 helper entry directly
+
+That is a plausible reason the client froze/closed during warp start.
+
+The current tracer has been narrowed further to a write-only profile:
+
+- no stack capture
+- no mode-3 helper entry hook
+- no activation/countdown branch entry hooks
+- only decisive writes on:
+  - `+0x88`
+  - `+0x110`
+  - `+0xd2`
+  - `+0x478`
+
+The live trace now reports `traceProfile = write-only-v2` in the hook-install status line so the next run can be verified as the lighter build.
+
+## Second Stable Dynamic Trace Result
+
+The next clean rerun with `traceProfile = write-only-v2` produced the most important native result so far.
+
+On the real piloting ship ball:
+
+- `warp-to-write-minus-one` wrote `+0x88` from `0` to `-1`
+- the first post-`WarpTo` writer to `+0x88` was the countdown site at `0x1800375dd`
+- that site decremented:
+  - `-1 -> -2`
+  - then `-2 -> -3`
+- after that, `warp-init-write-88` at `0x180042960` wrote:
+  - `-3 -> 1773450513`
+
+The corresponding snapshots also showed:
+
+- `mode = 3`
+- `stopDistance = 6110526`
+- `warpFactor = 35`
+- `d2 = 0`
+- `warpDistance = -1` before the initializer write
+
+This is a real boundary shift in the model.
+
+It proves that the plain live warp path is *not* dying before native activation ownership. It really does:
+
+- enter mode `3`
+- run the negative countdown path
+- reach the real native initializer `0x180042850`
+- make `+0x88` nonnegative through that initializer
+
+So the old weaker hypothesis is now closed:
+
+- it is no longer correct to say that plain live `WarpTo` never reaches the initializer
+- it does reach it on the real ego ball
+
+The next unresolved question moves later in the chain:
+
+- what happens after `0x180042850` on our bad warps?
+- why does visible behavior still fall back to wrapper-only / snap-landing even though the real initializer was reached?
+
+That shifts the next RE focus toward:
+
+- the exact `+0x110` write inside `0x180042850`
+- the subsequent `0x180042b20` in-warp solver path
+- the exact conditions that lead to the bad latch:
+  - `+0xd2 = 1`
+  - `+0x478 = 1`
+  - forced `warpDistance = -1`
+
+Offline disassembly now pins the key initializer store sites inside `0x180042850` directly:
+
+- `0x180042960` -> `mov dword ptr [rbx + 0x88], eax`
+- `0x180042982` -> `movsd qword ptr [rbx + 0x110], xmm0`
+- `0x18004298a` -> `mov byte ptr [rbx + 0xd2], 0`
+- `0x180042991` -> `mov byte ptr [rbx + 0x478], 0`
+
+The surrounding math also confirms the meaning of the `+0x110` write:
+
+- it rewrites the stop-adjusted target at `+0x1a8/+0x1b0/+0x1b8`
+- then computes Euclidean distance from current position to that adjusted target
+- then stores that result into `warpDistance(+0x110)` at `0x180042982`
+
+So the next dynamic question is no longer where `+0x110` is written.
+It is whether that computed value is sane on the live path, and how quickly the solver or tick loop corrupts it afterward.
+
+## Native Facts Already Established By Local RE Notes
+
+These are the strongest current facts already present in:
+
+- `docs/warp_research_latest.txt`
+- `docs/Warp_Fix_Notes_2026_final.txt`
+- `docs/WARP RESEARCH.txt`
+
+### Plain `WarpTo` is the simple path
+
+Plain warp parser:
+
+- `0x180092830`
+- format: `'Lddd|di'`
+
+This reaches:
+
+- `0x1800425e0`
+
+The notes already say this simple path leaves:
+
+- `effectStamp(+0x88) = -1`
+
+### The richer initializer is separate and effectively exhausted on the named surface
+
+Richer parser:
+
+- `0x1800928f0`
+- format: `'Ldddi'`
+
+This reaches:
+
+- `0x180043140`
+
+Current notes say:
+
+- that parser path is only reachable through the separate richer live action surface
+- no second reliable live action name has been found beyond the already-failed experiments
+
+So the named warp action surface is effectively exhausted.
+
+### The actual active-warp gate is native and checks `+0x88`
+
+From the current notes:
+
+- `0x180036a20` is the activation gate
+- `+0x88 < 0` means pre-activation align/countdown path
+- immediate activation requires heading and speed conditions
+- if those fail, the client counts down and eventually forces activation
+- `OnActivatingWarp` is logged from `0x18003755a`
+
+### The field that matters is still `effectStamp`
+
+The notes consistently map:
+
+- `effectStamp -> +0x88`
+
+And they say:
+
+- `0x180042850` is the internal helper that turns `+0x88` positive
+- that same helper initializes `warpDistance(+0x110)`
+
+That is still the best explanation for why we get:
+
+- wrapper warp state
+- tunnel FX assets
+- no active warp events
+
+## Direct DLL Findings From The Local `_destiny.dll`
+
+These findings come from direct disassembly of:
+
+- `client/EVE/tq/bin64/_destiny.dll`
+
+and should be treated as stronger than the older speculative wording in the notes whenever they conflict.
+
+### `+0x88` is not a single simple field throughout the whole warp lifecycle
+
+The old shorthand of "effectStamp lives at `+0x88`" is incomplete.
+
+Direct DLL inspection now shows that the same offset is reused across multiple native states:
+
+- plain `WarpTo -> 0x1800425e0` writes `ball+0x88 = -1`
+- the mode-12 helper at `0x180042300` writes a countdown value into `ball+0x88`
+- the align/activation helper at `0x1800374ed` decrements `ball+0x88`
+- `0x180042850` later writes the current tick into `ball+0x88`
+- the richer initializer at `0x180043140` then rewrites `ball+0x88 = max(currentTick - 5, 0)`
+
+So the script-side `ball.effectStamp` view is real, but the native code clearly reuses that offset as a lifecycle field before active warp is fully established.
+
+### `0x1800374ed` and `0x18003755a` are the same activation/countdown function
+
+This is now directly backed by the DLL, not just notes.
+
+The function:
+
+- logs `AlignForWarp: Forcing warp as %I64d has been aligning for %d ticks.`
+- logs `OnActivatingWarp`
+- calls `0x180042850`
+
+The same function also has the countdown branch:
+
+- reads `ball+0x88`
+- decrements it
+- writes it back to `ball+0x88`
+- calls `0x180038870`
+
+That gives us a concrete lifecycle:
+
+1. the ship can sit in an align/countdown state with `+0x88` acting like a countdown
+2. after the forcing condition is met, the client logs `OnActivatingWarp`
+3. then `0x180042850` seeds the real warp fields
+
+### The `180`-tick fallback is directly proven
+
+Inside `0x1800374ed`, the code compares an align duration against `0xB4` (`180`).
+
+If that threshold is exceeded, it logs:
+
+- `AlignForWarp: Forcing warp as %I64d has been aligning for %d ticks.`
+
+and then goes through the `OnActivatingWarp -> 0x180042850` branch.
+
+So the older note about a `180`-count fallback is now directly confirmed by the local DLL.
+
+### Plain `WarpTo` really does leave the ball in pre-activation warp state
+
+`0x1800425e0` does all of the following on the ball:
+
+- syncs/updates the ball through `0x180043920`
+- writes the mode-3 target point into `+0x1a8/+0x1b0/+0x1b8`
+- writes `+0x88 = -1`
+- writes `+0x90 = stopDistance`
+- writes `+0x98 = warpFactor`
+- zeroes `+0xf8`
+- sets mode `3` through `0x18000a130`
+
+What it does **not** do is call `0x180042850`.
+
+That directly fits the live failure pattern: plain `WarpTo` sets up WARP mode, but does not itself perform the later activation work that seeds the in-warp fields.
+
+### `0x180042850` is a real warp-field initializer, not just a flag flip
+
+This helper is now concrete.
+
+It:
+
+- measures the vector from current position (`+0x28/+0x30/+0x38`) to the current warp target (`+0x1a8/+0x1b0/+0x1b8`)
+- normalizes that direction
+- scales it by `stopDistance` from `+0x90`
+- writes the stop-adjusted point back into `+0x1a8/+0x1b0/+0x1b8`
+- writes the current tick from the ballpark into `+0x88`
+- computes and writes `warpDistance` into `+0x110`
+- clears byte flags at `+0xd2` and `+0x478`
+
+This matters because it shows the missing native step is not "just make `effectStamp` positive." It also rebuilds the stop-adjusted target and clears additional internal state.
+
+### `+0xd2` is tied to the bad `warpDistance = -1` path
+
+The ballpark tick loop around `0x180035650` contains this behavior:
+
+- if byte `ball+0xd2` is set, it writes `ball+0x110 = -1.0`
+- then it calls `0x18003eb40`
+
+That lines up with the long-running `Ship stuck in extended warp ... warpDistance:-1.000000` evidence from the logs.
+
+This is important because `0x180042850` explicitly clears `ball+0xd2`.
+
+So `0x180042850` is not just "activation happened"; it also clears at least one internal failure/stuck-warp latch that the tick loop otherwise uses to force `warpDistance` back to `-1`.
+
+### The richer initializer really does seed more than plain `WarpTo`
+
+`0x180043140` does this:
+
+1. calls the plain warp handler `0x1800425e0`
+2. reacquires the ball
+3. if the ball mode is nonzero, calls `0x180042850`
+4. writes additional vector data into `+0x178/+0x180/+0x188`
+5. rewrites `+0x88 = max(currentTick - 5, 0)`
+6. recomputes `+0x110`
+
+It also logs the `EntityWarpIn getting called ...` diagnostic string.
+
+So the richer path is not just "plain warp with different arguments." It performs extra native initialization after mode-3 setup.
+
+### The mode-12 helper is real and concrete, but it is not warp
+
+At `0x180042300`, the helper:
+
+- looks up a referenced object through the ballpark container
+- validates state on that referenced object
+- syncs through `0x180043920`
+- writes `+0x90`
+- writes `+0xb8`
+- writes `+0x88`
+- calls the mode-change setter `0x18000a130` with `12`
+- then calls `0x18001e010`
+
+Direct parser work shows the same state is set up by parser `0x1800940d0` with signature:
+
+- `LLi`
+
+That parser:
+
+- resolves a target object
+- writes `+0x90 = target ID`
+- writes `+0xb8 = resolved target object pointer`
+- writes `+0x88 = slot/index value`
+- sets mode `12`
+- immediately calls `0x18001e010`
+
+`0x18001e010` is not warp initialization. It hashes an 8-byte key and inserts/removes entries in the target object's container at `+0x3e8`.
+
+Cleanup confirms the same story:
+
+- `0x180043920` handles mode `12` specially
+- it checks that `+0x90` resolves back to the object in `+0xb8`
+- for mode `12`, it calls `0x18000eda0(targetObject, slotIndex)`
+- then it zeroes `+0x88`, `+0xb8`, `+0x90`, `+0x98`, `+0xf8`
+- then it forces mode `2`
+
+`0x18000eda0` uses:
+
+- target object `+0xce`
+- target object `+0xa8`
+- the passed-in slot/index value
+
+and clears a bit in the target object's bitset at `+0x170`.
+
+That is formation-slot bookkeeping, not warp activation.
+
+### The mode-10 helper is real and concrete, but it is not warp
+
+At `0x180043f00`, the helper:
+
+- finds the ball through the ballpark container
+- writes:
+  - `+0xa0`
+  - `+0xc0`
+  - `+0xc4`
+- syncs through `0x180043920`
+- calls the mode-change setter `0x18000a130` with `10`
+
+Direct parser work shows the same state is set up by parser `0x180093cc0` with signature:
+
+- `LLiii`
+
+That parser:
+
+- resolves a ball
+- writes `+0xa0`
+- writes `+0xc0`
+- writes `+0xc4`
+- then sets mode `10`
+
+The surrounding native code confirms this is field/miniball state, not warp:
+
+- `0x18000baaf` copies the same `+0xa0/+0xc0/+0xc4` triplet into a current mode-10 ball and syncs it
+- `0x180089d60` only compares `+0xa0/+0xc0/+0xc4` when `ball.mode == 10`
+- the adjacent mode-10 code logs:
+  - `Removing %d miniballs`
+  - `Removing %d minicapsules`
+
+So the old note that associated `0x180043f20` with `DST_WARPACTIVATION` was pointing at a real native helper, but the helper itself is not the warp activation path.
+
+### The actual warp-native path is narrower than the old notes suggested
+
+After the direct DLL pass, the warp-native path that still matters is:
+
+- tick/update loop around `0x180035650`
+- activation gate `0x180036a20`
+- activation/countdown function `0x1800374ed / 0x18003755a`
+- warp initializer `0x180042850`
+- in-warp solver / failure branch `0x180042b20`
+- richer warp initializer `0x180043140` if a real live route into it ever exists
+
+## What Is Closed
+
+The following branches are now closed enough that they should not drive more tests:
+
+### Closed sequencing/content branches
+
+- late pilot anchor corrections
+- pilot self `SetBallPosition` / `SetBallVelocity` in warp
+- full live `SetState`
+- ego-only bootstrap-lite `AddBalls2 -> SetState`
+- old fake raw mode-3 tail
+- truncated raw mode-3 tail
+- corrected raw mode-3 tail
+- `EntityWarpIn`
+- repeated seed-scale churn
+- FX-order churn
+- pre-warp `AddBall` rebaseline variants as the main solution
+
+### Why they are closed
+
+Either:
+
+- they are already proven toxic by the client logs
+- or they only change fallback local motion without ever unlocking:
+  - `OnWarpActive`
+  - `OnWarpStarted2`
+  - `TravelTunnelProgress`
+
+## Working Model Of The Failure
+
+The best current model is:
+
+1. The client accepts `WarpTo` and enters wrapper/tunnel state.
+2. The client does **not** complete the internal activation transition that would make `effectStamp > 0`.
+3. Without `effectStamp > 0`, `Warp.py` never enters the real active-warp loop.
+4. The client still shows partial wrapper effects and warp UI state.
+5. The server continues to solve the full warp correctly on its side.
+6. The ship finally snaps to the server-authoritative landing point.
+
+That explains why we repeatedly see:
+
+- warp wrapper text/state changes
+- sometimes tunnel assets
+- sometimes camera shake
+- no active-warp callbacks
+- pinned or wrong remainder distance
+- final snap to destination
+
+## What The Full Client Code Added
+
+The full client code did not reveal a hidden Python hook that fixes warp.
+
+What it did add is confidence:
+
+- the warp effect script is only a consumer of `effectStamp`
+- Michelle `SetState` really is a reset/rebase path
+- public ballpark tools do not expose the hidden activation fields
+- `destiny` itself is native `_destiny`, not Python
+
+That means the remaining work is correctly centered on native field ownership and native transition semantics.
+
+## Exact Unanswered Questions
+
+These are the remaining questions that matter.
+
+### 1. What happens immediately after the native initializer on the live path?
+
+This part is now directly proven by the stable dynamic traces:
+
+- plain `WarpTo` writes `+0x88 = -1`
+- the countdown path decrements it negative (`-1 -> -2 -> -3`)
+- `0x180042850` then writes current tick into `+0x88`
+- `0x180042850` writes a sane positive `warpDistance(+0x110)`
+- the tick loop immediately enters `0x180042b20` on that same live ego ball
+
+Unknown:
+
+- what the first solver call returns
+- whether the first solver call produces sane output position/velocity buffers
+- whether the first bad state change happens on solver leave or only on a later solver/deactivation iteration
+
+### 2. What is the full input contract of `0x180042850`?
+
+Direct DLL work now says:
+
+- it rewrites the stop-adjusted target point at `+0x1a8/+0x1b0/+0x1b8`
+- it writes current tick into `+0x88`
+- it initializes `warpDistance(+0x110)`
+- it clears `+0xd2`
+- it clears `+0x478`
+
+Unknown:
+
+- the exact role of `+0x478`
+- whether the caller must already have set up any additional hidden state beyond plain warp mode
+- whether some additional ballpark-global state is also required
+
+### 3. What exactly causes `0x180042b20` to take the deactivation/stuck-warp branch?
+
+Direct DLL work now shows:
+
+- the bad branch logs `Ship stuck in extended warp ...`
+- then it logs `OnDeactivatingWarp`
+- then it sets:
+  - `+0xd2 = 1`
+  - `+0x478 = 1`
+- then it syncs through `0x180043920`
+
+Unknown:
+
+- the exact numeric condition that sends the ball into that branch
+- whether the bad branch can be prevented purely by earlier activation-state ownership
+- whether `+0x478` is only a deactivation latch or also a broader interpolation/state flag
+- the meaning of the solver-gating values now seen around the first call:
+  - stack arg `6`
+  - `ballpark+0x2ba`
+
+### 4. What top-level state exists outside the public ball sector?
+
+The logs strongly suggest that one or more internal fields needed for activation are not owned by:
+
+- public `WarpTo`
+- public `SetMaxSpeed`
+- public `OnSpecialFX`
+- public mode-3 `SetState`
+
+So the missing piece may be:
+
+- internal ballpark countdown state
+- a native dispatch/event queue entry
+- a hidden ball sector not present on the public wire
+
+## Recommended Next RE Steps
+
+These are research steps, not runtime tweaks.
+
+### Step 1. Treat `0x180036a20` as the center
+
+Map exactly:
+
+- all fields it reads before immediate activation
+- what it decrements while alignment countdown runs
+- the call site into `0x18003755a`
+
+### Step 2. Fully map `0x1800374ed -> 0x180042850`
+
+The current notes already point at this chain as the fallback path.
+
+Need:
+
+- the exact branch condition that chooses:
+  - decrement-countdown path
+  - forced-activation path
+- the full role of `0x180038870`
+- the exact relationship between:
+  - `+0x88`
+  - `+0x90`
+  - `+0xb8`
+  - `+0x110`
+  - `+0xd2`
+
+### Step 3. Focus on the real warp-native inbound path, not mode `10/12`
+
+Need:
+
+- the tick-loop ownership around `0x180035650`
+- the first solver leave after `0x180042850`
+- the first downstream solver/deactivation writes after solver entry
+- the meaning of:
+  - stack arg `6` into `0x180042b20`
+  - `ballpark+0x2ba`
+- dynamic watch on:
+  - solver outputs
+  - `+0xd2`
+  - `+0x478`
+  - forced `+0x110 = -1`
+
+Mode `10/12` should now be treated as closed for warp purposes.
+
+### Step 4. Keep runtime frozen while doing this
+
+Do not reopen:
+
+- bootstrap-lite
+- raw mode-3 variants
+- live `SetState`
+- new seed experiments
+- new FX timing experiments
+- pilot self position/velocity hacks
+
+Those branches are noise now.
+
+## Practical Runtime State After This Pass
+
+The dead bootstrap-lite branch should stay disabled.
+
+The least-bad fallback remains the plain live branch that produces visible wrapper warp without the toxic `SetState` refresh path, but it should be treated as fallback only, not as the target solution.
+
+## Latest Dynamic Boundary
+
+The current stable trace boundary is now:
+
+- live warp reaches the correct ego ball
+- plain `WarpTo` seeds mode `3` and `+0x88 = -1`
+- countdown runs
+- `0x180042850` runs
+- `0x180042850` writes sane positive `warpDistance(+0x110)`
+- the first `0x180042b20` solver entry happens immediately afterward with:
+  - `+0xd2 = 0`
+  - `+0x478 = 0`
+  - no immediate failure-latch write observed
+- that first solver call is invoked with:
+  - `elapsedArg = 0`
+  - `controlBool = 0`
+  - `ballpark+0x2ba = 0`
+- and its first solver return produces sane outputs:
+  - output position is only a tiny delta from current position
+  - output velocity matches the current motion vector
+
+So the missing piece is no longer activation or initialization.
+And the first solver call itself is not obviously broken, because it is a zero-elapsed same-tick pass.
+
+It is now later in the solver / post-solver / deactivation side of the native chain:
+
+- the first solver pass where `elapsedArg > 0`
+- or a later solver/deactivation iteration after that
+
+One more native split is now established:
+
+- `0x180042b20` has two direct callers, not one:
+  - main tick loop call at `0x1800357cc`
+  - secondary call at `0x18000ae91`
+
+The first positive-elapsed solver call observed so far carried:
+
+- `elapsedArg = 0.0082426`
+- `controlBool = 1`
+- `ballpark+0x2ba = 0`
+
+That strongly suggests the first positive solver pass we caught is coming from the secondary caller, not the main tick-loop callsite that passes stack bool `0`.
+
+That is now directly supported by the caller-tagged dynamic trace:
+
+- zero-elapsed solver call:
+  - `callerSite = tick-loop`
+  - `controlBool = 0`
+- first positive-elapsed solver call:
+  - `callerSite = secondary-ae91`
+  - `controlBool = 1`
+
+And both of those observed calls still return sane outputs without an immediate failure latch.
+
+The newer `solver-progress-v2` trace pushes this one step further:
+
+- positive-elapsed solver entry from `secondary-ae91`:
+  - `elapsedArg = 0.0383161`
+  - `controlBool = 1`
+  - `ballpark+0x2ba = 0`
+- positive-elapsed solver entry from `tick-loop`:
+  - `elapsedArg = 1`
+  - `controlBool = 0`
+  - `ballpark+0x2ba = 0`
+
+And both positive solver returns still look sane in the narrow sense:
+
+- no immediate `+0xd2 = 1`
+- no immediate `+0x478 = 1`
+- no immediate forced `warpDistance(+0x110) = -1`
+
+But they are also the strongest current clue that the remaining fault is now motion-state, not activation:
+
+- the positive `secondary-ae91` solver return changes output position only by a tiny amount
+- the positive `tick-loop` solver return also changes output position only by a tiny amount
+- the positive `tick-loop` solver return preserves the same velocity vector instead of producing obvious warp-scale motion
+
+So the next question is no longer just "which caller produced the first positive solver pass?"
+It is:
+
+- why both positive solver callers are still producing tiny-step / subwarp-like outputs
+- and which motion-state inputs the solver is reading incorrectly on the live path
+
+The next trace pass should therefore focus on the ball motion fields and coefficient blocks at solver entry/leave:
+
+- `maxVelocity`
+- `inertia`
+- `speedFraction`
+- `mass(+0x100)`
+- `value108(+0x108)`
+- coefficient vectors at `+0x1e8..+0x210`
+
+That is now the highest-value native target because activation, initialization, and the first positive tick-loop solver handoff are all proven live.
+
+The newer `solver-motion-v1` trace adds the first concrete motion-state clue:
+
+- pre-warp / mode `2` state still carries:
+  - `maxVelocity = 247.5`
+  - `inertia = 0.45`
+  - `speedFraction = 1`
+  - `value108 = 0.8602286395608801`
+  - nonzero `coeffA`
+- as soon as the ball is observed in mode `3` on the countdown path:
+  - `coeffA` is already zeroed
+  - `coeffB` is zero
+- through warp init and both positive solver passes:
+  - `maxVelocity` remains `247.5`
+  - `inertia` remains `0.45`
+  - `speedFraction` remains `1`
+  - `value108` remains `0.8602286395608801`
+  - `coeffA = 0`
+  - `coeffB = 0`
+
+And the resulting positive solver returns still only produce tiny-step outputs:
+
+- positive `secondary-ae91` solver return nudges output position by only a tiny amount
+- positive `tick-loop` solver return also nudges output position by only a tiny amount
+- positive `tick-loop` solver return preserves the same velocity vector
+
+So the strongest live hypothesis is now:
+
+- native activation is working
+- native solver entry is working
+- but the ego ball is reaching the post-init solver with coefficient / follow-on motion state that looks uninitialized or flattened
+
+That makes the next native-only question:
+
+- does the live ego ball ever reach the follow-on movement helpers around `0x18003e980` / `0x180036700` after the solver?
+- and if it does, are those helpers still seeing the coefficient block zeroed?
+
+The newer `solver-followon-v1` trace answers the first half of that:
+
+- `0x18003e980` definitely does run on the ego ball during the live warp path
+- login/solar-entry noise also hits that helper, but the real warp is still easy to isolate by `warpSequence = 1`
+- on the real warp path:
+  - immediately after `warp-to-write-minus-one`
+  - and after countdown has already pushed mode `3` / `+0x88 = -2`
+  - `followon-helper-3e980` still sees a nonzero `coeffA`
+- then, by the time `0x180042850` reaches its visible writes (`+0x88`, `+0x110`), `coeffA` is already zero again
+
+So the next narrowed question is no longer "does the client ever reach the follow-on helper path?"
+It is:
+
+- exactly where between `followon-helper-3e980` and the visible `0x180042850` writes the coefficient block is being zeroed
+
+And one negative result matters too:
+
+- `0x180036700` has still not been observed touching the ego ball on the live warp path in the current traces
+
+The newer `coeff-zero-v1` trace pushes this one step further, even though that branch destabilized the client:
+
+- `warp-init-fn-enter` at `0x180042850` was captured on the real warp path
+- at that entry point:
+  - mode `3`
+  - `value88 = -3`
+  - `coeffA = 0`
+  - `coeffB = 0`
+- so the coefficient block is already flattened before `0x180042850` begins its visible init writes
+
+That means the zeroing window is now even narrower:
+
+- after the observed `followon-helper-3e980` calls that still carry nonzero `coeffA`
+- but before `0x180042850` entry
+
+The most likely live window left is therefore:
+
+- the second countdown step (`-2 -> -3`)
+- or the short mode-3 helper path immediately after that decrement and before warp init entry
+
+Because the direct `0x180042850` entry hook appears to have destabilized the client, the safer next trace should drop that hook and instead log:
+
+- both early countdown writes, especially `-2 -> -3`
+- the follow-on helper window that immediately precedes warp init
+
+The newer `coeff-window-v1` trace resolves that safer window:
+
+- on the real warp path, the first countdown write (`-1 -> -2`) already shows `coeffA = 0`
+- but the immediately following `followon-helper-3e980` calls on the same live warp still see nonzero `coeffA`
+- then the second countdown write (`-2 -> -3`) shows `coeffA = 0` again
+
+So the coefficient block is not simply "always zero once warp starts."
+It is being rebuilt / visible as nonzero inside the follow-on helper path, then flattened again before the `-2 -> -3` countdown transition completes.
+
+That narrows the live zeroing target to:
+
+- the short path between `followon-helper-3e980` return and the second countdown write
+- or the exact writer that services the coefficient block during the `-2 -> -3` step itself
+
+The next best trace is therefore no longer another window bracket.
+It is a direct memory-write watch on the ego ball's coefficient block at `+0x1e8..+0x210`.
+
+One practical note from the next clean live run:
+
+- the persisted log after this boundary was still the older `coeff-window-v1` session, not the new direct-write session
+- there is no `hooks-installed` line for `coeff-write-v1`
+- there are no `coeff-write` events in `warp-native-frida.jsonl`
+
+So that run did not invalidate the coefficient-window finding. It simply means the next useful trace must be a fresh tracer start that explicitly shows:
+
+- `traceProfile: "coeff-write-v1"`
+
+before the warp begins.
+
+The next clean run did finally land `coeff-write-v1`, and that result is useful too:
+
+- `hooks-installed` really did show `traceProfile: "coeff-write-v1"`
+- but there were still no `coeff-write` events at all
+- despite that, the same coefficient pattern repeated on the real warp path:
+  - pre-warp `warp-to-write-minus-one` still showed nonzero `coeffA`
+  - first countdown write (`-1 -> -2`) showed `coeffA = 0`
+  - `followon-helper-3e980` then saw nonzero `coeffA` again
+  - second countdown write (`-2 -> -3`) flattened it back to `0`
+
+So the coefficient block is definitely changing, but the direct Frida `MemoryAccessMonitor` watch did not catch the writer on this path.
+
+That makes the next best trace:
+
+- direct entry/leave tracing on the countdown helper itself at `0x1800374ed`
+
+Because that should answer the remaining narrow question cleanly:
+
+- does the helper begin with the coefficient block already zero
+- or does the helper zero it internally before / by the time it reaches the `+0x88` write path
+
+The next clean run with `countdown-helper-v1` answered that directly:
+
+- `traceProfile: "countdown-helper-v1"` really did land
+- on the real warp path, the first countdown-helper entry (`value88 = -1`) already showed `coeffA = 0`
+- after the `-1 -> -2` write, `followon-helper-3e980` still rebuilt / exposed nonzero `coeffA`
+- but the next countdown-helper entry (`value88 = -2`) again already showed `coeffA = 0`
+
+So the zeroing is not happening inside the traced `0x1800374ed` helper body.
+By the time execution reaches that address, the coefficient block has already been flattened.
+
+That means `0x1800374ed` is still too late in the path.
+The next native target has to move earlier, back to the real mode-3 helper entry at `0x1800372e0`.
+
+The first direct run at that earlier boundary was not yet decisive.
+
+- `traceProfile: "mode3-helper-v1"` did land
+- on the real crashy warp, the trace still only reached:
+  - `warp-to-write-minus-one`
+  - `countdown-helper-enter`
+- it never emitted a single `mode3-helper-enter` event before the client closed
+
+That means the run did **not** prove that `0x1800372e0` is absent from the live path.
+It only proved that the first `mode3-helper-v1` probe was still too heavy / too entangled with the older countdown and follow-on hooks to be trusted as the final answer.
+
+So the next pass has to be lighter:
+
+- keep `warp-to-write-minus-one`
+- keep `countdown-write-88`
+- keep `warp-init-write-88`
+- keep `warp-init-write-110`
+- probe `0x1800372e0` directly
+- drop the countdown-helper, follow-on-helper, solver, and latch hooks for that pass
+
+That lighter branch is now `traceProfile: "mode3-helper-lite-v1"`.
+
+The next fresh crashy run finally made that lighter branch pay off:
+
+- `traceProfile: "mode3-helper-lite-v1"` really did land
+- the real warp emitted `mode3-helper-enter` at `0x1800372e0`
+- so `0x1800372e0` is definitively on the live plain-warp path
+- but at that exact entry point:
+  - `mode = 3`
+  - `value88 = -1`
+  - `stopDistance` and `warpFactor` were already sane
+  - `coeffA` was already zero
+
+That moves the zeroing window one step earlier again.
+
+It is no longer merely:
+
+- before `0x1800374ed`
+
+It is now:
+
+- before `0x1800372e0`
+
+Which means the remaining native target is the activation-gate path around `0x180036a20` itself:
+
+- either the coefficient block is already flattened before the activation gate sees the ball
+- or `0x180036a20` zeroes it before calling into `0x1800372e0`
+
+So the next lighter branch is `traceProfile: "activation-gate-lite-v1"`:
+
+- `warp-to-write-minus-one`
+- `activation-gate-enter`
+- `mode3-helper-enter`
+- decisive writes only
+
+The fresh crashy run with that profile finally answered the activation-gate question directly:
+
+- on the real warp path, `activation-gate-enter` at `0x180036a20` still saw nonzero `coeffA`
+- on that same warp, the immediately following `mode3-helper-enter` at `0x1800372e0` already saw `coeffA = 0`
+
+That proves the coefficient reset is happening **inside** `0x180036a20` before the call to `0x1800372e0`.
+
+Static disassembly of `0x180036a20` now confirms it:
+
+- `0x180036a63`: `movups [rdx+0x1e8], xmm0`
+- `0x180036a6a`: `movups [rdx+0x200], xmm0`
+- `0x180036a76`: `movsd  [rdx+0x1f8], xmm7`
+- `0x180036a7e`: `movsd  [rdx+0x210], xmm7`
+- `0x180036ad5`: `call   0x1800372e0`
+
+So the old “mystery coeff zeroing” branch is closed. The gate zeroes those vectors intentionally before mode dispatch.
+
+That also means the next meaningful problem is not coefficient ownership. It is the compare/threshold logic later in the same function, after the helper returns:
+
+- the returned helper vector magnitude
+- `ball+0xe0`
+- `ball+0xe4`
+- `ball+0xf4`
+- `ball+0x100`
+- `rcx+0x48`
+
+The next activation-gate trace therefore keeps the same light shape, but now records `rcx+0x48` as well so the threshold branch can be analyzed numerically.
+
+The newest `activation-gate-lite-v1` crashy warp did exactly that on the real warp block:
+
+- `activation-gate-enter` captured `source48 = 1000000`
+- the same live ball still had:
+  - `maxVelocity = 247.5`
+  - `inertia = 0.44999998807907104`
+  - `speedFraction = 1`
+  - `mass(+0x100) = 14760000`
+  - nonzero pre-reset `coeffA`
+- the immediate next `mode3-helper-enter` still showed `coeffA = 0`
+
+That lets us evaluate the native compare directly.
+
+The gate computes:
+
+- helper magnitude = `sqrt(vec.x^2 + vec.y^2 + vec.z^2)`
+- threshold = `((source48 * speedFraction * maxVelocity) / (mass * inertia)) * 0.01`
+
+For the captured live ship values:
+
+- base ratio `= (1000000 * 1 * 247.5) / (14760000 * 0.44999998807907104)`
+- base ratio `≈ 37.26287361585533`
+- threshold constant `= 0.01`
+- final threshold `≈ 0.3726287361585533`
+
+So the next native question is no longer coefficient ownership.
+It is the post-helper compare semantics:
+
+- what vector `0x1800372e0` actually returns into the gate stack
+- whether that magnitude is expected to be above or below `~0.3726` on this live path
+- and which side of the `jbe 0x180037195` branch corresponds to the later countdown / activation behavior we see in practice
+
+To make that easier to inspect on the next run, `activation-gate-lite-v1` now logs derived gate metrics directly:
+
+- `activationRatio`
+- `activationThreshold`
+- `preResetCoeffMagnitude`
+- `motionMagnitude`
+
+The latest crashy run with that tracer now gives the live gate numbers directly:
+
+- `source48 = 1000000`
+- `activationRatio = 37.26287361585533`
+- `activationThreshold = 0.3726287361585533`
+- `preResetCoeffMagnitude ≈ 33.87533965077756`
+- `motionMagnitude ≈ 166.96264725097507`
+
+So the next unresolved point is not the input scale. The live warp is entering the gate with values that are numerically far above the recorded threshold proxy. What is still unknown is the helper-return magnitude actually compared at `0x180036b93`, and therefore which side of the compare branch the live warp is taking.
+
+To answer that with less hook weight than a full gate leave, the tracer now logs the branch target directly:
+
+- `activation-gate-branch-gt` at `0x180036b9d`
+- `activation-gate-branch-le` at `0x180037195`
+
+That should tell us, on the next crashy or clean warp, whether the live path is falling through the `> threshold` branch or taking the `<= threshold` branch after the helper result is computed.
+
+The next crashy run did not emit either branch event, even though it still emitted:
+
+- `warp-to-write-minus-one`
+- `activation-gate-enter`
+- `mode3-helper-enter`
+- `countdown-write-88`
+
+That means one of two things:
+
+1. the branch hooks themselves were still too optimistic about the exact live control point, or
+2. the live path is not reaching the compare target at all and is instead exiting through the earlier guard / return path inside `0x180036a20`
+
+Given that `mode3-helper-enter` and `countdown-write-88` still landed, the second explanation is now plausible enough to test directly.
+
+So the tracer now adds two lighter checkpoints:
+
+- `activation-gate-compare-enter` at `0x180036b10`
+- `activation-gate-return` at `0x18003724e`
+
+That should answer the next narrower question:
+
+- does the live warp ever enter the compare block after the helper returns
+- or does it skip straight to the common return tail without ever taking either compare branch hook
+
+Because the last revision started crashing the client before login, the tracer was then narrowed again operationally:
+
+- all activation-gate / helper / countdown / init hooks now stay idle until `warp-to-write-minus-one` has already fired
+- so startup, login, and normal in-space idle movement no longer generate gate/helper trace traffic
+
+That keeps the next run focused on the real warp only.
+
+That still was not enough on the next startup, so the tracer was narrowed one step further:
+
+- on startup it now installs only the `warp-to-write-minus-one` hook
+- the heavier native hooks are attached lazily only after the first real warp begins
+
+So the active operational model is now:
+
+1. start client safely with only the `WarpTo` write hook live
+2. let the first real warp arm the activation-gate / mode3 / init hooks
+3. capture the post-`WarpTo` native path only
+
+The latest crashy warp with lazy hook install moved the boundary again:
+
+- startup stayed alive long enough to reach real `WarpTo`
+- the live warp emitted:
+  - `warp-to-write-minus-one`
+  - `activation-gate-enter`
+  - `mode3-helper-enter`
+  - `countdown-write-88`
+- but it still did **not** emit:
+  - `mode3-helper-leave`
+  - `activation-gate-compare-enter`
+  - `activation-gate-return`
+  - either compare branch marker
+
+Static disassembly of `0x1800372e0` explains the next target exactly:
+
+- `0x1800375dd` writes the decremented `+0x88`
+- `0x1800375ec` immediately calls `0x180038870`
+- only after that does control reach the helper epilogue / return
+
+So the live crash boundary is now:
+
+- after `countdown-write-88`
+- before `mode3-helper-leave`
+- very likely inside or immediately after the `0x180038870` call
+
+The tracer now adds one minimal checkpoint for that:
+
+- `mode3-tail-38870-enter` at `0x180038870`
+
+The next crashy run finally landed that checkpoint on the real warp:
+
+- `warp-to-write-minus-one`
+- `activation-gate-enter`
+- `mode3-helper-enter`
+- `countdown-write-88`
+- `mode3-tail-38870-enter`
+
+That proves the live path really does get into `0x180038870` before the client closes. So the previous boundary:
+
+- "somewhere after countdown write"
+
+is now narrower:
+
+- inside `0x180038870` or immediately after it, before `mode3-helper-leave`
+
+Static disassembly of `0x180038870` removes the guesswork about what that tail helper does.
+
+`0x180038870` semantics:
+
+- inputs:
+  - `rcx`: ballpark / context object
+  - `rdx`: output vec3 buffer
+  - `r8`: live ball
+  - `r9`: target vec3 buffer
+  - stack byte arg: clamp toggle, passed as `0` by the countdown caller
+- it computes `target - currentPosition` into the output buffer
+- it reads:
+  - `ball+0xf4` speedFraction
+  - `ball+0xe0` maxVelocity
+  - `ball+0xe4` inertia
+  - `ball+0x100` mass
+  - `rcx+0x48`
+  - `rcx+0xa8`
+- it then builds a scalar:
+  - `(speedFraction * (rcx+0x48) * maxVelocity) / (inertia * mass)`
+- it normalizes the output vector through `0x180006a70`
+- and scales it, with an additional short-distance clamp path when the stack byte arg is `0`
+
+So `0x180038870` is not an opaque warp-only initializer. It is a generic vector-scaling helper used by the negative countdown path in `0x1800372e0`.
+
+That means the latest crash with the hook active should not be treated as a new warp-theory clue by itself. The safer next tracing posture is:
+
+- keep the activation gate and mode-3 entry hooks
+- keep the decisive writes
+- remove the direct `0x180038870` hook again
+- go back to the compare / return side of `0x180036a20` with lower hook weight
+
+That lighter follow-up branch is now `traceProfile: "activation-gate-lite-v2"`.
+
+The next crashy run with that profile exposed two separate facts:
+
+1. the `v2` profile string did not match the activation-gate hook guard, so the gate / compare / return probes did not install on that run, and
+2. even without the `0x180038870` hook, the client still died after `mode3-helper-enter`
+
+The real `v2` warp block therefore only reached:
+
+- `warp-to-write-minus-one`
+- `mode3-helper-enter`
+
+and then the client closed before `countdown-write-88`.
+
+That makes the remaining destabilizing hook very likely the `mode3-helper-enter` probe itself.
+At this point there is no value in keeping that hook live for the next pass, because the key facts it was added to prove are already established:
+
+- `0x180036a20` zeroes the coefficient block before the helper call
+- the live path does reach `0x1800372e0`
+- the negative countdown path does run on the ego ball
+
+So the next lighter branch is now:
+
+- `traceProfile: "activation-gate-compare-v1"`
+
+and it removes the `mode3-helper-enter` probe entirely while restoring the activation-gate / compare / return hooks.
+
+The next crashy run with `activation-gate-compare-v1` finally answered the compare question cleanly.
+
+The real warp emitted:
+
+- `warp-to-write-minus-one`
+- `activation-gate-enter`
+- `countdown-write-88`
+- `activation-gate-return`
+
+What it did **not** emit:
+
+- `activation-gate-compare-enter`
+- `activation-gate-branch-gt`
+- `activation-gate-branch-le`
+
+So the live warp is not reaching the compare block at `0x180036b10` at all. It is taking the earlier return at `0x180036aed -> 0x18003724e`.
+
+Static disassembly makes that gate explicit:
+
+- `0x180036aed: cmp byte ptr [rip + 0x9d7dd], 0`
+- `0x180036af4: je  0x18003724e`
+- `0x180036afa: cmp byte ptr [rip + 0x9d7d2], 0`
+- `0x180036b01: je  0x180036b10`
+
+So the new central question is no longer the helper return magnitude. It is the two global/native gate bytes:
+
+- `0x1800d42d1`
+- `0x1800d42d3`
+
+The next lighter tracer branch therefore only adds those two bytes to `activation-gate-enter`:
+
+- `traceProfile: "activation-gate-flags-v1"`
+
+That should tell us directly why the live path skips the compare block and falls into the common return tail.
+
+The next flag run answered that immediately.
+
+On the real warp:
+
+- `gateFlagPrimary = 0`
+- `gateFlagSecondary = 0`
+- the live path still emitted:
+  - `warp-to-write-minus-one`
+  - `activation-gate-enter`
+  - `countdown-write-88`
+  - `activation-gate-return`
+- and still did **not** emit:
+  - `activation-gate-compare-enter`
+  - `activation-gate-branch-gt`
+  - `activation-gate-branch-le`
+
+So the early return is consistent with the native gate bytes themselves, not with some hidden helper-return anomaly.
+
+Static xref sweep shows these are not isolated warp-local fields. They are part of a quartet of global bytes:
+
+- `f0 = 0x1800d42d0`
+- `f1 = 0x1800d42d1`
+- `f2 = 0x1800d42d2`
+- `f3 = 0x1800d42d3`
+
+Important direct evidence:
+
+- `0x18008e1a2 / 0x18008e1ac / 0x18008e1b6 / 0x18008e1c0` write all four bytes from `rax+0x10..0x13`
+- `0x18008e2bb / 0x18008e2c5 / 0x18008e2cf / 0x18008e2d9` read all four bytes into an object at `rdi+0x10..0x13`
+- `0x18008e522 / 0x18008e529 / 0x18008e53a / 0x18008e541` zero all four together
+- `0x180090e1c / 0x180090e23 / 0x180090e34 / 0x180090e3b` also zero all four together
+
+That means the two bytes gating warp compare are part of a broader global destiny flag set, not per-ball state.
+
+So the next native question is no longer:
+
+- "what is wrong with this specific ball?"
+
+It is:
+
+- "what subsystem populates the four-byte global flag block at `0x1800d42d0..0x1800d42d3`, and should those bytes be nonzero on the real warp path?"
+
+That is worth solving statically before doing another client crash run.
+
+The next repeated `activation-gate-flags-v1` warp added no new behavioral signal:
+
+- `gateFlagPrimary = 0`
+- `gateFlagSecondary = 0`
+- early `activation-gate-return` again
+
+So the path is stable enough to stop re-running it and move further into the owner path.
+
+More static RE now points at the owner shape:
+
+- `0x18008e193..0x18008e1c0` load the four global bytes from an object returned in `rax`
+- `0x18008e2bb..0x18008e2e0` export the same four globals back into an object at `rdi+0x10..0x13`
+- `0x18008e310` constructs / initializes that export object
+- a nearby embedded string is:
+  - `"1 is not a SettingsConfiguration"`
+
+That does not prove the exact class name of the loaded object, but it is strong evidence that the four-byte block belongs to a settings/configuration-style object rather than ordinary per-ball warp state.
+
+So the working interpretation now is:
+
+- the warp compare gate is being skipped because a global destiny configuration block is zeroed on the live path
+- not because the ego ball itself is malformed at that point
+
+The next static target is therefore the producer of the object consumed by `0x18008e193`, and whether that object is:
+
+- client-local settings only
+- populated from server/bootstrap state
+- or some mixed native initialization object
+
+## Static owner path result: `destiny.settings`
+
+The owner path is now concrete enough to stop treating the `0x1800d42d0..0x1800d42d3` quartet as anonymous warp-global state.
+
+### 1. The quartet belongs to a real `_destiny` settings object
+
+Static RTTI and method-table recovery now identify the object directly.
+
+Recovered class identity:
+
+- `SettingsConfiguration`
+- `BlueWeakAdapter<SettingsConfiguration>`
+- `RootRefLock<BlueWeakAdapter<SettingsConfiguration>>`
+
+Direct evidence:
+
+- RTTI at `0x1800b5cf0 / 0x1800b5cc8` names `.?AV?$BlueWeakAdapter@VSettingsConfiguration@@@@`
+- RTTI at `0x1800b5ca0 / 0x1800b5c78` names `.?AV?$RootRefLock@V?$BlueWeakAdapter@VSettingsConfiguration@@@@@@`
+- `0x18008e310` constructs the `0x80`-byte configuration object
+- `0x18008e0d0` loads the four global bytes from a passed-in config object
+- `0x18008e240` exports the current four global bytes into a new config object
+- `0x180090de0` resets the global block back to default values
+
+### 2. `_destiny` exposes this through `destiny.settings`
+
+The method-definition table inside `init_destiny` is now recovered.
+
+Recovered methods:
+
+- `Apply`
+  - wrapper: `0x180090cc0`
+  - doc: `Pass in an instance of destiny.SettingsConfiguration to configure global settings.`
+- `Get`
+  - wrapper: `0x180090d20`
+  - doc: `Get the current global settings configuration.`
+- `GetDefault`
+  - wrapper: `0x180090d80`
+  - doc: `Get the default global settings configuration.`
+- `Reset`
+  - wrapper: `0x180090de0`
+  - doc: `Reset the current global settings configuration to the default values.`
+
+Direct call graph at this layer is also narrow:
+
+- `0x18008e0d0` is only directly called by the `Apply` wrapper
+- `0x18008e240` is only directly called by the `Get` wrapper
+- `0x18008e460` is only directly called by the `GetDefault` wrapper
+- `0x180090de0` currently has no direct `.text` callers besides its public registration path
+
+So at the recovered `_destiny` layer, this does **not** look like a hidden warp-only writer path.
+It looks like a public configuration API.
+
+Write-audit result across `.text` is also clean:
+
+- each of `f0..f3` has exactly three write sites at this layer:
+  - `0x18008e1a2 / 0x18008e1ac / 0x18008e1b6 / 0x18008e1c0` via `Apply`
+  - `0x18008e522 / 0x18008e529 / 0x18008e53a / 0x18008e541` via internal reset helper
+  - `0x180090e1c / 0x180090e23 / 0x180090e34 / 0x180090e3b` via public `Reset`
+- no fourth native writer was found in `.text`
+
+So the quartet is not being silently repopulated by some second warp-specific path at this layer.
+
+The full client script tree also contains a direct wrapper module:
+
+- `_local/codeccpFULL/code/destiny/_util.py`
+
+That module calls:
+
+- `destiny.settings.Get()`
+- `destiny.settings.GetDefault()`
+- `destiny.settings.Apply(config)`
+
+and toggles:
+
+- `useDynamicalOrientation`
+- `useNewOrbit`
+
+Notably, script search currently finds no other client Python caller besides `destiny/_util.py`.
+No import/reference site for `destiny._util` was found elsewhere in the unpacked client Python tree.
+
+### 3. Recovered `SettingsConfiguration` fields
+
+The nearby type strings now expose the user-facing field set:
+
+- `collisionMaxIterations`
+- `useIterativeCollision`
+- `useDynamicalOrientation`
+- `disableDynamicalOrientationForMissiles`
+- `useNewOrbit`
+
+The reset/default paths also line up with this shape:
+
+- the qword global at `0x1800d42c8` is reset to `0x14` (`20`)
+- the four byte globals at `0x1800d42d0..0x1800d42d3` are reset to `0`
+
+That makes the default configuration:
+
+- `collisionMaxIterations = 20`
+- all four bools `false`
+
+This is not just inferred from `Reset`.
+`GetDefault` also constructs the object in that exact state:
+
+- `0x18008e4d0`: `qword [rdi + 8] = 0x14`
+- `0x18008e4d8`: `dword [rdi + 0x10] = 0`
+
+So the zeroed bool quartet is the explicit default `SettingsConfiguration`, not just a failure mode.
+
+### 4. Strong field-to-global mapping
+
+The xref contexts are now strong enough to map the four bytes with high confidence:
+
+- `f0 = 0x1800d42d0` -> `useIterativeCollision`
+  - evidence: used in collision-heavy paths around `0x1800356bc`, `0x180035957`, `0x180035e2b`
+- `f1 = 0x1800d42d1` -> `useDynamicalOrientation`
+  - evidence: primary gate for the activation/orientation compare block at `0x180036aed`
+- `f3 = 0x1800d42d3` -> `disableDynamicalOrientationForMissiles`
+  - evidence: secondary gate paired with `mode == 5` checks at `0x18003591b`, `0x180035d82`, `0x180036afa`
+- `f2 = 0x1800d42d2` -> `useNewOrbit`
+  - evidence: switches between two orbit implementations at `0x180037d26`
+
+### 5. What this means for the warp investigation
+
+This changes the interpretation of the skipped compare block.
+
+The activation-gate compare branch at `0x180036b10` is not just “some missing native warp stage.” It is settings-gated logic behind:
+
+- `useDynamicalOrientation`
+- `disableDynamicalOrientationForMissiles`
+
+So the observed live behavior:
+
+- `gateFlagPrimary = 0`
+- `gateFlagSecondary = 0`
+- early return at `0x18003724e`
+
+now has a direct explanation:
+
+- the client's current `destiny.settings` global configuration has dynamical-orientation-related flags disabled
+
+And that may simply be the normal default state.
+At this point there is no evidence that startup is supposed to populate those bytes to nonzero values on an ordinary client path.
+
+That does **not** by itself prove the broken warp is caused by the server.
+It proves something narrower:
+
+- the compare path we were chasing is a client-local `destiny.settings` branch
+- zero gate bytes explain why the branch is skipped
+- skipping that branch is not, on its own, evidence of a malformed server warp packet/state contract
+- skipping that branch may be perfectly normal if retail clients also leave these settings at defaults
+
+So the compare branch should no longer be treated as the primary warp root-cause target.
+
+### 6. Current boundary after this recovery
+
+What is now closed:
+
+- anonymous-global-flag theory
+- “compare block skipped for mysterious warp reasons”
+- “maybe these two gate bytes are hidden per-ball warp ownership”
+
+What is now established:
+
+- the gate bytes are part of `destiny.settings`
+- they are client-local/global configuration flags
+- the skipped compare block is settings-driven dynamical-orientation behavior
+- the default `SettingsConfiguration` intentionally leaves those bools at `0`
+
+### 7. Static late-path result: solver failure / deactivation path
+
+With the `destiny.settings` branch reclassified as normal default client state, the highest-value static target moves back to the late in-warp path after init.
+
+The recovered control flow is now:
+
+- `0x180042850` initializes live warp state:
+  - writes positive `+0x88`
+  - writes `warpDistance(+0x110)`
+  - clears `+0xd2`
+  - clears `+0x478`
+- `0x180042b20` is still the active in-warp solver
+- but its two callers are not equivalent:
+  - `0x1800357cc` -> tick-loop caller, passes stack flag `0`
+  - `0x18000ae91` -> secondary helper caller, passes stack flag `1`
+
+That caller split matters because only the tick-loop path can take the hard failure/deactivation branch.
+
+#### 7.1 `0x180042b20` late failure branch
+
+The late bad branch is now concrete in `0x180042f4b .. 0x1800430af`.
+
+The key sequence is:
+
+- read `ball+0xe0`
+- scale/convert it
+- compare the resulting scalar against the internally-computed `xmm5`
+- if the compare passes, return normally
+- if the compare fails, check the caller-supplied stack flag
+
+On the main tick-loop caller (`flag = 0`), that failure path does:
+
+- `0x18004309b`: `mov byte ptr [rdi + 0xd2], 1`
+- `0x1800430a2`: `mov byte ptr [rdi + 0x478], 1`
+- `0x1800430af`: `call 0x180043920`
+
+On the secondary caller (`flag = 1`), the branch skips the latch path and returns through the normal tail.
+
+That explains an earlier trace boundary:
+
+- the secondary positive-elapsed solver pass can look sane
+- while the later tick-loop pass is still the one that can kill native warp progression
+
+#### 7.2 `0x180043920` is a warp deactivation/reset helper
+
+`0x180043920` is no longer ambiguous.
+
+It does not initialize warp.
+It tears state down.
+
+Concrete effects:
+
+- clears `ball+0x88`
+- clears `ball+0xb8`
+- clears `ball+0x90`
+- clears `ball+0x98`
+- clears `ball+0xf8`
+- then forces `mode = 2` through `0x18000a130`
+
+Per the public ball-mode enum, mode `2` is `STOP`.
+
+So the late failure branch is not "just a warning bit."
+It explicitly hands the ball back to `STOP`.
+
+#### 7.3 How `warpDistance = -1.0` fits
+
+The tick loop already proved the follow-on step:
+
+- `0x180035737`: check `ball+0xd2`
+- `0x180035740`: write `ball+0x110 = -1.0`
+- `0x18003574d`: call `0x18003eb40`
+
+So the current late native failure model is:
+
+1. live warp init succeeds
+2. early solver entry succeeds
+3. later tick-loop solver takes the bad branch
+4. it sets `+0xd2` and `+0x478`
+5. it calls `0x180043920`
+6. the ball is forced back to `STOP`
+7. the next tick loop forces `warpDistance = -1.0`
+
+That model fits the old "wrapper/tunnel then snap" evidence better than the earlier settings-gate theory.
+
+#### 7.4 The second `+0x110` writer is not yet the main live-path suspect
+
+The second known `warpDistance` writer at `0x1800432cb` belongs to the alternate helper rooted at `0x180043140`.
+
+Current direct-call search only shows:
+
+- `0x180092968 -> 0x180043140`
+
+and that helper itself:
+
+- calls `0x180042850`
+- recomputes a direction vector
+- then writes `ball+0x110` again at `0x1800432cb`
+
+So the second `+0x110` write is real, but it should not currently be treated as the main live tick-loop writer unless later evidence puts this helper on the ordinary player warp path.
+
+#### 7.5 The other `+0xd2 / +0x478` writers look like broader reset plumbing
+
+Two other static sites are worth separating from the main `0x180042b20` failure branch.
+
+`0x180044b20`:
+
+- resolves a live ball through the ballpark at `rcx + 0xc0`
+- if `ball+0x2ba` is set and `ball+0xcf == 1`, it clears `ball+0x478` and calls `0x180008250`
+- then, unless the ball is mode `3` with nonnegative `+0x88`, it sets `ball+0xd2 = 1`
+- and iterates a container/list at `ballpark+0x330`
+
+So `0x180044b7f` is real, but it is not the same shape as the in-warp solver failure branch.
+It looks more like shared observer/reset/notification plumbing.
+
+`0x18004524e`:
+
+- checks the current mode
+- if mode is not `5`, and not the special `(mode == 4 && byte+0x60)` case, it calls `0x180043920`
+- if mode is `5`, it explicitly clears `+0xd2`
+- otherwise it copies `+0x178 .. +0x188` into scratch and calls `0x180043690`
+
+So `0x18004524e` also looks like a higher-level exit/reset path, not the primary solver branch that first poisons the warp.
+
+That leaves `0x18004309b / 0x1800430a2` inside `0x180042b20` as the strongest late-path root-cause candidate.
+
+#### 7.6 `+0x108` is already in the late tick-loop path
+
+`ball+0x108` is not anonymous baggage.
+
+The main post-solver tick path at `0x18003580b` does:
+
+- load `ballpark+0xa8`
+- load `ball+0x108`
+- load `ballpark+0x48`
+- load `ball+0xe4 * ball+0x100`
+- load the `+0x1e8 .. +0x210` coefficient sums
+- then pass all of that into `0x180036700`
+
+So `+0x108` is already a first-class late-path progression input.
+Its exact semantic name is still unknown, but it belongs in the real post-init/native progression path, not in the discarded wrapper/settings branches.
+
+Static argument mapping now tightens that further.
+
+At `0x18003580b`, the caller passes four stack arguments into `0x180036700`:
+
+- `mass * inertia`
+- `ballpark+0x48`
+- `ball+0x108`
+- `ballpark+0xa8`
+
+Inside `0x180036700`:
+
+- `arg8` is compared against the current `ballpark+0xa8`
+- if they match, the function reuses `arg7` directly as `xmm5`
+- if they do not match, it recomputes `xmm5` from:
+  - `arg6 / arg5`
+  - multiplied by current `ballpark+0xa8`
+  - then passed through the same scalar helper at `0x18009db87`
+
+The helper at `0x180044440 .. 0x180044497` now gives the direct write formula:
+
+- if `(ball+0xe4 * ball+0x100) <= 0`, then `ball+0x108 = 0`
+- otherwise:
+  - `ball+0x108 = exp(-((ballpark+0xa8 * ballpark+0x48) / (ball+0xe4 * ball+0x100)))`
+
+`0x18009db87` is the CRT `exp` import, so this is no longer speculative.
+
+That means `ball+0x108` is not just "some late scalar."
+It is a cached movement/progression scalar tied to:
+
+- `ballpark+0xa8`
+- `ballpark+0x48`
+- `ball+0xe4` inertia
+- `ball+0x100` mass
+
+and it is explicitly reused or recomputed depending on whether the current `ballpark+0xa8` still matches the cached context.
+
+### 7.7 `ball+0xe0` is firmly in the movement-state bundle
+
+The field identity of `ball+0xe0` is now stronger than a loose guess.
+
+At `0x180040638 .. 0x1800406cb`, the loader/update path writes this contiguous bundle:
+
+- `ball+0xdc`
+- `ball+0x100`
+- `ball+0xd0`
+- `ball+0xd1`
+- `ball+0xd2`
+- `ball+0x60`
+- `ball+0xd3`
+- `ball+0xe0`
+- `ball+0xe4`
+- `ball+0xf4`
+
+and the later helpers read them exactly as a movement cluster:
+
+- `ball+0xe0` in the late solver/failure branch
+- `ball+0xe4` as inertia
+- `ball+0xf4` as speedFraction
+- `ball+0x100` as mass
+
+So `ball+0xe0` is not an arbitrary hidden flag field.
+It is part of the same native movement-state bundle as inertia and speedFraction, and the existing `maxVelocity` mapping remains the strongest interpretation.
+
+### 7.8 The late hard-fail predicate is now phase-structured, not generic
+
+The math helper imports are now resolved:
+
+- `0x18009db87` -> CRT `exp`
+- `0x18009db99` -> CRT `log`
+- `0x18009dbbd` -> CRT `sqrt`
+
+That makes the late bad branch in `0x180042e65 .. 0x1800430af` much more concrete.
+The important correction is that the final threshold compare is not a generic "any phase" dropout check.
+It sits on the late deceleration side of the solver, after the entry and cruise phases have already been handled.
+
+The recovered flow is now:
+
+- `ball+0x98` feeds the warp timing rates:
+  - `tau0 = ball98 * 0.001`
+  - `tau1 = min(2.0, ball98 / 3000.0)`
+- those rates derive the phase boundaries:
+  - `entryLimit`
+  - `cruiseDuration`
+  - `tailLimit`
+- then the solver splits into:
+  - entry / acceleration
+  - cruise / constant-speed middle leg
+  - exit / deceleration
+- and only on the exit-side path does it apply the final speed-floor check that can poison warp on the main tick-loop caller
+
+That means the strongest current native failure model is no longer:
+
+- "the solver can fail generically at any point"
+
+It is:
+
+- "the main tick-loop can tear warp down on the exit-side deceleration path when the proposed speed falls below a speed floor derived from `ball+0xe0`"
+
+There are still two failure gates before the latch path:
+
+#### Gate A: early internal progression check
+
+`0x180042e72 .. 0x180042e80` does:
+
+- `xmm13 += 1.0`
+- compare `xmm13` against solver-internal `xmm1`
+- if `xmm13 <= xmm1`, jump directly to the hard-fail/no-op branch at `0x180042f86`
+
+That branch:
+
+- copies current position back into the output position buffer
+- zeroes the output motion buffer
+- and only latches if the caller flag is `0`
+
+So the secondary caller (`flag = 1`) can hit this branch and still return without poisoning the warp.
+
+#### Gate B: exit-side speed-floor threshold check
+
+If Gate A does not fail, the solver computes a positive scalar through `exp`:
+
+- `xmm4 = exp(-(rsp+0x58 * xmm1))`
+- `xmm5 = xmm4 * xmm6`
+
+Then `0x180042f4b .. 0x180042f73` derives the comparison threshold from `ball+0xe0`:
+
+- `threshold = max(100.0, 0.5 * ball+0xe0)`
+
+and tests:
+
+- success if `threshold <= xmm5`
+- otherwise fall through to the same caller-flag-gated hard-fail branch
+
+The important refinement is that `xmm5` is only populated on this late exit-side branch.
+There are no earlier `xmm5` assignments in `0x180042b20` before `0x180042e9f / 0x180042ea2`.
+So this threshold check is best understood as an exit / deceleration dropout condition, not an entry / cruise condition.
+
+So the strongest current predicate is now:
+
+- tick-loop caller (`flag = 0`) hard-fails when either:
+  - the late internal exit-side progression gate trips, or
+  - on the exit-side deceleration path, `max(100.0, 0.5 * ball+0xe0) > xmm5`
+- secondary caller (`flag = 1`) can take the same internal failure branches without setting `+0xd2 / +0x478`
+
+That explains why the secondary positive-elapsed solver pass could still look sane in traces while the later tick-loop path remained the real deactivation candidate.
+
+### 7.9 Plain pseudocode for `0x180042e65 .. 0x1800430af`
+
+With the recovered imports and constants, the late bad block can now be written in phase-structured pseudocode with symbolic names:
+
+```text
+# caller context
+#   flag = 0 on the main tick-loop caller
+#   flag = 1 on the secondary helper caller
+
+# precomputed earlier in 0x180042b20
+elapsed = caller_arg5
+warpRate = ball98                       # live warp-rate control scalar
+tau0 = warpRate * 0.001                # entry / acceleration rate
+tau1 = min(2.0, warpRate / 3000.0)     # exit / deceleration rate
+peakWarpSpeed = min(AU, ((warpDistance + 1.0) * tau0 * tau1) / (tau0 + tau1))
+entryLimit = log(peakWarpSpeed / tau0) / tau0
+tailLimit = log(peakWarpSpeed / tau1) / tau1
+cruiseDuration = (warpDistance / peakWarpSpeed) - (1.0 / tau0) - (1.0 / tau1) + (1.0 / peakWarpSpeed)
+
+# phase 1: entry / acceleration
+if elapsed < entryLimit:
+    growth = exp(tau0 * elapsed)
+    solverScale = max(length(outVel), growth * tau0)
+    outVel = solverScale * unit_to_target
+    outPos = ballPos - ((solverScale + peakWarpSpeed * cruiseDuration + ((peakWarpSpeed / tau1) - 1.0)) - solverScale) * unit_to_target
+    return success
+
+# phase 2: cruise / constant-speed middle leg
+k = elapsed - entryLimit
+if k <= cruiseDuration:
+    solverScale = peakWarpSpeed
+    outVel = solverScale * unit_to_target
+    outPos = ballPos - ((peakWarpSpeed * cruiseDuration + ((peakWarpSpeed / tau1) - 1.0)) - k * peakWarpSpeed) * unit_to_target
+    return success
+
+# phase 3: exit / deceleration
+decelElapsed = elapsed - cruiseDuration - entryLimit
+
+# Gate A: late internal progression guard
+if (tailLimit + 1.0) <= decelElapsed:
+    goto hard_fail_noop
+
+decay = exp(-(tau1 * decelElapsed))
+solverScale = decay * peakWarpSpeed
+outVel = solverScale * unit_to_target
+outPos = ballPos - (((peakWarpSpeed / tau1) - (decay * (peakWarpSpeed / tau1)) + peakWarpSpeed * cruiseDuration) - solverScale) * unit_to_target
+
+# Gate B: exit-side speed-floor check
+threshold = max(100.0, 0.5 * ball_e0)
+
+if threshold <= solverScale:
+    return success
+
+hard_fail_noop:
+    outPos = current_solver_anchor
+    outVel = 0
+    if flag != 0:
+        return no_latch
+    ball.d2 = 1
+    ball.flag478 = 1
+    reset_to_stop_via_0x180043920(ballpark, ball)
+    return latched_failure
+```
+
+What is still unresolved is no longer the phase split.
+It is the final semantic naming of:
+
+- `ball98` as a strict native term
+- `ball_e0`
+- the exact gameplay wording for `solverScale`
+- whether `current_solver_anchor` should be treated as the current warp spline anchor or a simpler fallback target
+
+### 7.10 `ball+0xe0` is now best identified as max speed / max velocity
+
+The evidence for `ball+0xe0` is now stronger than just "it behaves like a speed field."
+
+Direct setter path:
+
+- generic field dispatcher at `0x18000b944 .. 0x18000b967` matches writes to `ball+0xe0`
+- it rejects negative values
+- then it calls `0x180043b60`
+- `0x180043b60` writes `xmm2` directly into `ball+0xe0`
+- then immediately calls `0x18003fff0` to refresh dependent movement state
+
+That setter sits in the same local cluster as:
+
+- `0x180043aa0` -> `ball+0x100` mass
+- `0x1800443b0` -> `ball+0xe4` inertia
+
+and those mass / inertia setters trigger the cached-scalar recompute at `0x180044440`.
+
+This matches the older native registration result already recovered elsewhere in the notes:
+
+- `SetMaxSpeed` only writes `ball+0xe0`
+
+So the strongest current interpretation is:
+
+- `ball+0xe0 = maxSpeed / maxVelocity`
+
+not:
+
+- a hidden dropout flag
+- a warp-only internal latch
+- or a current instantaneous velocity
+
+This is now backed from two angles:
+
+- the direct setter path
+- and the late solver/deactivation path, where `ball+0xe0` is used as a speed-derived threshold source, not as current position or current velocity state
+
+Reader re-validation also points the same way:
+
+- `0x180038870` uses `ball+0xe0` in the generic movement scaling term
+  - `(speedFraction * source48 * ball+0xe0) / (inertia * mass)`
+- `0x1800374ed` uses `ball+0xe0` in a quadratic speed-energy-style compare
+  - `0.5 * ball_e0 * ball_e0`
+- `0x180042b20` uses `ball+0xe0` to derive the exit-side speed floor
+  - `max(100.0, 0.5 * ball+0xe0)`
+
+So every late native reader found so far treats `ball+0xe0` like an allowed / configured max-speed scalar, not like current instantaneous velocity or a warp-only flag.
+
+### 7.11 `solverScale` is the solver's proposed warp-step speed for this tick
+
+The remaining semantic ambiguity around `xmm5` is now much smaller.
+
+In both success branches inside `0x180042b20`, the solver computes a scalar and then does:
+
+- `outVel = solverScale * unit_to_target`
+- `outPos = ballPos - (some scalar) * unit_to_target`
+
+That happens in:
+
+- the early branch via the scalar built into `xmm0/xmm1/xmm2` at `0x180042de5 .. 0x180042e5a`
+- the later branch via `xmm5` at `0x180042ea2 .. 0x180042ec6`
+
+So `solverScale` is not just an abstract compare value.
+It is the magnitude of the velocity vector the solver wants the ball to have on that warp tick.
+
+In plain language:
+
+- `ball+0xe0` is the configured maximum-speed-like movement scalar
+- `solverScale` is the current proposed warp-step speed for this solver step
+- on the exit-side deceleration path, the late failure branch fires when the solver's proposed warp-step speed drops below:
+  - `max(100.0, 0.5 * ball+0xe0)`
+  on the main tick-loop caller
+
+That is now the plain-language hard-fail rule to carry forward.
+
+### 7.12 `ball+0x98` is now best treated as the stored warpFactor / warp-rate parameter
+
+`ball+0x98` is still the strongest unresolved field, but the evidence is now coherent enough to keep one working interpretation.
+
+Static evidence:
+
+- object construction zeroes `+0x98` at `0x18000749c`
+- plain `WarpTo` at `0x1800425e0` writes `+0x98 = warpFactor`
+- the mode-3 style state writer at `0x18004144e` writes a double directly into `+0x98`
+- another state-copy path at `0x18007918a` also writes a double directly into `+0x98`
+- the deactivation helper `0x180043920` clears `+0x98`
+
+Late solver evidence:
+
+- `0x180042bbb` converts `ball+0x98` to double and immediately derives:
+  - `tau0 = ball98 * 0.001`
+  - `tau1 = min(2.0, ball98 / 3000.0)`
+
+Trace correlation:
+
+- on the live player warp path, the captured value for the mode-3 tail field was `35`
+- that same value is exactly what the existing notes and trace work have been calling the live `warpFactor`
+
+So the best current reading is no longer just "warpFactor-like".
+It is:
+
+- `ball+0x98 = stored warpFactor / warp-rate parameter`
+
+At the write boundary, it is literally the live `warpFactor` value handed to mode `3`.
+Inside the late solver, that same stored value is used as the rate parameter that derives:
+
+- `tau0` as the entry / acceleration rate
+- `tau1` as the exit / deceleration rate
+- and therefore the entry, cruise, and tail timing windows for the whole warp pass
+
+So the strictest current semantic name is:
+
+- external write meaning: `warpFactor`
+- late solver meaning: stored warp-rate parameter
+
+It may still deserve a more precise native name later, but it is no longer just an anonymous qword or a vague "warpFactor-like" bucket.
+For the current late-path analysis, treating `ball98` as the stored warpFactor / warp-rate parameter is consistent with:
+
+- the direct `WarpTo` write at `0x1800425e0`
+- the mode-3 writer paths
+- the live trace value correlation (`35`)
+- the solver math that turns it directly into entry/exit timing rates
+
+### 7.13 Late-path movement model in plain language
+
+The late native warp path now reads cleanly as one movement bundle rather than a list of unrelated offsets:
+
+- `ball+0x98`
+  - stored warpFactor / warp-rate parameter
+  - feeds `tau0` and `tau1`
+- `tau0`
+  - entry / acceleration rate constant
+- `tau1`
+  - exit / deceleration rate constant
+- `ball+0xe0`
+  - max-speed / maxVelocity scalar used to derive the late speed floor
+- `ball+0xe4`
+  - inertia
+- `ball+0x100`
+  - mass
+- `ball+0x108`
+  - cached progression scalar derived from ballpark movement context
+- caller flag
+  - `0` = main tick-loop caller, fatal failure path enabled
+  - `1` = secondary helper caller, internal no-op failure allowed without poisoning warp
+
+That produces the current gameplay reading of the hard-fail rule:
+
+> On the main tick-loop path, once warp reaches its exit-side deceleration phase, the client tears warp down when the solver's proposed warp-step speed falls below `max(100.0, 0.5 * ball+0xe0)`, using movement state derived from `ball+0x98`, `+0xe0`, `+0xe4`, `+0x100`, and cached progression at `+0x108`.
+
+### 7.14 Phase terms in gameplay language
+
+The remaining timing terms now have a stable gameplay reading:
+
+- `tau0`
+  - entry / acceleration rate constant derived from the stored `warpFactor`
+- `tau1`
+  - exit / deceleration rate constant derived from the stored `warpFactor`
+- `entryLimit`
+  - end time of the entry acceleration phase
+  - effectively: how long the solver keeps ramping up before cruise
+- `cruiseDuration`
+  - duration of the constant-speed middle leg
+  - effectively: how long the solver can stay at peak warp speed before exit deceleration starts
+- `tailLimit`
+  - duration parameter for the exit deceleration phase
+  - effectively: how long the solver allows the exponential speed decay before the late no-op / teardown guard trips
+
+That gives the native warp profile a plain gameplay shape:
+
+1. accelerate using `tau0`
+2. cruise at `peakWarpSpeed`
+3. decelerate using `tau1`
+4. on the main tick-loop path only, tear warp down if the deceleration-side proposed speed drops below the floor derived from `ball+0xe0`
+
+### 7.15 First-fix boundary in plain language
+
+The current native boundary is now strong enough to state directly:
+
+> `ball+0x98` stores the live warpFactor / warp-rate parameter used to derive the entry and exit timing constants. During the main tick-loop exit / deceleration phase, the warp solver computes a proposed warp-step speed from that timing model plus the live movement bundle (`+0xe0`, `+0xe4`, `+0x100`, `+0x108`). If that proposed speed falls below a floor derived from current allowed max speed, the client tears warp down by latching failure bits, forcing `STOP`, and then poisoning later `warpDistance`.
+
+In strict semantic terms:
+
+- at the write boundary, `ball+0x98` is literal `warpFactor`
+- at the late solver boundary, `ball+0x98` is the stored warp-rate parameter that feeds:
+  - `tau0` entry / acceleration timing
+  - `tau1` exit / deceleration timing
+
+That is the current decision boundary for the first real native fix.
+The next fix should target one of these, not reopen transport/runtime experiments:
+
+- the value written into `ball+0x98`
+- the scale feeding `solverScale`
+- or the fatal exit-side teardown branch in the main tick-loop caller
+
+That leaves the first real native fix choices in plain language:
+
+- Option A: the stored `warpFactor` / warp-rate parameter is wrong for the client's exit-side timing model
+- Option B: the solver is underfeeding proposed warp-step speed during exit-side deceleration
+- Option C: the main tick-loop teardown branch is mathematically too strict for the live path and should not turn late decel dropout into `STOP` plus `warpDistance = -1.0`
+
+### 7.16 Option A first patch plan
+
+Target:
+
+- the value written into `ball+0x98` through the pilot's live `WarpTo` command
+
+Intended effect:
+
+- modestly increase / correct the pilot's stored warp-rate parameter upstream of `tau0` and `tau1`
+- keep the change isolated to the piloting client so the first result is interpretable
+- test whether exit-side timing is currently underfed, causing `solverScale` to fall under the deceleration floor too early
+
+Implementation boundary:
+
+- do not touch bootstrap-lite, raw mode-3, `SetState`, `EntityWarpIn`, or the fatal branch itself
+- do not mix Option A with solver-scale or teardown-branch changes
+- first attempt is pilot-only `WarpTo` parameter shaping
+
+Expected observable outcome:
+
+- no early `+0xd2 / +0x478` latch on the old dropout window
+- no forced `STOP` from the old exit-side teardown point
+- no later `warpDistance = -1.0`
+- visible sustained warp progression past the old wrapper/tunnel/snap failure point
+
+Validation questions after the first patch:
+
+- does the client stay in warp past the old exit-side dropout window?
+- do `+0xd2 / +0x478` still latch?
+- does `warpDistance` still get poisoned to `-1.0`?
+- does visible motion now look like sustained real warp rather than wrapper/tunnel/snap?
+
+### 7.17 Option B first patch plan
+
+Option A landed cleanly and did not change the behavior class.
+
+`warplogs229` plus server logs showed:
+
+- pilot-side `WarpTo(..., stopDistance, 40)` really went out
+- watcher-side `WarpTo(..., stopDistance, 35)` stayed nominal
+- the client still took the same wrapper-only path:
+  - `effects.Warping`
+  - `Space::OnSpecialFX ... -1 None`
+  - tunnel resources loaded
+  - `IsWarping=True / WarpState=2`
+  - final `SetBallPosition / SetBallVelocity / Stop` landing snap
+
+So the next clean branch is Option B, not Option C.
+
+Target:
+
+- the smallest public late-path movement scalar still read by native solver code:
+  - `SetMaxSpeed -> ball+0xe0`
+
+Why this is the narrowest live Option B lever:
+
+- `ball+0xe0` is part of the late movement bundle used on the exit / decel path
+- the late solver and teardown logic both read it
+- it can be nudged for the piloting client without reopening bootstrap-lite, `SetState`, or transport-layer branches
+
+Implementation boundary:
+
+- disable Option A so the result is not mixed
+- keep watcher warp input nominal
+- keep warp start, FX ordering, bootstrap, and anchor behavior unchanged
+- add one pilot-only late `SetMaxSpeed` assist at the predicted start of exit / deceleration
+
+Intended effect:
+
+- modestly increase the piloting client's live movement scalar at the old dropout window
+- test whether the native solver is underfeeding proposed warp-step speed during exit / deceleration
+- keep the assist late and singular, not a staged ramp, so the result stays interpretable
+
+Expected observable outcome:
+
+- no late teardown symptoms at the old exit-side dropout point
+- no snap-only arrival
+- visible sustained traversal through the old late-failure window
+- if the branch still fails cleanly, move to Option C only after evaluating this result
+
+### 7.18 Option C first patch plan
+
+Option B landed cleanly and did not change the behavior class.
+
+`warplogs230` plus server logs showed:
+
+- start `SetMaxSpeed(115.5)` landed
+- late `decel_assist` `SetMaxSpeed(173.25)` landed at the predicted exit-side window
+- the client still took the same wrapper-only path:
+  - `effects.Warping`
+  - tunnel resources loaded
+  - `IsWarping=True / WarpState=2`
+  - final `SetBallPosition / SetBallVelocity / Stop` landing snap
+
+That closes Option B as a clean upstream failure.
+
+So Option C is now the first honest branch that crosses out of server-only runtime shaping and into client-native behavior.
+
+Target:
+
+- the main tick-loop fatal exit-side teardown path only:
+  - `0x18004309b`: `mov byte ptr [rdi + 0xd2], 1`
+  - `0x1800430a2`: `mov byte ptr [rdi + 0x478], 1`
+  - `0x1800430af`: `call 0x180043920`
+
+Implementation boundary:
+
+- do not patch generic reset / STOP plumbing
+- do not touch the secondary caller path
+- do not rewrite solver math or threshold logic yet
+- only suppress fatalization on the known main tick-loop branch
+
+First patch rule:
+
+- detect the late failure path if it occurs
+- but prevent it from escalating into:
+  - `+0xd2 / +0x478`
+  - `0x180043920`
+  - forced `STOP`
+  - later `warpDistance = -1.0`
+
+Operational note:
+
+- this is no longer a pure server patch
+- the minimal first implementation is a reversible runtime patcher for `_destiny.dll`
+- it should be run without the old trace hooks so validation stays behavioral, not diagnostic
+
+Expected observable outcome:
+
+- warp stays alive past the old late dropout point
+- the snap-only arrival class disappears or weakens materially
+- visible traversal survives through the old exit-side teardown window
+
+### 7.19 Option C second patch plan
+
+`warplogs231` plus the live Option C patch log closed the first C branch cleanly.
+
+What is now proven:
+
+- the runtime `_destiny.dll` patch really did apply:
+  - `0x18004309b`: `mov byte ptr [rdi + 0xd2], 1`
+  - `0x1800430a2`: `mov byte ptr [rdi + 0x478], 1`
+  - `0x1800430af`: `call 0x180043920`
+- the run was cleanly back on the nominal server branch:
+  - no Option A pilot warpFactor bump
+  - no Option B pilot decel assist
+- visible behavior class still did not change:
+  - `effects.Warping`
+  - `Space::OnSpecialFX ... -1 None`
+  - tunnel resources
+  - `IsWarping=True / WarpState=2`
+  - final `SetBallPosition / SetBallVelocity / Stop`
+
+That means C1 was not sufficient. The next downstream late-path target is the later poison step, not another upstream movement/input nudge.
+
+Target:
+
+- keep the three existing C1 suppressions in place
+- add one isolated C2a suppression:
+  - `0x180035740`: the tick-loop write that forces `warpDistance(+0x110) = -1.0`
+
+Implementation boundary:
+
+- do not reopen Option A or Option B shaping
+- do not patch generic solver math
+- do not touch the secondary caller path
+- do not yet patch the broader reset/STOP plumbing beyond the already suppressed `0x180043920` callsite in the main late branch
+
+Expected observable outcome:
+
+- no late `warpDistance = -1.0` poison from the known tick-loop path
+- if that poison handoff was the decisive downstream kill step, the old wrapper/tunnel/snap class should weaken materially
+- if visible behavior is still unchanged after C2a, the next rational move is C2b: broader STOP/reset handoff suppression on the main late path
+
+### 7.20 Option C third patch plan
+
+`warplogs232` closed C2a cleanly.
+
+What is now proven:
+
+- `option-c-v2` really did apply the added suppression at:
+  - `0x180035740`: the tick-loop `warpDistance(+0x110) = -1.0` poison write
+- visible behavior class still did not change:
+  - `effects.Warping`
+  - `Space::OnSpecialFX ... -1 None`
+  - tunnel resources
+  - `IsWarping=True / WarpState=2`
+  - final `SetBallPosition / SetBallVelocity / Stop`
+- server-side warp progression still completed normally
+
+That means the poison write alone is not the decisive downstream blocker.
+
+Target:
+
+- keep all prior Option C suppressions in place
+- add one isolated C2b suppression:
+  - `0x18003574d`: the main tick-loop follow-on call to `0x18003eb40` immediately after the poison check/write block
+
+Implementation boundary:
+
+- keep the patch on the known main late tick-loop handoff
+- do not yet patch the broader generic reset site at `0x18004524e`
+- do not patch generic solver math
+- do not reopen Option A / B shaping
+
+Reasoning:
+
+- C1 suppressed the direct late-branch fatalization writes/call and did not change visible behavior
+- C2a suppressed the `warpDistance = -1.0` poison write and did not change visible behavior
+- so the next smallest honest downstream step is the tick-loop follow-on call that still executes on the same late path
+
+Expected observable outcome:
+
+- if this follow-on call is the remaining STOP/reset handoff, the old wrapper/tunnel/snap class should weaken materially
+- if visible behavior is still unchanged after C2b, the next rational move is C2c: broader reset suppression around the higher-level `0x18004524e -> 0x180043920` path
+
+### 7.21 Option C fourth patch plan
+
+`warplogs233` closed C2b cleanly.
+
+What is now proven:
+
+- `option-c-v3` really did apply the added suppression at:
+  - `0x18003574d`: the main tick-loop follow-on call to `0x18003eb40`
+- visible behavior class still did not change:
+  - `effects.Warping`
+  - `Space::OnSpecialFX ... -1 None`
+  - tunnel resources
+  - pinned distance
+  - `IsWarping=True / WarpState=2`
+  - final `SetBallPosition / SetBallVelocity / Stop`
+- server-side warp progression still completed normally
+
+That means the remaining late blocker is broader than the direct fatalization site, the poison write, and the first tick-loop follow-on call.
+
+Target:
+
+- keep all prior Option C suppressions in place
+- add one isolated C2c suppression:
+  - `0x18004526a`: the higher-level `call 0x180043920` inside the helper rooted at `0x18004524e`
+
+Verified local disassembly around the new callsite:
+
+- `0x18004524e`: `mov eax, dword ptr [rsi + 0x238]`
+- `0x180045257`: `je 0x180045271` when mode is `5`
+- `0x18004525f`: `cmp eax, 4`
+- `0x180045264`: `mov rdx, rsi`
+- `0x180045267`: `mov rcx, r15`
+- `0x18004526a`: `call 0x180043920`
+- `0x18004526f`: `jmp 0x1800452e1`
+
+Implementation boundary:
+
+- patch only the call at `0x18004526a`
+- do not patch the whole helper at `0x18004524e`
+- do not touch the mode `5` branch
+- do not touch the alternate `0x180043690` path
+- do not reopen Option A / Option B shaping
+
+Reasoning:
+
+- C1 suppressed the direct late tick-loop fatalization site and failed
+- C2a suppressed the later poison write and failed
+- C2b suppressed the tick-loop follow-on call and failed
+- the next smallest downstream reset handoff is the broader `0x18004526a -> 0x180043920` call
+
+Expected observable outcome:
+
+- if this broader reset call is still the decisive kill step, the old wrapper/tunnel/snap class should weaken materially
+- if visible behavior is still unchanged after C2c, the broader late reset/deactivation family is effectively closed as the primary remaining visible blocker
+
+### 8. Current boundary after this recovery
+
+What is now closed:
+
+- anonymous-global-flag theory
+- `destiny.settings` as the missing warp contract
+- coefficient-ownership theory
+- "activation/init never happens"
+- "first solver entry is already broken"
+
+What is now established:
+
+- plain live warp really does reach native init and native solver
+- the settings-gated compare skip is explained by normal default `destiny.settings`
+- the strongest remaining native failure model is late tick-loop solver deactivation
+- that late path uses `+0xd2`, `+0x478`, `0x180043920`, and forced `warpDistance = -1.0`
+- C1 applied cleanly and did not change the visible wrapper/tunnel/snap outcome
+- C2a is now the smallest honest downstream follow-up: suppress the later `warpDistance = -1.0` poison write while keeping the rest of the late path interpretable
+- C2a also failed cleanly
+- C2b is now the next smallest downstream step: suppress the tick-loop follow-on call at `0x18003574d` before escalating to the broader generic reset path
+- C2b also failed cleanly
+- C2c is now the next isolated downstream step: suppress the broader reset call at `0x18004526a` while leaving the rest of `0x18004524e` intact
+
+The next honest work is no longer broad RE. It is isolated downstream validation of the late teardown path:
+
+- keep upstream warp shaping frozen
+- validate C2c in isolation
+- if C2c still fails cleanly, the broader late reset/deactivation family should stop being treated as the primary remaining visible blocker
+- keep packet/FX/seed branches closed
+
+### 8.1 Reassessment after repeated clean A/B/C failures
+
+After rechecking the server logs, client logs, client code, and the public CCP warp model, the strongest boundary is now this:
+
+- plain live warp really does reach native activation/init/solver
+- repeated server-side input nudges (Option A / Option B) changed inputs but did not change the visible failure class
+- repeated downstream client-native suppressions (C1 / C2a / C2b / C2c) also did not change the visible failure class
+
+That means the late tick-loop teardown path is still real, but it should no longer be treated as the primary explanation for the visible failure.
+
+The visible class stayed the same throughout:
+
+- wrapper FX starts
+- tunnel assets load
+- controller state flips
+- distance remains pinned
+- arrival still snaps
+
+So the more defensible interpretation is:
+
+- the client is receiving enough Destiny state to enter the native warp chain
+- but it is still missing an ego-only active-warp consumer/model/controller contract that CCP live provides
+- the later teardown/reset branches are likely secondary cleanup or a later consequence, not the first blocker for sustained visible warp
+
+### 8.2 What is now frozen
+
+The following branches should be treated as closed or frozen until the ego-only model/controller question is answered:
+
+- bootstrap-lite
+- raw mode-3 replay variants
+- live `SetState` guessing
+- `EntityWarpIn`
+- seed / FX / timing churn
+- pilot self position / velocity hacks
+- Option A warpFactor nudges
+- Option B solver/decel nudges
+- Option C late teardown suppression patches
+
+The Option C branch remains useful as evidence:
+
+- direct late fatalization suppression did not unlock visible warp
+- later poison suppression did not unlock visible warp
+- broader reset handoff suppression did not unlock visible warp
+
+So further patching in that family is low-value until the earlier ego-only state/consumer contract is mapped.
+
+### 8.3 Next honest work
+
+The next serious effort should move earlier in the lifecycle and focus on the ego-only visible warp path.
+
+Priority order:
+
+1. Prove whether the failure is ego-only or shared.
+   - run one two-client observer test
+   - if the observer sees sustained traversal while the pilot still sees wrapper/snap, the problem is overwhelmingly ego-only model/controller state
+   - if both clients see the same bad traversal class, the missing state is deeper/shared
+
+2. Compare pre-warp lifecycle, not just warp-time deltas.
+   - session enter
+   - ballpark startup
+   - ego ball add/setup
+   - active ship/controller/model initialization
+   - destination / warp-point ownership before the warp button is pressed
+
+3. Recenter on the pilot-visible consumer path.
+   - `shipModel.speed.value`
+   - `OnWarpActive`
+   - `OnWarpStarted2`
+   - `OnWarpDecelerate`
+   - `TravelTunnelProgress`
+   - any ego-only destination/model/controller binding that arms the pilot's local warp model
+
+4. Reopen `SetState` only as an untrusted/incomplete server-side contract, not as a dead idea.
+   - the question is not "send random SetState again"
+   - the question is "what exact pilot WARP-state side effect or payload does CCP live provide that this server still does not"
+
+### 8.4 Working summary
+
+The best current explanation is no longer "the server warp math is a bit off."
+
+It is:
+
+> the client gets far enough into native warp to enter activation/init/solver, but the pilot is still missing an ego-only active-warp initialization / consumer contract, so the visible local warp model never transitions into sustained traversal even though wrapper FX and controller state do start.
+
+### 8.5 Action sheet
+
+This is the concrete next sequence.
+
+1. Freeze all new A/B/C variants.
+   - no new warpFactor nudges
+   - no new solver/decel nudges
+   - no new `_destiny` reset/STOP suppression patches
+
+2. Run one dual-client observer test.
+   - one pilot
+   - one observer in the same warp
+   - record whether the observer sees sustained traversal or the same pinned-distance/snap class
+
+3. Classify the failure.
+   - observer good / pilot bad = ego-only visual/model/controller problem
+   - observer bad / pilot bad = deeper shared state/contract problem
+
+4. Compare pre-warp lifecycle before pressing warp.
+   - session enter
+   - ballpark startup
+   - ego ball add/setup
+   - active ship model/controller binding
+   - destination / goto ownership
+
+5. Map the pilot-visible consumer path directly.
+   - what writes or feeds `shipModel.speed.value`
+   - what causes `OnWarpActive`
+   - what causes `OnWarpStarted2`
+   - what drives `TravelTunnelProgress`
+   - what local destination/progress state those consumers require
+
+6. Reopen pilot WARP `SetState` only after steps 2-5.
+   - treat prior `SetState` failures as evidence that the payload was wrong or incomplete
+   - do not resume random `SetState` replay
+   - only return there if the earlier lifecycle/consumer comparison points to a missing ego-only state contract
+
+## Short Version
+
+If this needs to be reduced to one sentence:
+
+> The client reaches native warp activation/init/solver, but the pilot is still missing an ego-only active-warp initialization / consumer contract, so wrapper FX and controller state start while the visible local warp model never transitions into sustained traversal.

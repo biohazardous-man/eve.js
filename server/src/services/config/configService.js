@@ -15,7 +15,11 @@ const path = require("path");
 const BaseService = require(path.join(__dirname, "../baseService"));
 
 const log = require(path.join(__dirname, "../../utils/logger"));
-const database = require("../../database")
+const database = require("../../newDatabase")
+const { toClientSafeDisplayName } = require(path.join(
+  __dirname,
+  "../_shared/clientNameUtils",
+));
 const { getCharacterShips } = require(path.join(
   __dirname,
   "../character/characterState",
@@ -28,7 +32,7 @@ const {
   TABLE,
   readStaticRows,
 } = require(path.join(__dirname, "../_shared/referenceData"));
-const { buildKeyVal } = require(path.join(
+const { buildKeyVal, buildList } = require(path.join(
   __dirname,
   "../_shared/serviceHelpers",
 ));
@@ -46,6 +50,10 @@ const {
   getCorporationStationSolarSystems,
   getOwnerLookupRecord,
 } = require(path.join(__dirname, "../corporation/corporationState"));
+const structureState = require(path.join(
+  __dirname,
+  "../structure/structureState",
+));
 
 /**
  * Extract a plain JS array from a value that might be:
@@ -102,10 +110,15 @@ function buildLocationRow(
   locationName,
   solarSystemID = null,
   position = null,
+  fallbackName = null,
 ) {
   return [
     locationID,
-    locationName,
+    toClientSafeDisplayName(
+      locationName,
+      fallbackName || `Location ${locationID}`,
+    ),
+    normalizeSolarSystemID(solarSystemID, null),
     Number(position && position.x) || 0.0,
     Number(position && position.y) || 0.0,
     Number(position && position.z) || 0.0,
@@ -159,6 +172,14 @@ function getStaticLocationRowsById() {
       celestial.position,
     );
   }
+  for (const asteroidBelt of readStaticRows(TABLE.ASTEROID_BELTS)) {
+    addLocation(
+      asteroidBelt.itemID,
+      asteroidBelt.itemName,
+      asteroidBelt.solarSystemID,
+      asteroidBelt.position,
+    );
+  }
   for (const stargate of readStaticRows(TABLE.STARGATES)) {
     addLocation(
       stargate.itemID,
@@ -180,7 +201,10 @@ function buildShipItemOwnerRow(itemID) {
 
   return [
     Number(shipItem.itemID) || Number(itemID) || 0,
-    shipItem.shipName || shipItem.itemName || `Ship ${itemID}`,
+    toClientSafeDisplayName(
+      shipItem.shipName || shipItem.itemName || `Ship ${itemID}`,
+      `Ship ${itemID}`,
+    ),
     Number(shipItem.shipTypeID || shipItem.typeID) || 606,
     0,
     null,
@@ -211,16 +235,17 @@ class ConfigService extends BaseService {
     const rows = [];
 
     for (const id of requestedIds) {
-      const numericId = Number(id) || 0;
-      if (numericId <= 0) {
+      const numericId = Number(id);
+      if (!Number.isFinite(numericId)) {
         continue;
       }
+      const normalizedId = Math.trunc(numericId);
 
       // Check if this is a character ID we know about
-      const charData = characters[String(numericId)];
+      const charData = normalizedId > 0 ? characters[String(normalizedId)] : null;
       if (charData) {
         rows.push([
-          numericId, // ownerID
+          normalizedId, // ownerID
           charData.characterName || "Unknown", // ownerName
           charData.typeID || 1373, // typeID
           charData.gender || 1, // gender
@@ -229,14 +254,20 @@ class ConfigService extends BaseService {
         continue;
       }
 
-      const shipItemOwnerRow = buildShipItemOwnerRow(numericId);
+      const shipItemOwnerRow = normalizedId > 0
+        ? buildShipItemOwnerRow(normalizedId)
+        : null;
       if (shipItemOwnerRow) {
         rows.push(shipItemOwnerRow);
         continue;
       }
 
-      const staticOwner = getStaticOwnerRecord(id, session);
-      const dynamicOwner = getOwnerLookupRecord(numericId);
+      const staticOwner = normalizedId > 0
+        ? getStaticOwnerRecord(normalizedId, session)
+        : null;
+      const dynamicOwner = normalizedId > 0
+        ? getOwnerLookupRecord(normalizedId)
+        : null;
       const ownerRecord = dynamicOwner || staticOwner;
       if (ownerRecord) {
         rows.push([
@@ -250,10 +281,10 @@ class ConfigService extends BaseService {
       }
 
       // NPC corps (1000000-1999999 range)
-      if (numericId >= 1000000 && numericId < 2000000) {
+      if (normalizedId >= 1000000 && normalizedId < 2000000) {
         rows.push([
-          numericId,
-          `Corporation ${numericId}`,
+          normalizedId,
+          `Corporation ${normalizedId}`,
           2, // typeID = 2 (Corporation)
           0, // gender
           null, // ownerNameID
@@ -261,8 +292,17 @@ class ConfigService extends BaseService {
         continue;
       }
 
-      // Unknown entities — return placeholder
-      rows.push([numericId, `Entity ${numericId}`, 1, 0, null]);
+      // Unknown entity — return a generic row so the client's cfg._Prime
+      // can unpack it and inspect the typeID (e.g. to rule out IsCharacter).
+      // Without this, the client gets an empty result and crashes with
+      // "ValueError: need more than 0 values to unpack".
+      rows.push([
+        normalizedId,
+        `Item ${normalizedId}`,
+        0, // typeID = 0 (not a character/corp/alliance)
+        0, // gender
+        null, // ownerNameID
+      ]);
     }
 
     if (rows.length === 0) {
@@ -276,8 +316,8 @@ class ConfigService extends BaseService {
 /**
  * GetMultiLocationsEx — fetch location info for a list of location IDs.
  *
- * Live client logs show this RPC still returns the classic 6-column tuple:
- * [locationID, locationName, x, y, z, locationNameID]
+ * cfg.evelocations uses:
+ * [locationID, locationName, solarSystemID, x, y, z, locationNameID]
  */
   Handle_GetMultiLocationsEx(args, session) {
     const rawArg = args && args.length > 0 ? args[0] : [];
@@ -364,7 +404,26 @@ class ConfigService extends BaseService {
 
       if (locationRowsById.has(numericId)) {
         rows.push(locationRowsById.get(numericId));
-      } else if (staticRowsById.has(numericId)) {
+        continue;
+      } else {
+        const structure = structureState.getStructureByID(numericId, {
+          refresh: false,
+        });
+        if (structure) {
+          rows.push(
+            buildLocationRow(
+              structure.structureID,
+              structure.itemName || structure.name || `Structure ${structure.structureID}`,
+              structure.solarSystemID,
+              structure.position,
+              `Structure ${structure.structureID}`,
+            ),
+          );
+          continue;
+        }
+      }
+
+      if (staticRowsById.has(numericId)) {
         rows.push(staticRowsById.get(numericId));
       } else if (shipNameById.has(numericId)) {
         rows.push(
@@ -372,6 +431,8 @@ class ConfigService extends BaseService {
             numericId,
             shipNameById.get(numericId),
             sessionSolarSystemID,
+            null,
+            `Ship ${numericId}`,
           ),
         );
       } else if (charNameById.has(numericId)) {
@@ -380,17 +441,39 @@ class ConfigService extends BaseService {
             numericId,
             charNameById.get(numericId),
             sessionSolarSystemID,
+            null,
+            `Character ${numericId}`,
           ),
         );
       } else if (numericId >= 60000000 && numericId < 64000000) {
         rows.push(
-          buildLocationRow(numericId, `Station ${numericId}`, sessionSolarSystemID),
+          buildLocationRow(
+            numericId,
+            `Station ${numericId}`,
+            sessionSolarSystemID,
+            null,
+            `Station ${numericId}`,
+          ),
         );
       } else if (numericId >= 30000000 && numericId < 40000000) {
-        rows.push(buildLocationRow(numericId, `System ${numericId}`, numericId));
+        rows.push(
+          buildLocationRow(
+            numericId,
+            `System ${numericId}`,
+            numericId,
+            null,
+            `System ${numericId}`,
+          ),
+        );
       } else {
         rows.push(
-          buildLocationRow(numericId, `Location ${numericId}`, sessionSolarSystemID),
+          buildLocationRow(
+            numericId,
+            `Location ${numericId}`,
+            sessionSolarSystemID,
+            null,
+            `Location ${numericId}`,
+          ),
         );
       }
     }
@@ -400,7 +483,7 @@ class ConfigService extends BaseService {
     }
 
     return [
-      ["locationID", "locationName", "x", "y", "z", "locationNameID"],
+      ["locationID", "locationName", "solarSystemID", "x", "y", "z", "locationNameID"],
       rows,
     ];
   }
@@ -486,10 +569,15 @@ class ConfigService extends BaseService {
   Handle_GetStationSolarSystemsByOwner(args, session) {
     const ownerID = args && args.length > 0 ? Number(args[0]) || 0 : 0;
     log.debug(`[ConfigService] GetStationSolarSystemsByOwner(${ownerID})`);
-    return {
-      type: "list",
-      items: getCorporationStationSolarSystems(ownerID),
-    };
+    return buildList(
+      getCorporationStationSolarSystems(ownerID).map((solarSystemRecord) =>
+        buildKeyVal([
+          ["ownerID", Number(solarSystemRecord && solarSystemRecord.ownerID) || ownerID],
+          ["solarSystemID", Number(solarSystemRecord && solarSystemRecord.solarSystemID) || 0],
+          ["stationCount", Number(solarSystemRecord && solarSystemRecord.stationCount) || 0],
+        ]),
+      ),
+    );
   }
 
   Handle_GetMultiGraphicsEx(args, session) {
@@ -523,5 +611,3 @@ class ConfigService extends BaseService {
 }
 
 module.exports = ConfigService;
-
-

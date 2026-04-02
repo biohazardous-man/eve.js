@@ -26,6 +26,9 @@ const slashDebugPath = path.join(__dirname, "../../logs/slash-debug.log");
 const spaceDebugPath = path.join(__dirname, "../../logs/space-undock-debug.log");
 
 function appendSlashDebug(entry) {
+  if (!log.isVerboseDebugEnabled()) {
+    return;
+  }
   try {
     fs.mkdirSync(path.dirname(slashDebugPath), { recursive: true });
     fs.appendFileSync(
@@ -39,6 +42,9 @@ function appendSlashDebug(entry) {
 }
 
 function appendSpaceDebug(entry) {
+  if (!log.isVerboseDebugEnabled()) {
+    return;
+  }
   try {
     fs.mkdirSync(path.dirname(spaceDebugPath), { recursive: true });
     fs.appendFileSync(
@@ -87,6 +93,59 @@ function summarizeValue(value, depth = 0) {
   return String(value);
 }
 
+function extractBoundObjectName(value, depth = 0) {
+  if (depth > 6 || value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    return value.startsWith("N=") ? value : null;
+  }
+
+  if (Buffer.isBuffer(value)) {
+    const decoded = value.toString("utf8");
+    return decoded.startsWith("N=") ? decoded : null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const resolved = extractBoundObjectName(entry, depth + 1);
+      if (resolved) {
+        return resolved;
+      }
+    }
+    return null;
+  }
+
+  if (typeof value === "object") {
+    if (typeof value.value === "string" && value.value.startsWith("N=")) {
+      return value.value;
+    }
+    if (Buffer.isBuffer(value.value)) {
+      const decoded = value.value.toString("utf8");
+      if (decoded.startsWith("N=")) {
+        return decoded;
+      }
+    }
+
+    const fieldsToCheck = [
+      value.value,
+      value.args,
+      value.remoteObject,
+      value.objectID,
+      value.id,
+    ];
+    for (const field of fieldsToCheck) {
+      const resolved = extractBoundObjectName(field, depth + 1);
+      if (resolved) {
+        return resolved;
+      }
+    }
+  }
+
+  return null;
+}
+
 class PacketDispatcher {
   constructor(serviceManager) {
     this.serviceManager = serviceManager;
@@ -96,7 +155,7 @@ class PacketDispatcher {
    * Dispatch a decoded marshal value (the raw tuple from the wire).
    * Returns true if the packet was handled.
    */
-  dispatch(rawDecoded, session) {
+  async dispatch(rawDecoded, session) {
     const pkt = decodePacket(rawDecoded);
     if (!pkt) {
       log.warn("[PacketDispatcher] Could not decode raw packet into PyPacket");
@@ -106,8 +165,9 @@ class PacketDispatcher {
       return false;
     }
 
-    log.debug(
-      `[Dispatch] ${pkt.typeName} → service=${pkt.service || "?"} src=${pkt.source.type} dst=${pkt.dest.type} src_raw=${JSON.stringify(pkt.source)}`,
+    log.pktIn(
+      pkt.service || pkt.typeName,
+      `${pkt.typeName} src=${pkt.source.type} dst=${pkt.dest.type}`,
     );
 
     switch (pkt.type) {
@@ -137,27 +197,23 @@ class PacketDispatcher {
     }
   }
 
-  _handleCallReq(pkt, session) {
+  async _handleCallReq(pkt, session) {
     let serviceName = pkt.service || pkt.dest.service;
     const call = decodeCallRequest(pkt.payload);
 
     // EVE 23.02: For bound object calls, the service name is null in the address,
     // but the OID string (e.g. "N=1:5") is in the call body's remoteObject field.
     if (!serviceName && call.remoteObject) {
-      const ro = call.remoteObject;
-      if (typeof ro === "string") {
-        serviceName = ro;
-      } else if (Buffer.isBuffer(ro)) {
-        serviceName = ro.toString("utf8");
-      }
+      serviceName = extractBoundObjectName(call.remoteObject) || serviceName;
     }
 
     // EVE 23.02: Client places its callID in the source address (e.g. [2, 0, 1, null] -> callID=1)
     // The dest address might contain proxyNodeId at index 1 instead of callID.
     const callID = pkt.source.callID || pkt.dest.callID || 0;
 
-    log.debug(
-      `[CallReq] ${serviceName || "?"}::${call.method}() callID=${callID}`,
+    log.pktIn(
+      serviceName || "?",
+      `${call.method}() callID=${callID}`,
     );
     const lookedUpService =
       this.serviceManager && serviceName
@@ -201,7 +257,7 @@ class PacketDispatcher {
                 ? serviceName
                 : null;
           }
-          const result = service.callMethod(
+          const result = await service.callMethod(
             call.method,
             call.args,
             session,
@@ -222,19 +278,27 @@ class PacketDispatcher {
             pkt,
             result !== undefined ? result : null,
             session,
+            service.name || resolvedServiceName || serviceName || null,
           );
           if (typeof service.afterCallResponse === "function") {
-            service.afterCallResponse(call.method, session, {
-              args: call.args,
-              kwargs: call.kwargs,
-              result,
-              packet: pkt,
-            });
+            try {
+              await service.afterCallResponse(call.method, session, {
+                args: call.args,
+                kwargs: call.kwargs,
+                result,
+                packet: pkt,
+              });
+            } catch (afterCallError) {
+              log.warn(
+                `[PacketDispatcher] afterCallResponse failed for ${service.name}.${call.method}: ${afterCallError.message}`,
+              );
+            }
           }
           return true;
         } catch (err) {
-          log.err(
-            `[CallReq] Error in ${serviceName}::${call.method}: ${err.message}`,
+          log.pktErr(
+            serviceName || "?",
+            `${call.method}() ${err.message}`,
           );
           if (traceSpaceCall) {
             appendSpaceDebug(
@@ -242,9 +306,19 @@ class PacketDispatcher {
             );
           }
           if (isMachoWrappedException(err)) {
-            this._sendErrorResponse(pkt, err.machoErrorResponse, session);
+            this._sendErrorResponse(
+              pkt,
+              err.machoErrorResponse,
+              session,
+              service.name || resolvedServiceName || serviceName || null,
+            );
           } else {
-            this._sendCallResponse(pkt, null, session);
+            this._sendCallResponse(
+              pkt,
+              null,
+              session,
+              service.name || resolvedServiceName || serviceName || null,
+            );
           }
           return true;
         } finally {
@@ -253,12 +327,17 @@ class PacketDispatcher {
           }
         }
       } else {
-        log.warn(`[CallReq] No service registered for: ${serviceName}`);
+        log.pktErr(serviceName, "no service registered");
         // Send None response so client doesn't hang
-        this._sendCallResponse(pkt, null, session);
+        this._sendCallResponse(
+          pkt,
+          null,
+          session,
+          resolvedServiceName || serviceName || null,
+        );
       }
     } else {
-      log.warn(`[CallReq] No service name in packet`);
+      log.pktErr("CallReq", "no service name in packet");
       this._sendCallResponse(pkt, null, session);
     }
 
@@ -266,17 +345,18 @@ class PacketDispatcher {
   }
 
   _handleCallRsp(pkt, session) {
-    log.debug("[CallRsp] Received call response (client → server, unusual)");
+    log.pktIn("CallRsp", "client → server (unusual)");
     return true;
   }
 
   _handleNotification(pkt, session) {
-    log.debug(`[Notification] ${pkt.dest.broadcastID || "?"}`);
+    log.pktIn("Notification", pkt.dest.broadcastID || "?");
     return true;
   }
 
   _handlePingReq(pkt, session) {
-    log.debug("[PingReq] Responding to ping");
+    log.pktIn("Ping", "request received");
+    log.pktOut("Ping", "response sent");
 
     const now = BigInt(Date.now()) * 10000n + 116444736000000000n; // Win32 FILETIME
 
@@ -324,22 +404,22 @@ class PacketDispatcher {
   }
 
   _handlePingRsp(pkt, session) {
-    log.debug("[PingRsp] Received ping response");
+    log.pktIn("Ping", "response from client");
     return true;
   }
 
   _handleSessionChange(pkt, session) {
-    log.debug("[SessionChange] Session change notification from client");
+    log.pktIn("SessionChange", "notification from client");
     return true;
   }
 
   _handleErrorResponse(pkt, session) {
-    log.warn("[ErrorResponse] Received error from client");
+    log.pktErr("ErrorResponse", "received error from client");
     return true;
   }
 
   _handleOther(pkt, session) {
-    log.warn(`[Dispatch] Unhandled packet type: ${pkt.typeName} (${pkt.type})`);
+    log.pktErr("Dispatch", `unhandled packet type: ${pkt.typeName} (${pkt.type})`);
     return false;
   }
 
@@ -355,7 +435,7 @@ class PacketDispatcher {
    *   payload = [substream(result)]
    *   namedPayload = {} (empty dict)
    */
-  _sendCallResponse(pkt, result, session) {
+  _sendCallResponse(pkt, result, session, responseServiceName = null) {
     if (!session || !session.sendPacket) return;
 
     // The callID comes from the source address of the request
@@ -369,7 +449,7 @@ class PacketDispatcher {
       encodeAddress({
         type: "node",
         nodeID: config.proxyNodeId,
-        service: pkt.dest.service || null,
+        service: responseServiceName || pkt.dest.service || null,
         callID: callID,
       }),
 
@@ -411,19 +491,23 @@ class PacketDispatcher {
       args: responseTuple,
     };
 
-    log.debug(
-      `[CallRsp] Sending response for callID=${callID} payload=${JSON.stringify(responseObj, (k, v) => (typeof v === "bigint" ? v.toString() : v))}`,
+    log.pktOut(
+      pkt.dest.service || pkt.service || "CallRsp",
+      `response callID=${callID}`,
     );
     session.sendPacket(responseObj);
   }
 
-  _sendErrorResponse(pkt, machoError, session) {
+  _sendErrorResponse(pkt, machoError, session, responseServiceName = null) {
     if (!session || !session.sendPacket) return;
 
     const callID = pkt.source.callID || pkt.dest.callID || 0;
     const responseTuple = [
       MACHONETMSG_TYPE.ERRORRESPONSE,
-      encodeAddress(pkt.dest),
+      encodeAddress({
+        ...pkt.dest,
+        service: responseServiceName || pkt.dest.service || null,
+      }),
       encodeAddress({
         ...pkt.source,
         callID,
@@ -454,7 +538,10 @@ class PacketDispatcher {
       args: responseTuple,
     };
 
-    log.debug(`[ErrorRsp] Sending wrapped exception for callID=${callID}`);
+    log.pktErr(
+      pkt.dest.service || pkt.service || "ErrorRsp",
+      `wrapped exception callID=${callID}`,
+    );
     session.sendPacket(responseObj);
   }
   /**

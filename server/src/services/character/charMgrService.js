@@ -13,15 +13,43 @@ const {
   resolveHomeStationInfo,
 } = require(path.join(__dirname, "./characterState"));
 const {
+  resolvePaperDollState,
+} = require(path.join(__dirname, "./paperDollPayloads"));
+const {
   getStationRecord,
 } = require(path.join(__dirname, "../_shared/stationStaticData"));
 const {
+  buildList,
   buildDict,
   buildFiletimeLong,
   buildKeyVal,
   buildRow,
   buildRowset,
 } = require(path.join(__dirname, "../_shared/serviceHelpers"));
+const {
+  CharMgrGlobalAssets,
+} = require(path.join(__dirname, "./charMgrGlobalAssets"));
+const {
+  deleteCharacterSetting,
+  getCharacterSettings,
+  setCharacterSetting,
+} = require(path.join(__dirname, "./characterSettingsState"));
+const {
+  getCorporationMember,
+} = require(path.join(__dirname, "../corporation/corporationRuntimeState"));
+const {
+  buildKillmailPayload,
+  listKillmailsForCharacter,
+} = require(path.join(__dirname, "../killmail/killmailState"));
+const {
+  listOwnerNotes,
+  getOwnerNote,
+  addOwnerNote,
+  editOwnerNote,
+  removeOwnerNote,
+  getEntityNote,
+  setEntityNote,
+} = require(path.join(__dirname, "./characterNoteState"));
 
 function resolveCharacterInfo(args, session) {
   const charId =
@@ -33,6 +61,13 @@ function resolveCharacterInfo(args, session) {
   };
 }
 
+function sessionCharacterID(session) {
+  return Number(
+    session &&
+    (session.characterID || session.charID || session.charid || 0),
+  ) || 0;
+}
+
 function resolveHomeStationRecord(charData, session) {
   const homeStationInfo = resolveHomeStationInfo(charData, session);
 
@@ -40,6 +75,32 @@ function resolveHomeStationRecord(charData, session) {
     station: getStationRecord(session, homeStationInfo.homeStationID),
     homeStationInfo,
   };
+}
+
+function resolveCorporationChangeInfo(charId, charData, session) {
+  const corporationID =
+    Number(charData && charData.corporationID) ||
+    Number(session && (session.corporationID || session.corpid)) ||
+    0;
+  const corporationMember =
+    corporationID > 0 ? getCorporationMember(corporationID, charId) : null;
+  const corporationDateTime =
+    (corporationMember && corporationMember.startDate) ||
+    (charData &&
+      (charData.startDateTime ||
+        (Array.isArray(charData.employmentHistory)
+          ? charData.employmentHistory.find(
+              (entry) =>
+                Number(entry && entry.corporationID) === Number(corporationID),
+            )?.startDate
+          : null) ||
+        charData.createDateTime)) ||
+    null;
+
+  return buildKeyVal([
+    ["corporationID", corporationID || null],
+    ["corporationDateTime", buildFiletimeLong(corporationDateTime)],
+  ]);
 }
 
 function buildHomeStationPayload(station, homeStationInfo = {}) {
@@ -129,14 +190,112 @@ function buildPublicInfoEntries(charId, charData, session) {
   ];
 }
 
+function toPlainString(value, fallback = "") {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+
+  if (Buffer.isBuffer(value)) {
+    return value.toString("utf8");
+  }
+
+  if (typeof value === "object") {
+    if ("value" in value) {
+      return toPlainString(value.value, fallback);
+    }
+
+    if ("str" in value) {
+      return toPlainString(value.str, fallback);
+    }
+  }
+
+  return fallback;
+}
+
+function buildOwnerNotePayload(noteID, label, noteText) {
+  return buildList([
+    buildKeyVal([
+      ["noteID", Number(noteID) || 0],
+      ["label", toPlainString(label, "")],
+      ["note", toPlainString(noteText, "")],
+    ]),
+  ]);
+}
+
 class CharMgrService extends BaseService {
   constructor() {
     super("charMgr");
+    this._globalAssets = new CharMgrGlobalAssets();
+  }
+
+  Handle_MachoResolveObject(args, session, kwargs) {
+    const result = this._globalAssets.Handle_MachoResolveObject(args, session, kwargs);
+    if (result !== null) {
+      return result;
+    }
+
+    log.warn("[CharMgr] Unsupported MachoResolveObject bind params");
+    return null;
+  }
+
+  async Handle_MachoBindObject(args, session, kwargs) {
+    const result = await this._globalAssets.Handle_MachoBindObject(
+      args,
+      session,
+      kwargs,
+      async (boundObjectID, methodName, callArgs, callKwargs) => {
+        const previousBoundObjectID = session ? session.currentBoundObjectID : null;
+        try {
+          if (session) {
+            session.currentBoundObjectID = boundObjectID;
+          }
+          return await this.callMethod(methodName, callArgs, session, callKwargs);
+        } finally {
+          if (session) {
+            session.currentBoundObjectID = previousBoundObjectID || null;
+          }
+        }
+      },
+    );
+    if (result !== null) {
+      return result;
+    }
+
+    log.warn("[CharMgr] Unsupported MachoBindObject bind params");
+    return null;
+  }
+
+  Handle_ListStations(args, session, kwargs) {
+    return this._globalAssets.Handle_ListStations(args, session, kwargs);
+  }
+
+  Handle_ListStationItems(args, session, kwargs) {
+    return this._globalAssets.Handle_ListStationItems(args, session, kwargs);
+  }
+
+  Handle_List(args, session, kwargs) {
+    return this._globalAssets.Handle_List(args, session, kwargs);
+  }
+
+  Handle_ListIncludingContainers(args, session, kwargs) {
+    return this._globalAssets.Handle_ListIncludingContainers(args, session, kwargs);
+  }
+
+  Handle_GetAssetWorth(args, session, kwargs) {
+    return this._globalAssets.Handle_GetAssetWorth(args, session, kwargs);
   }
 
   Handle_GetPublicInfo(args, session) {
     const { charId, charData } = resolveCharacterInfo(args, session);
-    log.info(`[CharMgr] GetPublicInfo(${charId})`);
+    log.debug(`[CharMgr] GetPublicInfo(${charId})`);
     return buildKeyVal(buildPublicInfoEntries(charId, charData, session));
   }
 
@@ -152,6 +311,22 @@ class CharMgrService extends BaseService {
   Handle_GetTopBounties() {
     log.debug("[CharMgr] GetTopBounties");
     return { type: "list", items: [] };
+  }
+
+  Handle_GetRecentShipKillsAndLosses(args, session) {
+    const charId =
+      (session && Number(session.currentBoundObjectID || 0)) ||
+      (session && Number(session.characterID || session.charid || 0)) ||
+      0;
+    const limit = args && args.length > 0 ? Number(args[0]) || 0 : 0;
+    const startKillID = args && args.length > 1 ? Number(args[1]) || 0 : 0;
+    return {
+      type: "list",
+      items: listKillmailsForCharacter(charId, {
+        limit,
+        startKillID,
+      }).map((record) => buildKillmailPayload(record)),
+    };
   }
 
   Handle_GetPrivateInfo(args, session) {
@@ -179,6 +354,12 @@ class CharMgrService extends BaseService {
         Number(charData.securityStatus ?? charData.securityRating ?? 0),
       ],
     );
+  }
+
+  Handle_GetPrivateInfoOnCorpChange(args, session) {
+    const { charId, charData } = resolveCharacterInfo(args, session);
+    log.debug(`[CharMgr] GetPrivateInfoOnCorpChange(${charId})`);
+    return resolveCorporationChangeInfo(charId, charData, session);
   }
 
   Handle_GetCharacterDescription(args, session) {
@@ -261,20 +442,30 @@ class CharMgrService extends BaseService {
     return null;
   }
 
-  // EVEmu PDState: 0=NoRecustomization (finalized), 1=Resculpting,
-  // 2=NoExistingCustomization, 3=FullRecustomizing, 4=ForceRecustomize
-  Handle_GetPaperdollState() {
-    log.debug("[CharMgr] GetPaperdollState -> 0 (NoRecustomization)");
-    return 0;
+  // Paperdoll.State:
+  // 0=NoRecustomization, 1=Resculpting, 2=NoExistingCustomization,
+  // 3=FullRecustomizing, 4=ForceRecustomize
+  Handle_GetPaperdollState(args, session) {
+    const { charId, charData } = resolveCharacterInfo(args, session);
+    const paperDollState = resolvePaperDollState(charData, 2);
+    log.debug(`[CharMgr] GetPaperdollState(${charId}) -> ${paperDollState}`);
+    return paperDollState;
   }
 
-  Handle_GetCharacterSettings() {
+  Handle_GetCharacterCreationDate(args, session) {
+    const { charId, charData } = resolveCharacterInfo(args, session);
+    log.debug(`[CharMgr] GetCharacterCreationDate(${charId})`);
+    return buildFiletimeLong(charData.createDateTime);
+  }
+
+  Handle_GetCharacterSettings(args, session) {
     log.debug("[CharMgr] GetCharacterSettings called");
-    return buildKeyVal([
-      ["public", buildDict([])],
-      ["private", buildDict([])],
-      ["ui", buildDict([])],
-    ]);
+    const characterID = sessionCharacterID(session);
+    return buildDict(
+      Object.entries(getCharacterSettings(characterID)).sort(([left], [right]) => (
+        String(left).localeCompare(String(right))
+      )),
+    );
   }
 
   Handle_GetSettingsInfo() {
@@ -304,6 +495,88 @@ class CharMgrService extends BaseService {
         ),
       ],
     ]);
+  }
+
+  Handle_GetOwnerNoteLabels(args, session) {
+    const characterID = sessionCharacterID(session);
+    log.debug(`[CharMgr] GetOwnerNoteLabels(${characterID})`);
+
+    return buildRowset(
+      ["noteID", "label"],
+      listOwnerNotes(characterID).map((entry) => [
+        Number(entry.noteID) || 0,
+        entry.label || "",
+      ]),
+      "eve.common.script.sys.rowset.Rowset",
+    );
+  }
+
+  Handle_GetOwnerNote(args, session) {
+    const characterID = sessionCharacterID(session);
+    const noteID = args && args.length > 0 ? Number(args[0]) || 0 : 0;
+    log.debug(`[CharMgr] GetOwnerNote(${characterID}, ${noteID})`);
+
+    const note = getOwnerNote(characterID, noteID);
+    if (!note) {
+      return buildOwnerNotePayload(noteID, "", "");
+    }
+
+    return buildOwnerNotePayload(note.noteID, note.label, note.note);
+  }
+
+  Handle_AddOwnerNote(args, session) {
+    const characterID = sessionCharacterID(session);
+    const label = args && args.length > 0 ? args[0] : "";
+    const noteText = args && args.length > 1 ? args[1] : "";
+    log.debug(`[CharMgr] AddOwnerNote(${characterID}, ${toPlainString(label, "")})`);
+    return addOwnerNote(characterID, label, noteText);
+  }
+
+  Handle_EditOwnerNote(args, session) {
+    const characterID = sessionCharacterID(session);
+    const noteID = args && args.length > 0 ? Number(args[0]) || 0 : 0;
+    const label = args && args.length > 1 ? args[1] : undefined;
+    const noteText = args && args.length > 2 ? args[2] : undefined;
+    log.debug(`[CharMgr] EditOwnerNote(${characterID}, ${noteID})`);
+    editOwnerNote(characterID, noteID, label, noteText);
+    return null;
+  }
+
+  Handle_RemoveOwnerNote(args, session) {
+    const characterID = sessionCharacterID(session);
+    const noteID = args && args.length > 0 ? Number(args[0]) || 0 : 0;
+    log.debug(`[CharMgr] RemoveOwnerNote(${characterID}, ${noteID})`);
+    removeOwnerNote(characterID, noteID);
+    return null;
+  }
+
+  Handle_GetNote(args, session) {
+    const characterID = sessionCharacterID(session);
+    const itemID = args && args.length > 0 ? Number(args[0]) || 0 : 0;
+    log.debug(`[CharMgr] GetNote(${characterID}, ${itemID})`);
+    return getEntityNote(characterID, itemID);
+  }
+
+  Handle_SetNote(args, session) {
+    const characterID = sessionCharacterID(session);
+    const itemID = args && args.length > 0 ? Number(args[0]) || 0 : 0;
+    const noteText = args && args.length > 1 ? args[1] : "";
+    log.debug(`[CharMgr] SetNote(${characterID}, ${itemID})`);
+    setEntityNote(characterID, itemID, noteText);
+    return null;
+  }
+
+  Handle_SaveCharacterSetting(args, session) {
+    const settingKey = args && args.length > 0 ? args[0] : null;
+    const settingValue = args && args.length > 1 ? args[1] : null;
+    setCharacterSetting(sessionCharacterID(session), settingKey, settingValue);
+    return null;
+  }
+
+  Handle_DeleteCharacterSetting(args, session) {
+    const settingKey = args && args.length > 0 ? args[0] : null;
+    deleteCharacterSetting(sessionCharacterID(session), settingKey);
+    return null;
   }
 }
 

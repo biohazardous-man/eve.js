@@ -1,0 +1,857 @@
+const path = require("path");
+
+const config = require(path.join(__dirname, "../../config"));
+const database = require(path.join(__dirname, "../../newDatabase"));
+const worldData = require(path.join(__dirname, "../../space/worldData"));
+const {
+  resolveItemByName,
+  resolveItemByTypeID,
+} = require(path.join(__dirname, "../inventory/itemTypeRegistry"));
+const {
+  classifyMiningMaterialType,
+} = require("./miningInventory");
+const {
+  computeAsteroidRadiusFromQuantity,
+} = require("./miningMath");
+
+const MINING_RUNTIME_TABLE = "miningRuntimeState";
+const MINING_RUNTIME_VERSION = 1;
+const WORMHOLE_SYSTEM_MIN = 31_000_000;
+const WORMHOLE_SYSTEM_MAX = 31_999_999;
+const ORE_GRADE_VARIANTS = Object.freeze([
+  Object.freeze({
+    suffix: "",
+    weightMultiplier: 1,
+    quantityMultiplier: 1,
+  }),
+  Object.freeze({
+    suffix: " II-Grade",
+    weightMultiplier: 0.45,
+    quantityMultiplier: 1,
+  }),
+  Object.freeze({
+    suffix: " III-Grade",
+    weightMultiplier: 0.3,
+    quantityMultiplier: 1,
+  }),
+  Object.freeze({
+    suffix: " IV-Grade",
+    weightMultiplier: 0.2,
+    quantityMultiplier: 1,
+  }),
+]);
+const DEFAULT_TEMPLATE_BY_FIELD_STYLE = Object.freeze({
+  empire_highsec_standard: Object.freeze([
+    { oreName: "Veldspar", weight: 5, quantityMultiplier: 1.2 },
+    { oreName: "Scordite", weight: 4, quantityMultiplier: 1.15 },
+    { oreName: "Pyroxeres", weight: 3, quantityMultiplier: 0.95 },
+    { oreName: "Plagioclase", weight: 3, quantityMultiplier: 0.95 },
+    { oreName: "Omber", weight: 2, quantityMultiplier: 0.75 },
+    { oreName: "Kernite", weight: 1, quantityMultiplier: 0.65 },
+  ]),
+  empire_lowsec_standard: Object.freeze([
+    { oreName: "Kernite", weight: 4, quantityMultiplier: 1.1 },
+    { oreName: "Omber", weight: 3, quantityMultiplier: 1.0 },
+    { oreName: "Jaspet", weight: 3, quantityMultiplier: 0.9 },
+    { oreName: "Hemorphite", weight: 2, quantityMultiplier: 0.8 },
+    { oreName: "Hedbergite", weight: 2, quantityMultiplier: 0.8 },
+  ]),
+  nullsec_standard: Object.freeze([
+    { oreName: "Spodumain", weight: 4, quantityMultiplier: 1.0 },
+    { oreName: "Gneiss", weight: 3, quantityMultiplier: 0.9 },
+    { oreName: "Dark Ochre", weight: 3, quantityMultiplier: 0.85 },
+    { oreName: "Crokite", weight: 3, quantityMultiplier: 0.8 },
+    { oreName: "Bistot", weight: 2, quantityMultiplier: 0.75 },
+    { oreName: "Arkonor", weight: 2, quantityMultiplier: 0.7 },
+    { oreName: "Mercoxit", weight: 1, quantityMultiplier: 0.5 },
+  ]),
+  wormhole_standard: Object.freeze([
+    { oreName: "Gneiss", weight: 4, quantityMultiplier: 1.0 },
+    { oreName: "Spodumain", weight: 3, quantityMultiplier: 0.95 },
+    { oreName: "Dark Ochre", weight: 3, quantityMultiplier: 0.9 },
+    { oreName: "Crokite", weight: 2, quantityMultiplier: 0.8 },
+    { oreName: "Bistot", weight: 2, quantityMultiplier: 0.75 },
+    { oreName: "Arkonor", weight: 2, quantityMultiplier: 0.7 },
+  ]),
+});
+
+let cachedTemplateEntries = null;
+
+function toInt(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.trunc(numeric) : fallback;
+}
+
+function toFiniteNumber(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function cloneValue(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+function clamp(value, minimum, maximum) {
+  return Math.min(
+    Math.max(toFiniteNumber(value, minimum), minimum),
+    maximum,
+  );
+}
+
+function isWormholeSystemID(systemID) {
+  const normalizedSystemID = toInt(systemID, 0);
+  return (
+    normalizedSystemID >= WORMHOLE_SYSTEM_MIN &&
+    normalizedSystemID <= WORMHOLE_SYSTEM_MAX
+  );
+}
+
+function normalizeStateRecord(record = {}) {
+  return {
+    version: MINING_RUNTIME_VERSION,
+    entityID: toInt(record.entityID, 0),
+    visualTypeID: toInt(record.visualTypeID, 0),
+    beltID: toInt(record.beltID, 0),
+    fieldStyleID: String(record.fieldStyleID || "").trim() || null,
+    yieldTypeID: toInt(record.yieldTypeID, 0),
+    yieldKind: String(record.yieldKind || "").trim().toLowerCase() || null,
+    unitVolume: Math.max(0.000001, toFiniteNumber(record.unitVolume, 1)),
+    originalQuantity: Math.max(0, toInt(record.originalQuantity, 0)),
+    remainingQuantity: Math.max(0, toInt(record.remainingQuantity, 0)),
+    originalRadius: Math.max(1, toFiniteNumber(record.originalRadius, 1)),
+    updatedAtMs: Math.max(0, toInt(record.updatedAtMs, Date.now())),
+  };
+}
+
+function isPersistedStateStillValid(scene, entity, persistedState, estimatedOriginalQuantity) {
+  if (!persistedState || !entity) {
+    return false;
+  }
+
+  if (toInt(persistedState.entityID, 0) !== toInt(entity.itemID, 0)) {
+    return false;
+  }
+  if (
+    toInt(entity.beltID, 0) > 0 &&
+    toInt(persistedState.beltID, 0) > 0 &&
+    toInt(persistedState.beltID, 0) !== toInt(entity.beltID, 0)
+  ) {
+    return false;
+  }
+
+  const persistedFieldStyleID = String(persistedState.fieldStyleID || "").trim();
+  const entityFieldStyleID = String(entity.fieldStyleID || "").trim();
+  if (persistedFieldStyleID && entityFieldStyleID && persistedFieldStyleID !== entityFieldStyleID) {
+    return false;
+  }
+  if (toInt(persistedState.visualTypeID, 0) <= 0) {
+    return false;
+  }
+
+  const entityRadius = Math.max(0, toFiniteNumber(entity.radius, 0));
+  if (entityRadius > 50 && toFiniteNumber(persistedState.originalRadius, 0) <= 1) {
+    return false;
+  }
+  if (
+    estimatedOriginalQuantity >= 100 &&
+    Math.max(0, toInt(persistedState.originalQuantity, 0)) <= 1
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function buildTemplateEntries() {
+  const entriesByFieldStyle = new Map();
+  for (const [fieldStyleID, definitions] of Object.entries(DEFAULT_TEMPLATE_BY_FIELD_STYLE)) {
+    const entries = definitions
+      .flatMap((definition) => buildTemplateEntriesForOreDefinition(definition))
+      .filter(Boolean);
+    entriesByFieldStyle.set(fieldStyleID, entries);
+  }
+  return entriesByFieldStyle;
+}
+
+function buildTemplateEntriesForOreDefinition(definition) {
+  const baseOreName = String(definition && definition.oreName || "").trim();
+  if (!baseOreName) {
+    return [];
+  }
+
+  const baseWeight = Math.max(0.000001, toFiniteNumber(definition && definition.weight, 1));
+  const baseQuantityMultiplier = Math.max(
+    0.1,
+    toFiniteNumber(definition && definition.quantityMultiplier, 1),
+  );
+  const entries = [];
+  const seenTypeIDs = new Set();
+  for (const gradeVariant of ORE_GRADE_VARIANTS) {
+    const oreName = `${baseOreName}${gradeVariant.suffix}`;
+    const lookup = resolveItemByName(oreName);
+    if (!lookup.success || !lookup.match) {
+      continue;
+    }
+
+    const classification = classifyMiningMaterialType(lookup.match);
+    if (!classification || classification.kind !== "ore") {
+      continue;
+    }
+
+    const typeID = toInt(lookup.match.typeID, 0);
+    if (typeID <= 0 || seenTypeIDs.has(typeID)) {
+      continue;
+    }
+    seenTypeIDs.add(typeID);
+
+    entries.push({
+      typeID,
+      typeRecord: lookup.match,
+      baseOreName,
+      oreName,
+      gradeSuffix: gradeVariant.suffix || null,
+      weight: Math.max(0.000001, baseWeight * gradeVariant.weightMultiplier),
+      quantityMultiplier: Math.max(
+        0.1,
+        baseQuantityMultiplier * gradeVariant.quantityMultiplier,
+      ),
+    });
+  }
+
+  return entries;
+}
+
+function getTemplateEntries() {
+  if (!cachedTemplateEntries) {
+    cachedTemplateEntries = buildTemplateEntries();
+  }
+  return cachedTemplateEntries;
+}
+
+function getTemplateEntriesForFieldStyle(fieldStyleID) {
+  return getTemplateEntries().get(String(fieldStyleID || "").trim()) || [];
+}
+
+function hashInteger(value) {
+  let hash = toInt(value, 0) >>> 0;
+  hash = Math.imul(hash ^ (hash >>> 16), 0x45d9f3b);
+  hash = Math.imul(hash ^ (hash >>> 16), 0x45d9f3b);
+  hash ^= hash >>> 16;
+  return hash >>> 0;
+}
+
+function pickWeightedTemplateEntry(entity, entries) {
+  const normalizedEntries = Array.isArray(entries) ? entries.filter(Boolean) : [];
+  if (normalizedEntries.length <= 0) {
+    return null;
+  }
+
+  const totalWeight = normalizedEntries.reduce(
+    (sum, entry) => sum + Math.max(0, toFiniteNumber(entry.weight, 0)),
+    0,
+  );
+  if (totalWeight <= 0) {
+    return normalizedEntries[0] || null;
+  }
+
+  const seed =
+    hashInteger(toInt(entity && entity.itemID, 0)) ^
+    hashInteger(toInt(entity && entity.beltID, 0)) ^
+    hashInteger(String(entity && entity.fieldStyleID || "").length * 8191);
+  let cursor = (seed / 0xffffffff) * totalWeight;
+  for (const entry of normalizedEntries) {
+    cursor -= Math.max(0, toFiniteNumber(entry.weight, 0));
+    if (cursor <= 0) {
+      return entry;
+    }
+  }
+  return normalizedEntries[normalizedEntries.length - 1] || null;
+}
+
+function isDecorativeAsteroidType(typeRecord) {
+  const groupName = String(typeRecord && typeRecord.groupName || "").toLowerCase();
+  const typeName = String(typeRecord && typeRecord.name || "").toLowerCase();
+  return (
+    groupName.includes("decorative asteroid") ||
+    groupName.includes("phased asteroid") ||
+    typeName.startsWith("cosmetic asteroid") ||
+    typeName.startsWith("phased ")
+  );
+}
+
+function resolveDirectYieldType(entity) {
+  const typeRecord = resolveItemByTypeID(toInt(entity && entity.typeID, 0)) || null;
+  if (!typeRecord) {
+    return null;
+  }
+  if (!isDecorativeAsteroidType(typeRecord)) {
+    const classification = classifyMiningMaterialType(typeRecord);
+    if (classification) {
+      return classification.typeRecord;
+    }
+  }
+
+  const phasedMatch = /^phased\s+(.+)$/i.exec(String(typeRecord.name || "").trim());
+  if (phasedMatch) {
+    const lookup = resolveItemByName(phasedMatch[1]);
+    if (lookup.success && lookup.match) {
+      const classification = classifyMiningMaterialType(lookup.match);
+      if (classification) {
+        return classification.typeRecord;
+      }
+    }
+  }
+
+  return null;
+}
+
+function resolveTemplateSetForEntity(scene, entity) {
+  const fieldStyleID = String(entity && entity.fieldStyleID || "").trim();
+  if (fieldStyleID) {
+    const entries = getTemplateEntriesForFieldStyle(fieldStyleID);
+    if (entries.length > 0) {
+      return entries;
+    }
+  }
+
+  const systemRecord = worldData.getSolarSystemByID(scene && scene.systemID);
+  const securityStatus = toFiniteNumber(
+    systemRecord && (systemRecord.securityStatus ?? systemRecord.security),
+    0,
+  );
+  if (isWormholeSystemID(scene && scene.systemID)) {
+    return getTemplateEntriesForFieldStyle("wormhole_standard");
+  }
+  if (securityStatus >= 0.45) {
+    return getTemplateEntriesForFieldStyle("empire_highsec_standard");
+  }
+  if (securityStatus >= 0) {
+    return getTemplateEntriesForFieldStyle("empire_lowsec_standard");
+  }
+  return getTemplateEntriesForFieldStyle("nullsec_standard");
+}
+
+function resolveYieldTypeForEntity(scene, entity) {
+  const directType = resolveDirectYieldType(entity);
+  if (directType) {
+    return directType;
+  }
+
+  const templateEntry = pickWeightedTemplateEntry(
+    entity,
+    resolveTemplateSetForEntity(scene, entity),
+  );
+  return templateEntry ? templateEntry.typeRecord : null;
+}
+
+function estimateOriginalQuantity(scene, entity, yieldType, templateEntry = null) {
+  const explicitQuantity = Math.max(
+    0,
+    toInt(
+      entity &&
+        (
+          entity.resourceQuantity ??
+          entity.mineableQuantity ??
+          entity.originalQuantity
+        ),
+      0,
+    ),
+  );
+  if (explicitQuantity > 0) {
+    return explicitQuantity;
+  }
+
+  const unitVolume = Math.max(0.000001, toFiniteNumber(yieldType && yieldType.volume, 1));
+  const quantityScale = Math.max(
+    0.000001,
+    toFiniteNumber(config.miningBeltQuantityScale, 0.08),
+  );
+  const quantityMultiplier = Math.max(
+    0.1,
+    toFiniteNumber(templateEntry && templateEntry.quantityMultiplier, 1),
+  );
+  const minimumVolume = Math.max(
+    1,
+    toFiniteNumber(config.miningBeltMinimumAsteroidVolumeM3, 15_000),
+  );
+  const maximumVolume = Math.max(
+    minimumVolume,
+    toFiniteNumber(config.miningBeltMaximumAsteroidVolumeM3, 3_000_000),
+  );
+  const estimatedVolume = clamp(
+    (toFiniteNumber(entity && entity.radius, 0) ** 2) * quantityScale * quantityMultiplier,
+    minimumVolume,
+    maximumVolume,
+  );
+  return Math.max(1, Math.round(estimatedVolume / unitVolume));
+}
+
+function applyYieldPresentationToEntity(entity, state) {
+  if (!entity || !state) {
+    return;
+  }
+
+  const spaceTypeID = toInt(
+    state.visualTypeID || entity.visualTypeID || entity.slimTypeID || entity.typeID,
+    0,
+  );
+  const spaceTypeRecord = resolveItemByTypeID(spaceTypeID) || null;
+  if (spaceTypeID > 0) {
+    entity.visualTypeID = spaceTypeID;
+  }
+  if (spaceTypeRecord) {
+    entity.typeID = spaceTypeRecord.typeID;
+    entity.groupID = spaceTypeRecord.groupID;
+    entity.categoryID = spaceTypeRecord.categoryID;
+  }
+
+  const yieldTypeRecord = resolveItemByTypeID(toInt(state.yieldTypeID, 0)) || null;
+  if (yieldTypeRecord) {
+    entity.miningYieldTypeID = yieldTypeRecord.typeID;
+    entity.miningYieldKind = state.yieldKind || null;
+    entity.slimTypeID = yieldTypeRecord.typeID;
+    entity.slimGroupID = yieldTypeRecord.groupID;
+    entity.slimCategoryID = yieldTypeRecord.categoryID;
+    entity.itemName = yieldTypeRecord.name;
+    entity.slimName = yieldTypeRecord.name;
+  } else if (spaceTypeRecord) {
+    entity.slimTypeID = spaceTypeRecord.typeID;
+    entity.slimGroupID = spaceTypeRecord.groupID;
+    entity.slimCategoryID = spaceTypeRecord.categoryID;
+    entity.itemName = spaceTypeRecord.name;
+    entity.slimName = spaceTypeRecord.name;
+  }
+
+  if (state.remainingQuantity > 0) {
+    const minimumRadiusRatio = Math.max(
+      0.01,
+      toFiniteNumber(config.miningDepletedAsteroidRadiusRatio, 0.25),
+    );
+    const minimumRuntimeRadius = Math.max(1, state.originalRadius * minimumRadiusRatio);
+    const computedRadius = computeAsteroidRadiusFromQuantity(
+      state.yieldTypeID,
+      state.remainingQuantity,
+      {
+        unitVolume: state.unitVolume,
+        fallbackScale: Math.max(
+          0.000001,
+          toFiniteNumber(config.miningBeltQuantityScale, 0.08),
+        ),
+        fallbackMinRadius: Math.max(250, state.originalRadius * 0.2),
+        fallbackMaxRadius: Math.max(state.originalRadius, entity.radius),
+      },
+    );
+    entity.radius = clamp(
+      computedRadius,
+      minimumRuntimeRadius,
+      Math.max(minimumRuntimeRadius, state.originalRadius),
+    );
+  }
+}
+
+function buildSceneCache(scene, persistedByEntityID = {}) {
+  return {
+    version: MINING_RUNTIME_VERSION,
+    persistedByEntityID,
+    byEntityID: new Map(),
+  };
+}
+
+function readPersistedSystemState(systemID) {
+  const result = database.read(
+    MINING_RUNTIME_TABLE,
+    `/systems/${String(toInt(systemID, 0))}/entities`,
+  );
+  if (!result.success || !result.data || typeof result.data !== "object") {
+    return {};
+  }
+  return result.data;
+}
+
+function writePersistedState(scene, state) {
+  database.write(
+    MINING_RUNTIME_TABLE,
+    `/systems/${String(toInt(scene && scene.systemID, 0))}/entities/${String(toInt(state && state.entityID, 0))}`,
+    cloneValue(state),
+  );
+}
+
+function buildMineableState(scene, entity, persistedState = null) {
+  const rawPersistedState = persistedState
+    ? normalizeStateRecord(persistedState)
+    : null;
+  const templateEntry = pickWeightedTemplateEntry(
+    entity,
+    resolveTemplateSetForEntity(scene, entity),
+  );
+  const yieldType =
+    resolveItemByTypeID(
+      toInt(rawPersistedState && rawPersistedState.yieldTypeID, 0),
+    ) ||
+    resolveYieldTypeForEntity(scene, entity);
+  const classification = classifyMiningMaterialType(yieldType);
+  if (!yieldType || !classification) {
+    return null;
+  }
+  const estimatedOriginalQuantity = estimateOriginalQuantity(
+    scene,
+    entity,
+    yieldType,
+    templateEntry,
+  );
+  const normalizedPersistedState = isPersistedStateStillValid(
+    scene,
+    entity,
+    rawPersistedState,
+    estimatedOriginalQuantity,
+  )
+    ? rawPersistedState
+    : null;
+
+  const originalRadius = Math.max(
+    1,
+    toFiniteNumber(
+      normalizedPersistedState
+        ? normalizedPersistedState.originalRadius
+        : undefined,
+      entity && entity.radius,
+    ),
+  );
+  const originalQuantity = Math.max(
+    1,
+    toInt(
+      normalizedPersistedState
+        ? normalizedPersistedState.originalQuantity
+        : undefined,
+      estimatedOriginalQuantity,
+    ),
+  );
+  const remainingQuantity = clamp(
+    toInt(
+      normalizedPersistedState
+        ? normalizedPersistedState.remainingQuantity
+        : undefined,
+      originalQuantity,
+    ),
+    0,
+    originalQuantity,
+  );
+
+  return normalizeStateRecord({
+    entityID: entity.itemID,
+    visualTypeID: toInt(
+      normalizedPersistedState
+        ? normalizedPersistedState.visualTypeID
+        : undefined,
+      entity.visualTypeID || entity.typeID,
+    ),
+    beltID: entity.beltID,
+    fieldStyleID: entity.fieldStyleID || null,
+    yieldTypeID: yieldType.typeID,
+    yieldKind: classification.kind,
+    unitVolume: Math.max(0.000001, toFiniteNumber(yieldType.volume, 1)),
+    originalQuantity,
+    remainingQuantity,
+    originalRadius,
+    updatedAtMs: Date.now(),
+  });
+}
+
+function isMineableStaticEntity(entity) {
+  if (!entity || toInt(entity.itemID, 0) <= 0) {
+    return false;
+  }
+  if (entity.generatedMiningSiteAnchor === true) {
+    return false;
+  }
+  if (String(entity.kind || "").toLowerCase() === "asteroid") {
+    return true;
+  }
+
+  const typeRecord = resolveItemByTypeID(toInt(entity.typeID, 0)) || null;
+  return Boolean(typeRecord && (classifyMiningMaterialType(typeRecord) || isDecorativeAsteroidType(typeRecord)));
+}
+
+function ensureSceneMiningState(scene) {
+  if (!scene) {
+    return null;
+  }
+  if (scene._miningRuntimeState) {
+    return scene._miningRuntimeState;
+  }
+
+  const persistedByEntityID = readPersistedSystemState(scene.systemID);
+  const cache = buildSceneCache(scene, persistedByEntityID);
+
+  for (const entity of [...(scene.staticEntities || [])]) {
+    if (!isMineableStaticEntity(entity)) {
+      continue;
+    }
+
+    const persistedState = persistedByEntityID[String(toInt(entity.itemID, 0))] || null;
+    const state = buildMineableState(scene, entity, persistedState);
+    if (!state) {
+      continue;
+    }
+
+    if (state.remainingQuantity <= 0) {
+      scene.removeStaticEntity(entity.itemID, {
+        broadcast: false,
+      });
+      cache.byEntityID.set(state.entityID, state);
+      writePersistedState(scene, state);
+      continue;
+    }
+
+    applyYieldPresentationToEntity(entity, state);
+    cache.byEntityID.set(state.entityID, state);
+    writePersistedState(scene, state);
+  }
+
+  scene._miningRuntimeState = cache;
+  return cache;
+}
+
+function getMineableState(scene, entityID) {
+  const cache = ensureSceneMiningState(scene);
+  if (!cache) {
+    return null;
+  }
+  return cache.byEntityID.get(toInt(entityID, 0)) || null;
+}
+
+function updateMineableState(scene, entity, nextState, options = {}) {
+  const cache = ensureSceneMiningState(scene);
+  if (!cache || !entity || !nextState) {
+    return {
+      success: false,
+      errorMsg: "MINEABLE_NOT_FOUND",
+    };
+  }
+
+  const normalizedState = normalizeStateRecord(nextState);
+  cache.byEntityID.set(normalizedState.entityID, normalizedState);
+  writePersistedState(scene, normalizedState);
+
+  if (normalizedState.remainingQuantity <= 0) {
+    if (typeof scene.clearAllTargetingForEntity === "function") {
+      scene.clearAllTargetingForEntity(entity, {
+        reason: "target",
+      });
+    }
+    if (
+      typeof scene.removeStaticEntity === "function" &&
+      scene.getEntityByID &&
+      scene.getEntityByID(normalizedState.entityID)
+    ) {
+      scene.removeStaticEntity(normalizedState.entityID, {
+        broadcast: options.broadcast !== false,
+        nowMs: options.nowMs,
+      });
+    }
+  } else {
+    applyYieldPresentationToEntity(entity, normalizedState);
+  }
+
+  return {
+    success: true,
+    data: {
+      state: normalizedState,
+    },
+  };
+}
+
+function applyMiningDelta(scene, entity, minedQuantity, wastedQuantity, options = {}) {
+  const currentState = getMineableState(scene, entity && entity.itemID);
+  if (!currentState) {
+    return {
+      success: false,
+      errorMsg: "MINEABLE_NOT_FOUND",
+    };
+  }
+
+  const depletedQuantity = Math.max(
+    0,
+    toInt(minedQuantity, 0) + toInt(wastedQuantity, 0),
+  );
+  const nextState = normalizeStateRecord({
+    ...currentState,
+    remainingQuantity: Math.max(0, currentState.remainingQuantity - depletedQuantity),
+    updatedAtMs: options.nowMs ?? Date.now(),
+  });
+
+  const updateResult = updateMineableState(scene, entity, nextState, options);
+  if (!updateResult.success) {
+    return updateResult;
+  }
+
+  return {
+    success: true,
+    data: {
+      previousState: currentState,
+      state: nextState,
+      depleted: nextState.remainingQuantity <= 0,
+      depletedQuantity,
+    },
+  };
+}
+
+function clearPersistedSystemState(systemID) {
+  const normalizedSystemID = toInt(systemID, 0);
+  if (normalizedSystemID <= 0) {
+    return {
+      success: false,
+      errorMsg: "SOLAR_SYSTEM_NOT_FOUND",
+    };
+  }
+
+  const removeResult = database.remove(
+    MINING_RUNTIME_TABLE,
+    `/systems/${String(normalizedSystemID)}`,
+  );
+  if (
+    !removeResult.success &&
+    removeResult.errorMsg !== "ENTRY_NOT_FOUND"
+  ) {
+    return removeResult;
+  }
+
+  return {
+    success: true,
+    data: {
+      systemID: normalizedSystemID,
+    },
+  };
+}
+
+function summarizeSceneMiningState(scene) {
+  const cache = ensureSceneMiningState(scene);
+  if (!cache) {
+    return null;
+  }
+
+  const activeStaticEntityIDs = new Set(
+    [...(scene && scene.staticEntities ? scene.staticEntities : [])]
+      .map((entity) => toInt(entity && entity.itemID, 0))
+      .filter((entityID) => entityID > 0),
+  );
+  const summary = {
+    systemID: toInt(scene && scene.systemID, 0),
+    trackedCount: 0,
+    activeCount: 0,
+    depletedCount: 0,
+    oreCount: 0,
+    iceCount: 0,
+    gasCount: 0,
+    activeAsteroidEntityCount: [...(scene && scene.staticEntities ? scene.staticEntities : [])]
+      .filter((entity) => String(entity && entity.kind || "").toLowerCase() === "asteroid")
+      .length,
+  };
+
+  for (const state of cache.byEntityID.values()) {
+    if (!state) {
+      continue;
+    }
+    summary.trackedCount += 1;
+    if (state.remainingQuantity > 0 && activeStaticEntityIDs.has(toInt(state.entityID, 0))) {
+      summary.activeCount += 1;
+    } else {
+      summary.depletedCount += 1;
+    }
+
+    if (state.yieldKind === "ice") {
+      summary.iceCount += 1;
+    } else if (state.yieldKind === "gas") {
+      summary.gasCount += 1;
+    } else {
+      summary.oreCount += 1;
+    }
+  }
+
+  return summary;
+}
+
+function resetSceneMiningState(scene, options = {}) {
+  if (!scene) {
+    return {
+      success: false,
+      errorMsg: "SCENE_NOT_FOUND",
+    };
+  }
+
+  const clearResult = clearPersistedSystemState(scene.systemID);
+  if (!clearResult.success) {
+    return clearResult;
+  }
+
+  let asteroidResetResult = null;
+  if (options.rebuildAsteroids !== false) {
+    const asteroidService = require(path.join(__dirname, "../../space/asteroids"));
+    if (
+      asteroidService &&
+      typeof asteroidService.resetSceneAsteroidFields === "function"
+    ) {
+      asteroidResetResult = asteroidService.resetSceneAsteroidFields(scene, {
+        broadcast: options.broadcast === true,
+        nowMs: options.nowMs,
+      });
+      if (!asteroidResetResult.success) {
+        return asteroidResetResult;
+      }
+    }
+  }
+
+  let generatedResourceSiteResetResult = null;
+  if (options.rebuildResourceSites !== false) {
+    const miningResourceSiteService = require("./miningResourceSiteService");
+    if (
+      miningResourceSiteService &&
+      typeof miningResourceSiteService.resetSceneGeneratedResourceSites === "function"
+    ) {
+      generatedResourceSiteResetResult =
+        miningResourceSiteService.resetSceneGeneratedResourceSites(scene, {
+          broadcast: options.broadcast === true,
+          nowMs: options.nowMs,
+        });
+      if (!generatedResourceSiteResetResult.success) {
+        return generatedResourceSiteResetResult;
+      }
+    }
+  }
+
+  scene._miningRuntimeState = null;
+  const cache = ensureSceneMiningState(scene);
+  return {
+    success: true,
+    data: {
+      systemID: toInt(scene.systemID, 0),
+      mineableCount: cache ? cache.byEntityID.size : 0,
+      asteroidResetResult:
+        asteroidResetResult && asteroidResetResult.data
+          ? asteroidResetResult.data
+          : null,
+      generatedResourceSiteResetResult:
+        generatedResourceSiteResetResult && generatedResourceSiteResetResult.data
+          ? generatedResourceSiteResetResult.data
+          : null,
+      summary: summarizeSceneMiningState(scene),
+    },
+  };
+}
+
+module.exports = {
+  MINING_RUNTIME_TABLE,
+  ensureSceneMiningState,
+  getMineableState,
+  updateMineableState,
+  applyMiningDelta,
+  isMineableStaticEntity,
+  clearPersistedSystemState,
+  summarizeSceneMiningState,
+  resetSceneMiningState,
+  _testing: {
+    getTemplateEntriesForFieldStyle,
+    buildTemplateEntriesForOreDefinition,
+    ORE_GRADE_VARIANTS,
+  },
+};

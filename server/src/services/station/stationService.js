@@ -19,11 +19,17 @@ const { buildKeyVal } = require(path.join(
   __dirname,
   "../_shared/serviceHelpers",
 ));
-
-const { listOnlineGuestsInStation } = require(path.join(
+const { getStationGuestTuples } = require(path.join(
   __dirname,
-  "./stationPresence",
+  "../_shared/guestLists",
 ));
+const {
+  listAllAllianceSystems,
+  listAllianceSystems,
+} = require(path.join(__dirname, "../sovereignty/sovState"));
+const {
+  buildAllianceSystemListPayload,
+} = require(path.join(__dirname, "../sovereignty/sovPayloads"));
 
 class StationService extends BaseService {
   constructor(name = "station") {
@@ -91,20 +97,14 @@ class StationService extends BaseService {
     return [ownerID, stationID, operationID, stationTypeID];
   }
 
-  // TODO: return all active users in the station
-  // right now we are just retuning one user (the current user)
   Handle_GetGuests(args, session) {
     log.debug("[StationSvc] GetGuests");
     const stationID =
-      Number(
-        (session && (session.stationid || session.stationID || session.locationid)) ||
-        0,
-      ) || 60003760;
-    const guests = listOnlineGuestsInStation(stationID);
+      (session && (session.stationid || session.stationID)) || 0;
 
     return {
       type: "list",
-      items: guests,
+      items: getStationGuestTuples(stationID),
     };
   }
 
@@ -123,7 +123,14 @@ class StationService extends BaseService {
     // iterable. When populated, each entry will need at least:
     //   solarSystemID
     //   allianceID
-    return { type: "list", items: [] };
+    return buildAllianceSystemListPayload(listAllAllianceSystems());
+  }
+
+  Handle_GetSystemsForAlliance(args, session) {
+    const allianceID =
+      Number(args && args.length > 0 ? args[0] : session && (session.allianceID || session.allianceid)) ||
+      0;
+    return buildAllianceSystemListPayload(listAllianceSystems(allianceID));
   }
 
   // TODO: make this work

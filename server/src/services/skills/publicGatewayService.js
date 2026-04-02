@@ -3,8 +3,8 @@ const BaseService = require(path.join(__dirname, "../baseService"));
 const log = require(path.join(__dirname, "../../utils/logger"));
 
 class PublicGatewayService extends BaseService {
-  constructor() {
-    super("publicGateway");
+  constructor(name = "publicGateway") {
+    super(name);
   }
 
   callMethod(method, args, session, kwargs) {
@@ -34,13 +34,13 @@ class PublicGatewayService extends BaseService {
   }
 }
 
-// class PublicGatewaySvcAlias extends PublicGatewayService {
-//   constructor() {
-//     super("publicGatewaySvc");
-//   }
-// }
+class PublicGatewaySvcAlias extends PublicGatewayService {
+  constructor() {
+    super("publicGatewaySvc");
+  }
+}
 
 module.exports = {
   PublicGatewayService,
-  // PublicGatewaySvcAlias,
+  PublicGatewaySvcAlias,
 };

@@ -1,0 +1,826 @@
+// Proof-of-authorship note: Primary authorship and project direction for this research note belong to John Elysian.
+// This file is kept here as part of the EveJS proof-of-authorship record after repeated misattribution of the underlying work and claims that it was trivial.
+// If you reuse, discuss, or share this file, please credit it accurately.
+
+EvEJS StarMap Research
+Updated: 2026-03-12
+
+Scope
+- Track what the V23.02 StarMap is requesting from EvEJS.
+- Separate the immediate open/crash blocker from later overlay completeness work.
+- Note the StarMap-specific findings separately from the OMEGA / ship cosmetic gateway work.
+
+Current conclusion
+- The original StarMap open blocker was not the public gateway, OMEGA, or SKIN work.
+- The first fatal StarMap call was the legacy Macho service method:
+  - `structureDirectory.GetJumpBridgesWithMyAccess()`
+- That blocker is now resolved for the empty-data case.
+- `client/starlogs5.txt` is the first confirmed successful StarMap open in this repo state.
+- Practical conclusion:
+  - StarMap can now load with the current compatibility patches
+  - base topology and enough empty-state overlay contracts are in place for first open
+  - remaining work is now about completeness and fidelity, not the initial open crash
+
+Current status of live verification
+- `client/starlogs2.txt` is still a pre-second-patch run.
+- It confirms only the intermediate compatibility attempt:
+  - `retval=([], [])`
+  - followed by `ValueError: need more than 2 values to unpack`
+- It does not yet confirm the current source change to:
+  - `retval=([], [], [])`
+- Practical conclusion:
+  - a fresh server restart and fresh StarMap-open client log are still required
+  - until that exists, the current jump-bridge fix is code-verified but not yet live-verified
+  - update: `client/starlogs3.txt` now provides that fresh live run
+  - `GetJumpBridgesWithMyAccess` returned:
+    - `retval=([], [], [])`
+  - the client got past `LoadAllJumpBridges`
+  - the next StarMap blocker is now:
+    - `stationSvc.GetAllianceSystems()`
+  - current new crash:
+    - `TypeError: 'NoneType' object is not iterable`
+    - thrown from:
+      - `mapViewData.GetAllianceSolarSystems`
+      - via `mapFilterFactionEmpire._ConstructDataBySolarSystemID`
+  - update: `client/starlogs4.txt` moves one step further
+  - StarMap still gets past jump bridges
+  - it then survives the alliance-systems filter path far enough to reach `_ConstructAssets()`
+  - the next blocker is now:
+    - `charMgr.GetHomeStationRow()`
+  - current new crash:
+    - `AttributeError: 'NoneType' object has no attribute 'stationID'`
+    - thrown from:
+      - `mapView.ShowMyHomeStation`
+  - update: `client/starlogs5.txt` is the first no-exception StarMap run
+  - confirmed successful calls in that run:
+    - `GetJumpBridgesWithMyAccess -> ([], [], [])`
+    - `GetHomeStationRow -> KeyVal(...)`
+  - still observed in that run:
+    - `map.GetMyExtraMapInfo -> None`
+  - practical reading:
+    - `GetMyExtraMapInfo` returning `None` is tolerated in the current default StarMap-open path
+    - there is no observed crash in `starlogs5.txt`
+
+Recovered exact V23.02 jump-bridge contract
+- `client/EVE/tq/code.ccp` contains the live client modules as zipped `.pyj` bytecode.
+- The following modules were extracted and decompiled into:
+  - `_local/tmp_starmap_decomp`
+- Relevant recovered files:
+  - `mapView.py`
+  - `mapSvc.py`
+  - `starMapSvc.py`
+  - `structureDirectory.py`
+  - `fakeDataUtil.py`
+  - `insurgencyCampaignSvc.py`
+  - `campaignClientSnapshot.py`
+- Exact client decompile result from `mapView.py`:
+  - `jumpBridgesGates, hasAccessTo, hasNoAccessTo = sm.GetService('map').GetJumpBridgesWithMyAccess()`
+  - then:
+    - `for structureA, structureB in jumpBridgesGates:`
+    - `solarSystemA = structureA.solarSystemID`
+    - `solarSystemB = structureB.solarSystemID`
+    - `hasAccessToA = structureA.structureID in hasAccessTo`
+    - `hasAccessToB = structureB.structureID in hasAccessTo`
+- Exact client decompile result from `mapSvc.py`:
+  - `GetJumpBridgesWithMyAccess()` is only a client proxy
+  - it calls:
+    - `sm.RemoteSvc('structureDirectory').GetJumpBridgesWithMyAccess()`
+- Exact fake-data reference shape from `fakeDataUtil.py`:
+  - return value is:
+    - `(gateRet, hasAccessTo, hasNoAccessTo)`
+  - `gateRet` is a list of:
+    - `(KeyVal(solarSystemID=?, structureID=?), KeyVal(solarSystemID=?, structureID=?))`
+  - `hasAccessTo` is a set of structure IDs
+  - `hasNoAccessTo` is a set of structure IDs
+- Practical conclusion:
+  - the compatible server payload shape is now known
+  - for an empty-state response, `([], [], [])` is the correct top-level contract
+  - the EvEJS handler has been updated to return that shape
+  - syntax check and marshal round-trip passed locally
+  - a fresh live client run is still needed to confirm the StarMap gets past this call
+
+Exact StarMap open sequence in V23.02
+- Decompiled `mapView.py` shows `_ConstructScene()` does:
+  - `_ConstructInfrastructure()`
+  - `_ConstructAssetRequirements()`
+  - `_ConstructAssets(interestID)`
+  - `InitCameraFocus(zoomToItem)`
+- `_ConstructAssetRequirements()` does exactly:
+  - `CreateStarParticles()`
+  - `CreateJumpLineSet()`
+  - `CreateWorkforceTransportLineSet()`
+  - `LoadJumpLines()`
+  - `LoadAllJumpBridges()`
+- Practical conclusion:
+  - `LoadAllJumpBridges()` is the first dynamic StarMap overlay requirement in the main scene-build path
+  - if StarMap still dies before the map appears, it should die on this call or on the very next call made after this point
+
+What the client is doing on StarMap open
+- In `client/starlogs1.txt`:
+  - the client opens the Map window, builds the StarMap scene, and then calls `structureDirectory.GetJumpBridgesWithMyAccess()`
+  - the server replies with `retval=[]`
+  - the client crashes in:
+    - `eve/client/script/ui/shared/mapView/mapView.py(1628) LoadAllJumpBridges`
+    - called from `_ConstructAssetRequirements`
+- In `client/starlogs2.txt` after the first compatibility patch:
+  - the same StarMap open path runs
+  - the server now replies with `retval=([], [])`
+  - the same `LoadAllJumpBridges` frame still crashes
+  - the error changes from `need more than 0 values to unpack` to `need more than 2 values to unpack`
+- Practical reading of those two runs:
+  - the first patch changed the shape
+  - but did not match the real contract
+  - the StarMap dies before any later StarMap service call becomes visible in these logs
+- In `client/starlogs3.txt` after the second compatibility patch:
+  - `structureDirectory::GetJumpBridgesWithMyAccess args=(), retval=([], [], [])`
+  - the client then calls:
+    - `stationSvc::GetAllianceSystems args=()`
+  - the server replies with:
+    - `retval=None`
+  - the client crashes in:
+    - `mapViewData.GetAllianceSolarSystems`
+    - called from:
+      - `mapFilterFactionEmpire._ConstructDataBySolarSystemID`
+      - `mapViewFiltered.GetActiveFilter`
+      - `mapViewWorld.UpdateMapViewColorMode`
+- Practical reading of the third run:
+  - the jump-bridge blocker is resolved
+  - StarMap is now failing in the first active color/filter construction path
+  - the next compatibility target is `stationSvc.GetAllianceSystems`
+- In `client/starlogs4.txt` after the alliance-systems patch:
+  - `structureDirectory::GetJumpBridgesWithMyAccess args=(), retval=([], [], [])`
+  - `map::GetMyExtraMapInfo args=(), retval=None`
+  - `charMgr::GetHomeStationRow args=(), retval=None`
+  - the client crashes in:
+    - `mapView.py(606) ShowMyHomeStation`
+  - local variables in the exception show:
+    - `homeStationRow = None`
+- Practical reading of the fourth run:
+  - the jump-bridge fix held
+  - the alliance-systems fix held enough to move deeper into asset construction
+  - the next hard blocker is the home-station row contract on `charMgr`
+  - `GetMyExtraMapInfo` also returned `None` in the same run, but it is not the immediate crash site
+- In `client/starlogs5.txt` after the home-station-row patch:
+  - `structureDirectory::GetJumpBridgesWithMyAccess args=(), retval=([], [], [])`
+  - `map::GetMyExtraMapInfo args=(), retval=None`
+  - `charMgr::GetHomeStationRow args=(), retval=KeyVal(...)`
+  - no client exception follows
+  - the map remains open long enough for:
+    - layout-mode button interactions
+    - window focus/unfocus analytics
+    - later calendar calls
+- Practical reading of the fifth run:
+  - this is the first confirmed successful StarMap load
+  - the empty-state compatibility layer is now sufficient for initial open
+  - future work can move from crash triage to data completeness
+
+What has already been done
+- `server/src/services/structure/structureDirectoryService.js`
+  - added `Handle_GetJumpBridgesWithMyAccess`
+  - first pass changed the response from a plain empty list to a 2-tuple of empty lists
+  - second pass now changes it to a 3-tuple of empty lists, matching the recovered client unpack contract
+  - local verification completed:
+    - `node --check server/src/services/structure/structureDirectoryService.js`
+    - marshal encode/decode round-trip returned three inner empty lists as expected
+- `server/src/services/map/insurgencySolarsystemService.js`
+  - `Handle_GetLocalCampaignClientSnapshot` previously returned `[]`
+  - decompiled `insurgencyCampaignSvc.py` confirms the exact unpack contract is:
+    - `solarsystemID, campaignSnapshot = sm.RemoteSvc('insurgencySolarsystem').GetLocalCampaignClientSnapshot()`
+  - the no-campaign response is now patched to:
+    - `(currentSolarSystemID, None)`
+  - local verification completed:
+    - `node --check server/src/services/map/insurgencySolarsystemService.js`
+    - marshal encode/decode round-trip returned `[30000142, null]`
+- `server/src/services/station/stationService.js`
+  - added `Handle_GetAllianceSystems`
+  - decompiled `starMapSvc.py` confirms the client does:
+    - `allianceSystemCache = sm.RemoteSvc('stationSvc').GetAllianceSystems()`
+    - `for x in allianceSystemCache:`
+    - `allianceSolarSystems[x.solarSystemID] = x.allianceID`
+  - the no-alliance-data response is now patched to:
+    - `[]`
+- `server/src/services/map/fwWarzoneSolarsystemService.js`
+  - added `Handle_GetAllWarzonesOccupationStates`
+  - added `Handle_GetAllWarzonesOccupationStatesUncached`
+  - decompiled `fwWarzoneSvc.py` confirms the client does:
+    - `occupationStatesBySolarsystemByWarzone = sm.RemoteSvc('fwWarzoneSolarsystem').GetAllWarzonesOccupationStates()`
+    - then:
+      - `for occupationStatesBySolarsystem in occupationStatesBySolarsystemByWarzone.itervalues():`
+  - the no-warzone-data response is now patched to:
+    - `{}`
+- `server/src/services/character/charMgrService.js`
+  - added `Handle_GetHomeStationRow`
+  - added lowercase aliases:
+    - `getHomeStationRow`
+    - `get_home_station_row`
+  - decompiled `mapView.py` confirms the client does:
+    - `homeStationRow = sm.GetService('charactersheet').GetHomeStationRow()`
+    - then reads:
+      - `homeStationRow.stationID`
+      - `homeStationRow.solarSystemID`
+      - `homeStationRow.stationTypeID`
+  - current source now reuses the existing home-station KeyVal payload for this call
+  - local verification completed:
+    - `node --check server/src/services/character/charMgrService.js`
+    - marshal encode/decode round-trip preserved the expected home-station fields
+- Result of the current patch chain
+  - `client/starlogs5.txt` confirms first successful StarMap open
+  - there is no observed StarMap exception in that run
+- That patch proved something useful:
+  - the client is unpacking multiple top-level values from `GetJumpBridgesWithMyAccess`
+  - and the decompile now confirms the exact 3-slot contract
+- Existing StarMap-adjacent stubs already in the repo:
+  - `map.GetSecurityModifiedSystems`
+  - `map.GetStationInfo`
+  - `fwWarzoneSolarsystem.GetLocalOccupationState`
+  - `insurgencySolarsystem.GetAllVisibleCampaigns`
+  - `insurgencySolarsystem.GetLocalCampaignClientSnapshot`
+  - `structureDirectory.GetMyDockableStructures`
+  - `structureDirectory.GetStructures`
+  - `structureDirectory.GetStructuresInSystem`
+  - `structureDirectory.GetSolarsystemStructures`
+  - `structureDirectory.GetStructureMapData`
+
+What is already confirmed safe enough
+- `map.GetSecurityModifiedSystems`
+  - returning `util.KeyVal` with an `Index` token works for this client build
+  - seen in `client/warplogs.txt`
+- `map.GetStationInfo`
+  - returning a rowset works
+  - seen repeatedly in `client/loginlogs*.txt`, `client/WorkingLogin.txt`, and `client/TestLogin.txt`
+- `fwWarzoneSolarsystem.GetLocalOccupationState`
+  - returning `(solarSystemID, None)` works
+  - seen repeatedly in login and warp logs
+- `insurgencySolarsystem.GetAllVisibleCampaigns`
+  - returning `[]` is tolerated in observed login/warp flows
+  - decompiled `insurgencyCampaignSvc.py` confirms that the client simply iterates this result
+  - when populated, each element should be a `CampaignClientSnapshot`
+- `structureDirectory.GetMyDockableStructures`
+  - returning `[]` is tolerated in observed login flows
+- `structureDirectory.GetStructureMapData`
+  - returning `[]` is tolerated in observed warp flows
+  - example: `client/warplogs10.txt` shows `GetStructureMapData args=(30000142L,), retval=[]` and no immediate crash after that call
+- `stationSvc.GetAllianceSystems`
+  - decompiled `starMapSvc.py` confirms an empty iterable is safe
+  - the client only iterates the result and reads:
+    - `solarSystemID`
+    - `allianceID`
+  - for the no-data case, `[]` is the correct safe fallback
+- `fwWarzoneSolarsystem.GetAllWarzonesOccupationStates`
+  - decompiled `fwWarzoneSvc.py` confirms the client expects a dict-like object
+  - the client calls `.itervalues()` on the outer result
+  - for the no-data case, `{}` is the correct safe fallback
+- `charMgr.GetHomeStationRow`
+  - decompiled `mapView.py` confirms the current StarMap path requires:
+    - `stationID`
+    - `solarSystemID`
+    - `stationTypeID`
+  - `None` is invalid
+  - reusing the existing home-station KeyVal payload is sufficient for the current caller
+- `map.GetMyExtraMapInfo`
+  - `client/starlogs5.txt` shows `retval=None`
+  - no immediate crash follows in the successful default StarMap-open flow
+  - practical conclusion:
+    - `None` is tolerated here for the current tested path
+    - exact contract is still unrecovered and should be documented later if a new caller depends on it
+
+Where generic empty fallbacks are not enough
+- `structureDirectory.GetJumpBridgesWithMyAccess`
+  - `[]` is invalid
+  - `( [], [] )` is also invalid
+  - recovered compatible empty contract is:
+    - `( [], [], [] )`
+  - when populated, the first slot must contain pairs of endpoint objects with:
+    - `solarSystemID`
+    - `structureID`
+- `insurgencySolarsystem.GetLocalCampaignClientSnapshot`
+  - older runs returned `None`
+  - later runs returned `[]`
+  - decompiled `insurgencyCampaignSvc.py` now confirms the exact contract:
+    - `(solarsystemID, campaignSnapshotOrNone)`
+  - `client/undock2.txt` shows:
+    - `retval=[]`
+    - then `ValueError: need more than 0 values to unpack`
+    - thrown from `insurgencyCampaignSvc.GetLocalCampaignSnapshot`
+  - current source has now been patched to return:
+    - `(currentSolarSystemID, None)`
+- Practical conclusion:
+  - generic empty-list fallbacks are not universally safe
+  - some modern client paths are unpacking fixed tuples or expecting structured rowset/object payloads
+
+Recovered exact home-station-row expectation
+- Extracted and decompiled from `client/EVE/tq/code.ccp`:
+  - `eve/client/script/ui/shared/mapView/mapView.py`
+- Exact client usage in `ShowMyHomeStation()` and `LookAtHomeStation()`:
+  - `homeStationRow = sm.GetService('charactersheet').GetHomeStationRow()`
+  - `homeStationID = homeStationRow.stationID`
+  - `solarSystemID = homeStationRow.solarSystemID`
+  - if `homeStationID` is not a classic station ID:
+    - `stationInfo = Bundle(stationID=homeStationID, stationTypeID=homeStationRow.stationTypeID)`
+- Practical conclusion:
+  - the current StarMap path does not require a complex rowset here
+  - it only requires an attribute-bearing object with those three fields
+  - `util.KeyVal` is compatible for this caller
+
+Recovered exact alliance-systems expectation
+- Extracted and decompiled from `client/EVE/tq/code.ccp`:
+  - `eve/client/script/ui/shared/mapView/mapViewData.py`
+  - `eve/client/script/ui/shared/mapView/filters/mapFilterFactionEmpire.py`
+- Exact client decompile result from `mapViewData.py`:
+  - `allianceSystemCache = sm.RemoteSvc('stationSvc').GetAllianceSystems()`
+  - `for x in allianceSystemCache:`
+  - `allianceSolarSystems[x.solarSystemID] = x.allianceID`
+- Exact client usage from `mapFilterFactionEmpire.py`:
+  - StarMap faction/empire coloring calls `mapViewData.GetAllianceSolarSystems()`
+  - then asks `starmap._GetFactionIDFromSolarSystem(...)` for each known solar system
+- Practical conclusion:
+  - `None` is invalid
+  - empty iterable is valid
+  - populated entries need at least:
+    - `solarSystemID`
+    - `allianceID`
+
+Recovered exact FW occupation-state expectation
+- Extracted and decompiled from `client/EVE/tq/code.ccp`:
+  - `eve/client/script/ui/services/fwWarzoneSvc.py`
+- Exact client decompile result:
+  - `GetAllOccupationStates()` returns:
+    - `sm.RemoteSvc('fwWarzoneSolarsystem').GetAllWarzonesOccupationStates()`
+  - callers then do:
+    - `for occupationStatesBySolarsystem in occupationStatesBySolarsystemByWarzone.itervalues():`
+    - `for solarsystemID, occupationState in occupationStatesBySolarsystem.iteritems():`
+- Practical conclusion:
+  - the outer object must be dict-like
+  - each value must also be dict-like when populated
+  - empty-state contract is:
+    - `{}`
+
+Recovered exact insurgency snapshot contract
+- Extracted and decompiled from `client/EVE/tq/code.ccp`:
+  - `eve/client/script/ui/services/insurgencyCampaignSvc.py`
+  - `pirateinsurgency/campaignClientSnapshot.py`
+- Exact client decompile result from `insurgencyCampaignSvc.py`:
+  - `solarsystemID, campaignSnapshot = sm.RemoteSvc('insurgencySolarsystem').GetLocalCampaignClientSnapshot()`
+  - if the returned solar-system ID matches `session.solarsystemid2`, the client stores `campaignSnapshot`
+  - the no-campaign case is therefore:
+    - `(currentSolarSystemID, None)`
+- Exact structure of a populated `CampaignClientSnapshot` from `campaignClientSnapshot.py`:
+  - constructor args are:
+    - `campaignID`
+    - `fsmState`
+    - `stateExpiryTimestamp`
+    - `warzoneID`
+    - `originSolarsystemID`
+    - `coveredSolarsystemIDs`
+    - `structureID`
+    - `piratePointsRequired`
+    - `antipiratePointsRequired`
+    - `piratePointsScored`
+    - `antipiratePointsScored`
+    - `pirateFactionID`
+- Practical conclusion:
+  - empty-state support is now known exactly
+  - populated campaign support is also now implementable later without guessing the object shape
+
+Recovered structure-side field expectations
+- Decompiled `mapSvc.py` shows `GetStructureInfo(structureID)` is used as an object with at least:
+  - `itemName`
+  - `typeID`
+  - `solarSystemID`
+- Decompiled `structureDirectory.py` shows `GetMyCharacterStructures()` returns a mapping that is used like:
+  - `for structureID, structureInfo in myDockableLocations.iteritems():`
+  - `if structures.SERVICE_MARKET in structureInfo['services']:`
+- Decompiled `mapView.py` and `mapSvc.py` show `GetStructureMapData(solarsystemID)` entries are used with at least:
+  - `itemID`
+  - `x`
+  - `y`
+  - `z`
+- Additional practical implication:
+  - `GetStructureMapData()` entries are also inserted into local system item collections via `local.InsertNew(structure)`
+  - so populated entries likely need to be row-compatible with local map/location rows, not just bare coordinates
+- Practical conclusion:
+  - no-data `[]` is safe for some flows
+  - but once EvEJS starts returning real structure overlays, the structure payloads need to carry more than an ID list
+
+Current server-side reality
+- StarMap's immediate blocker is on the legacy Macho service layer:
+  - `structureDirectory`
+- This is separate from the modern `eve_public.*` gateway/microservice path used by OMEGA and ship cosmetics.
+- The repo already contains static world data in `newDatabase`:
+  - `server/src/newDatabase/data/solarSystems/data.json`
+  - `server/src/newDatabase/data/stargates/data.json`
+- `server/src/space/worldData.js` already loads:
+  - solar systems
+  - stations
+  - celestials
+  - stargates
+- `server/src/newDatabase/data/solarSystems/data.json` currently reports:
+  - `count: 8437`
+- Practical conclusion:
+  - this does not look like "we forgot to add solar systems to the database"
+  - the immediate blocker is exposing the right StarMap service contracts
+  - later overlay work may still need to read from these static datasets
+
+What the current EvEJS server does not appear to have yet
+- A repo search in `server/src` did not find an existing real backend implementation for:
+  - `GetStructureInfo`
+  - `GetMyCharacterStructures`
+  - `GetMyCorporationStructures`
+  - `CheckMyDockingAccessToStructures`
+  - `GetAllianceSystems`
+  - `GetAllWarzonesOccupationStates`
+  - jump-bridge persistence or routing data
+- Additional note from `starlogs4.txt`:
+  - `map.GetMyExtraMapInfo` returned `None`
+  - it was not the immediate crash site in that run
+  - its contract is still worth recovering if a later log surfaces it as the next blocker
+- A repo search in `server/src/newDatabase/data` did not turn up a dedicated structure-map or jump-bridge dataset.
+- Practical conclusion:
+  - the current compatibility patches solve contract crashes
+  - but populated StarMap structure/jump-bridge overlays will likely require a new data source or new persistence layer
+
+What is probably not part of the default StarMap-open blocker
+- Decompiled `starMapSvc.py` defaults `starscolorby` to:
+  - `mapcommon.STARMODE_SECURITY`
+- Pirate insurgency star-color modes exist, but they are optional filter modes:
+  - `STARMODE_INSURGENCY`
+  - `STARMODE_INSURGENCY_CORRUPTION`
+  - `STARMODE_INSURGENCY_SUPPRESSION`
+- Practical conclusion:
+  - insurgency campaign data is important for broader client stability
+  - but it is probably not the first thing required for a plain default StarMap open
+
+Answer to the solar-system question
+- We probably do not need to add a brand-new list of solar systems just to make StarMap open.
+- The repo already has a full `solarSystems` dataset and a `stargates` dataset.
+- In the StarMap crash logs, the client loads StarMap visual assets locally before the fatal service response arrives.
+- The first observed server dependency during StarMap open is the jump-bridge overlay call, not a full "give me all solar systems" request.
+- What we are more likely to need is:
+  - correct jump-bridge link data
+  - correct structure overlay data
+  - correct insurgency / FW overlay contracts
+- In other words:
+  - the problem is more about service return shape and dynamic overlay content
+  - not about missing the base map list on disk
+
+Crucible reference notes
+- The Crucible reference is useful for concepts, but not as a drop-in payload reference for V23.02.
+- It does not expose `structureDirectory.GetJumpBridgesWithMyAccess`.
+- Its older `map` service instead exposes:
+  - `GetLinkableJumpArrays`
+  - `GetAllianceJumpBridges`
+- In `C:\evemu_Crucible\src\eve-server\map\MapService.cpp`:
+  - `GetLinkableJumpArrays` returns a list of 2-tuples
+  - `GetAllianceJumpBridges` is documented as:
+    - `bridgesByLocation = m.GetAllianceJumpBridges()`
+    - `for toLocID, fromLocID in bridgesByLocation:`
+- In `C:\evemu_Crucible\src\eve-server\pos\PosMgrDB.cpp`:
+  - corp/alliance jump-array queries pull:
+    - `itemID`
+    - `systemID`
+    - `toItemID`
+    - `toTypeID`
+    - `toSystemID`
+- Useful inference:
+  - jump-bridge overlays are probably modeled as linked endpoint data
+  - not just a flat list of structure records
+- Important caveat:
+  - Crucible method names and marshaled shapes are older
+  - they should be treated as hints only
+
+Local decompile status
+- `_local/reference/client-decompile` is useful, but incomplete for this problem.
+- We now do have a local decompile of the relevant StarMap modules, extracted from:
+  - `client/EVE/tq/code.ccp`
+- Working extraction output now staged under:
+  - `_local/tmp_starmap_decomp`
+- That extraction resolved the exact `GetJumpBridgesWithMyAccess` unpack contract.
+- Remaining unknowns are no longer about tuple arity.
+- Remaining unknowns are about:
+  - whether a fully empty 3-tuple gets StarMap past this point cleanly
+  - and, once it does, what the next required dynamic overlay contract will be
+
+Most likely next implementation work
+- Recover the real V23.02 contract for `structureDirectory.GetJumpBridgesWithMyAccess`.
+- That exact contract is now recovered.
+- Next:
+  - confirm the empty 3-slot response gets StarMap past the current crash
+  - then add actual jump-bridge backing data to the server side
+- Expected data likely includes:
+  - source structure/item ID
+  - source solar system ID
+  - destination structure/item ID
+  - destination solar system ID
+  - ownership / access visibility
+  - possibly one or more grouped/indexed views if the method really returns multiple top-level values
+- Re-test StarMap after that and capture the next request that appears after jump bridges.
+- After StarMap gets past jump bridges, likely follow-up contracts to validate are:
+  - `GetStructureMapData`
+  - `GetLocalCampaignClientSnapshot`
+  - any FW or sovereignty-style overlay calls that become visible next
+
+Best current working theory
+- StarMap rendering itself is mostly client-side/static.
+- EvEJS is already carrying the static world data needed for system and stargate identity.
+- The initial open blocker chain was a sequence of dynamic overlay/service contracts:
+  - jump bridges
+  - alliance systems
+  - FW occupation-state dict shape
+  - home-station row
+- That sequence is now patched far enough for first successful open.
+- The next phase is likely:
+  - better populated jump-bridge data
+  - populated structure overlays
+  - later filter/overlay fidelity rather than open-stability
+
+Short version
+- No, the immediate issue was not "missing solar systems in `newDatabase`".
+- The first-load StarMap crash chain is now resolved.
+- `client/starlogs5.txt` is the first confirmed successful StarMap open.
+- The next work is no longer "make it open at all".
+- The next work is "make StarMap data richer and more correct".
+
+Update: `client/starlogs6.txt`
+- `client/starlogs6.txt` is a post-first-open run.
+- It does not show a regression to the original StarMap-open crash.
+- Practical conclusion:
+  - StarMap still opens
+  - the remaining issues are now in deeper filters, overlays, and expanded-solar-system paths
+- New issue 1: pilot-count color mode
+  - `machoNet::GetClusterGameStatisticsForClient args=('EVE', ({}, {}, 0)), retval=None`
+  - the client then crashes in:
+    - `mapSvc.GetInfoOnPilotsBySolarSystemIDs`
+    - via `mapFilterNumPilots._ConstructDataBySolarSystemID`
+  - local decompile in `_local/tmp_starmap_decomp/mapSvc.py` shows:
+    - `sol, sta, statDivisor = sm.ProxySvc('machoNet').GetClusterGameStatisticsForClient('EVE', ({}, {}, 0))`
+    - then:
+      - `for sfoo in sol.iterkeys():`
+      - `amountDocked = dockedInStationRawCount / float(statDivisor)`
+  - practical conclusion:
+    - `None` is invalid
+    - recovered exact arity is now:
+      - `(sol, sta, statDivisor)`
+    - inference:
+      - a safe empty-state response probably needs two dict-like values and a nonzero divisor
+- New issue 2: expanded solar-system skyhook overlay
+  - `structureDirectory::GetStructureMapData args=(30000142,), retval=[]`
+  - no immediate crash follows that empty structure-map response
+  - the actual failure is:
+    - `RequestException(status_code=404, status_message=eve.js local gateway has no handler for eve_public.sovereignty.skyhook.api.GetTheftVulnerableSkyhooksInSolarSystemRequest)`
+  - stack path in `starlogs6.txt`:
+    - `mapView._ExpandSelectedSolarSystem`
+    - `mapViewWorld.ConstructExpandedSolarsystem`
+    - `mapViewWorld._ConstructSolarSystemVulnerableSkyhooks`
+    - `sovereigntyResourceSvc.GetPlanetIDsAndTheftVulnerabilityData`
+  - local decompile in `_local/tmp_starmap_decomp/mapViewWorld.py` shows:
+    - `_ConstructSolarSystemVulnerableSkyhooks` catches `DataUnavailableError`
+    - it does not catch a generic 404-style gateway request failure
+  - practical conclusion:
+    - empty `GetStructureMapData` is still tolerated here
+    - the current blocker for expanded skyhook overlays is missing public-gateway coverage, not the structure-directory stub
+- New issue 3: ore-anomaly / ore-availability path
+  - `dungeonInstanceCacheMgr::GetOreAnomaliesCountInRange args=(), retval=None`
+  - `dungeonInstanceCacheMgr::GetOreAnomalyInstances args=(), retval=None`
+  - practical conclusion:
+    - another later StarMap side-panel / color-mode path is still missing a safe contract
+    - this is no longer part of the initial-open blocker chain
+- New issue 4: map station info quality
+  - `map::GetStationInfo args=(), retval=<Rowset ... stationID:None ... solarSystemID:30000142>`
+  - practical conclusion:
+    - the rowset wrapper exists
+    - but at least one current caller is still receiving `stationID=None`
+    - this may be tolerated in some flows and invalid in others
+- Still observed:
+  - `map::GetMyExtraMapInfo args=(), retval=None`
+  - as in `starlogs5.txt`, it is still not the immediate crash source in this run
+- Separate non-StarMap issue seen in the same log:
+  - `achievements/client/eventHandler.py -> agents.py`
+  - `IndexError: list index out of range`
+  - this is destination/career-agent related noise, not the current StarMap-open blocker
+- Practical conclusion from `starlogs6.txt`
+  - first-open StarMap stability is holding
+  - the next implementation phase is:
+    - richer StarMap filters
+    - expanded-system overlays
+    - modern public-gateway coverage for skyhook-related calls
+    - cleaner map statistics contracts
+- Implemented after `starlogs6.txt`
+  - `server/src/services/machoNet/machoNetService.js`
+    - added `Handle_GetClusterGameStatisticsForClient`
+    - current safe empty-state response:
+      - `({}, {}, 1)`
+    - practical effect:
+      - the pilot-count StarMap filter no longer receives `None` for the 3-slot cluster-statistics contract
+  - `server/src/_secondary/express/publicGatewayLocal.js`
+    - added empty-success routing for:
+      - `eve_public.sovereignty.skyhook.api.GetTheftVulnerableSkyhooksInSolarSystemRequest`
+    - practical effect:
+      - the expanded-solar-system skyhook path should now get a typed empty response instead of a 404
+  - local verification completed:
+    - `node --check server/src/services/machoNet/machoNetService.js`
+    - `node --check server/src/_secondary/express/publicGatewayLocal.js`
+    - direct handler invocation returned:
+      - `[{}, {}, 1]`
+- See also:
+  - `docs/SOLARSYSTEM RESEARCH.txt`
+
+Update: `client/starlogs7.txt`
+- `client/starlogs7.txt` is a clean baseline StarMap-open run after the two compatibility patches above.
+- Important limitation:
+  - this run does not exercise:
+    - `machoNet.GetClusterGameStatisticsForClient`
+    - `eve_public.sovereignty.skyhook.api.GetTheftVulnerableSkyhooksInSolarSystemRequest`
+  - practical conclusion:
+    - `starlogs7.txt` does not live-verify those two newest fixes yet
+- Still observed:
+  - `map::GetMyExtraMapInfo args=(), retval=None`
+  - no immediate open crash follows
+- New deeper issue surfaced in this run:
+  - when changing StarMap color mode, the client calls:
+    - `map::GetStationInfo`
+  - EvEJS currently returns a rowset with:
+    - `charID`
+    - `online`
+    - `stationID`
+    - `solarSystemID`
+  - the client then crashes in:
+    - `mapFilterServices._ConstructDataBySolarSystemID`
+  - exact error:
+    - `AttributeError: ownerID`
+  - exception local row contents show:
+    - `<Row charID:140000003,online:True,stationID:None,solarSystemID:30000142>`
+- Practical conclusion from `starlogs7.txt`
+  - the next StarMap data-quality fix is likely `map.GetStationInfo`
+  - the rowset needs at least one more field for this caller:
+    - `ownerID`
+  - `stationID=None` is also suspicious and may be invalid for some map-service heatmap modes
+
+Waypoint / destination persistence
+- Decompiled `_local/tmp_starmap_decomp/starMapSvc.py` now answers this directly.
+- Exact local helper definitions:
+  - `GetCharUiSetting(name, default) -> settings.char.ui.Get(name, default)`
+  - `SetCharUiSetting(name, value) -> settings.char.ui.Set(name, value)`
+- Exact waypoint storage path:
+  - `SetWaypoint(...)` writes:
+    - `SetCharUiSetting('autopilot_waypoints', waypoints)`
+  - `SetWaypoints(...)` writes:
+    - `SetCharUiSetting('autopilot_waypoints', waypoints)`
+  - `GetWaypoints()` reads:
+    - `GetCharUiSetting('autopilot_waypoints', [])`
+- Exact route-building path:
+  - `UpdateRoute()` logs:
+    - `UpdateRoute - waypoints ...`
+    - `Getting route from waypoints`
+  - then calls:
+    - `self.clientPathfinderService.GetWaypointPath(fullWaypointList)`
+- Practical conclusion:
+  - the remembered waypoint list is client-side character UI state
+  - the route/path itself is also computed client-side from that waypoint list
+  - in the current EvEJS repo state, this is not being stored or served by the Node server
+- Important distinction:
+  - session/autopilot timing still exists as a client session concept
+  - but the waypoint list itself is not currently a server-owned source of truth here
+
+Implemented after `client/starlogs7.txt`
+- `server/src/services/map/mapService.js`
+  - replaced the old `GetStationInfo` stub that returned one fake per-session row:
+    - `charID`
+    - `online`
+    - `stationID`
+    - `solarSystemID`
+  - new behavior:
+    - returns a universe-wide rowset built from `server/src/newDatabase/data/stations/data.json`
+    - one row per static station
+  - current row header:
+    - `stationID`
+    - `solarSystemID`
+    - `operationID`
+    - `stationTypeID`
+    - `ownerID`
+    - `serviceMask`
+    - `constellationID`
+    - `regionID`
+  - current row source mapping:
+    - `ownerID = corporationID` from the static station row
+    - this matches the older Crucible station ownership model and fits the V23.02 client crash site in `mapFilterServices`
+  - practical effect:
+    - StarMap station/service color modes should no longer die immediately on missing `ownerID`
+    - `stationID=None` for the in-space session case is also eliminated, because the rowset is now driven by real static station rows
+- Important nuance:
+  - `serviceMask` is still a shared fallback mask built from `server/src/services/_shared/stationStaticData.js`
+  - this is good enough for payload compatibility and likely enough to get past the current crash
+  - but it is probably not yet a perfect representation of per-operation NPC station services
+  - older Crucible reference shows the more correct model:
+    - station rows provide `operationID`
+    - a separate `staOperationServices` table maps operation IDs to service IDs
+  - if a later StarMap mode still looks wrong rather than crashing, the next refinement is probably:
+    - recover or recreate `operationID -> service set -> serviceMask`
+
+Practical model clarification
+- `map.GetStationInfo` is not about loading runtime station scenes.
+- It is a static universe-data query for legacy stations.
+- Upwell / modern player structures still live on the separate structure-directory / gateway path.
+- So:
+  - NPC stations come from `newDatabase` static data
+  - active loaded solar-system runtime is not required for this map filter
+
+Update: `client/starlogs8.txt`
+- `client/starlogs8.txt` does not show the old `map.GetStationInfo -> ownerID` crash.
+- Important limitation:
+  - this run did not exercise `map.GetStationInfo`
+  - it exercised a different station-related StarMap mode:
+    - `mapview2_colormode = 10`
+    - `map::GetStationCount`
+- New failure:
+  - `map::GetStationCount args=(), retval=None`
+  - client crash:
+    - `TypeError: 'NoneType' object is not iterable`
+  - exact client path:
+    - `mapFilterStationCount._ConstructDataBySolarSystemID`
+- Exact V23.02 client contract recovered from `code.ccp`
+  - `eve/client/script/ui/shared/mapView/filters/mapFilterStationCount.py`
+  - decompiled logic:
+    - `starmap.stationCountCache = sm.RemoteSvc('map').GetStationCount()`
+    - `return self._PrepareStandardColorData(dict(history), hintFunc=...)`
+  - practical conclusion:
+    - `GetStationCount` only needs to return an iterable of 2-tuples:
+      - `(solarSystemID, stationCount)`
+- Implemented after `client/starlogs8.txt`
+  - `server/src/services/map/mapService.js`
+    - added `Handle_GetStationCount`
+    - current behavior:
+      - builds counts from static `worldData` station rows
+      - returns all known solar systems, including zero-count systems
+      - return shape:
+        - `[(solarSystemID, stationCount), ...]`
+  - local verification:
+    - `node --check server/src/services/map/mapService.js`
+    - direct invocation returned:
+      - `8437` rows
+      - example:
+        - `30000142 -> 15` for Jita
+- Practical conclusion from `starlogs8.txt`
+  - the previous `GetStationInfo` fix is still not disproven, but this log does not directly verify it
+  - the next immediate blocker for station-related StarMap modes was `GetStationCount`
+  - that contract is now implemented
+
+Checkpoint: current StarMap stop point
+- As of March 12, 2026, StarMap base open is working.
+- User-verified after the latest map-service patches:
+  - station services heatmap is working
+  - station count heatmap is working
+- Practical meaning:
+  - the two station-related blockers identified in `starlogs7.txt` and `starlogs8.txt` are resolved well enough for current gameplay/testing
+  - StarMap no longer appears blocked on some missing foundational universe dataset
+
+What is currently known to be good
+- Base StarMap open path
+- Jump bridge empty-state compatibility
+- Home-station marker path
+- Alliance systems empty-state compatibility
+- FW occupation-state empty-state compatibility
+- Local insurgency snapshot empty-state compatibility
+- Station services heatmap
+- Station count heatmap
+
+Important architecture conclusions to preserve
+- Legacy NPC-station map filters are driven from static universe data, not active loaded scenes.
+- Source of truth for those filters:
+  - `server/src/newDatabase/data/stations/data.json`
+  - surfaced through `server/src/space/worldData.js`
+- Active runtime scenes are still the correct source for:
+  - in-space players
+  - live ships/entities
+  - future real per-system activity stats
+- Upwell structures / modern sovereignty overlays are a separate path:
+  - structure directory services
+  - public gateway handlers
+
+If resumed later, the next likely StarMap work is
+- Validate or improve pilot-count color modes:
+  - `machoNet.GetClusterGameStatisticsForClient`
+  - current server contract is compatibility-oriented, not real cluster statistics
+- Validate or improve expanded solar-system overlays:
+  - skyhook gateway path
+  - structure overlay richness
+- Add safe empty contracts for any remaining optional map filters that still return `None`
+  - likely candidates remain ore-anomaly / dungeon side paths if they get exercised
+- Improve data correctness, not just compatibility:
+  - per-operation station service masks instead of the current shared fallback
+  - real per-system stats for jumps, kills, docked/in-space population
+  - richer structure/jump-bridge data instead of empty compatibility responses
+
+Recommended restart point for the next AI
+- Read this file from:
+  - `Update: client/starlogs6.txt`
+- Then read:
+  - `Update: client/starlogs7.txt`
+  - `Update: client/starlogs8.txt`
+- Then check current server implementations in:
+  - `server/src/services/map/mapService.js`
+  - `server/src/services/machoNet/machoNetService.js`
+  - `server/src/_secondary/express/publicGatewayLocal.js`
+  - `server/src/services/structure/structureDirectoryService.js`
+  - `server/src/services/character/charMgrService.js`
+- If doing deeper runtime/statistics work, also read:
+  - `docs/SOLARSYSTEM RESEARCH.txt`

@@ -1,6 +1,6 @@
 const path = require("path");
 
-const database = require(path.join(__dirname, "../database"));
+const database = require(path.join(__dirname, "../newDatabase"));
 const log = require(path.join(__dirname, "./logger"));
 const worldData = require(path.join(__dirname, "../space/worldData"));
 const {
@@ -69,6 +69,7 @@ function buildStartupDataSummary() {
       stations: world.stations.length,
       stationTypes: world.stationTypes.length,
       celestials: world.celestials.length,
+      asteroidBelts: world.asteroidBelts.length,
       stargates: world.stargates.length,
       stargateTypes: world.stargateTypes.length,
     },
@@ -101,7 +102,7 @@ function buildStartupDataSummary() {
 function formatStartupDataSummary(summary = buildStartupDataSummary()) {
   return [
     `[Startup] Runtime: ${summary.runtime.accounts} accounts, ${summary.runtime.characters} characters, ${summary.runtime.items} items`,
-    `[Startup] Space: ${summary.space.solarSystems} solar systems, ${summary.space.stations} stations, ${summary.space.stationTypes} station types, ${summary.space.celestials} celestials, ${summary.space.stargates} stargates, ${summary.space.stargateTypes} stargate types`,
+    `[Startup] Space: ${summary.space.solarSystems} solar systems, ${summary.space.stations} stations, ${summary.space.stationTypes} station types, ${summary.space.celestials} celestials, ${summary.space.asteroidBelts} asteroid belts, ${summary.space.stargates} stargates, ${summary.space.stargateTypes} stargate types`,
     `[Startup] Reference: ${summary.reference.shipTypes} ship types, ${summary.reference.skillTypes} skill types, ${summary.reference.movementAttributes} movement profiles`,
     `[Startup] Cosmetics: ${summary.cosmetics.skins} skins, ${summary.cosmetics.shipTypes} skinnable hull mappings, ${summary.cosmetics.materials} materials, ${summary.cosmetics.licenseTypes} license types, ${summary.runtime.appliedShipSkins} applied ship skins, ${summary.runtime.characterSkinOverrides} character skin overrides`,
   ];

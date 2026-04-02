@@ -1,5 +1,13 @@
 const BaseService = require("../baseService");
 const log = require("../../utils/logger");
+const {
+  getDevelopmentIndicesForSystem,
+  listAllDevelopmentIndices,
+} = require("../sovereignty/sovState");
+const {
+  buildAllDevelopmentIndicesPayload,
+  buildDevelopmentIndicesForSystemPayload,
+} = require("../sovereignty/sovPayloads");
 
 class DevIndexManagerService extends BaseService {
   constructor() {
@@ -21,7 +29,14 @@ class DevIndexManagerService extends BaseService {
     // solar5.txt / solar6.txt show sovSvc.GetIndexInfoForSolarsystem calling
     // .get(...) on the returned object. The no-index-data case must therefore
     // be an empty dict, not None.
-    return { type: "dict", entries: [] };
+    return buildDevelopmentIndicesForSystemPayload(
+      getDevelopmentIndicesForSystem(solarSystemID),
+    );
+  }
+
+  Handle_GetAllDevelopmentIndices(args, session) {
+    log.debug("[DevIndexManager] GetAllDevelopmentIndices called");
+    return buildAllDevelopmentIndicesPayload(listAllDevelopmentIndices());
   }
 
   callMethod(method, args, session, kwargs) {

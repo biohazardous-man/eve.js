@@ -14,7 +14,9 @@ const {
 } = require(path.join(__dirname, "../_shared/referenceData"));
 
 const SHIPS = readStaticRows(TABLE.SHIP_TYPES)
-  .filter((entry) => Number(entry.categoryID) === 6)
+  .filter(
+    (entry) => Number(entry.categoryID) === 6 && entry.published !== false,
+  )
   .map((entry) => ({
     typeID: Number(entry.typeID),
     groupID: Number(entry.groupID),

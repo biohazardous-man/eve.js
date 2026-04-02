@@ -1,0 +1,16 @@
+{
+  "_meta": {
+    "generatedAt": null,
+    "lastUpdatedAt": "2026-04-02T18:56:46.789Z"
+  },
+  "characterWallets": {
+    "140000008": {
+      "1000419": 1600000
+    }
+  },
+  "corporationWallets": {
+    "98000002": {
+      "1000419": 1500000
+    }
+  }
+}

@@ -1,18 +1,22 @@
 const path = require("path");
 
 const log = require(path.join(__dirname, "./src/utils/logger"));
+const {
+  installProcessLifecycleLogging,
+} = require(path.join(__dirname, "./src/utils/processLifecycle"));
 const config = require(path.join(__dirname, "./src/config"));
 const expressProxyService = require(path.join(
   __dirname,
   "./src/_secondary/express/server",
 ));
 
+installProcessLifecycleLogging({ appName: "eve.js proxy-only" });
 log.logAsciiLogo();
-console.log();
+log.spacer();
 log.info("starting eve.js proxy only...");
-console.log();
+log.spacer();
 log.debug(`microservices redirect: ${config.microservicesRedirectUrl}`);
-console.log();
+log.line();
 
 if (expressProxyService.enabled !== true) {
   log.err(

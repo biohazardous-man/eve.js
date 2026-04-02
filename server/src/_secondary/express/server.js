@@ -46,6 +46,41 @@ const LOCAL_INTERCEPT_HOSTS = new Set([
   "dev-public-gateway.evetech.net",
   "public-gateway.evetech.net",
 ]);
+const BLOCKED_PROXY_HOSTS = parseHostPatternList(config.proxyBlockedHosts);
+
+function parseHostPatternList(value) {
+  if (typeof value !== "string") {
+    return [];
+  }
+
+  return value
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function hostMatchesPattern(hostname, pattern) {
+  const normalizedHost = String(hostname || "").trim().toLowerCase();
+  const normalizedPattern = String(pattern || "").trim().toLowerCase();
+
+  if (!normalizedHost || !normalizedPattern) {
+    return false;
+  }
+
+  if (normalizedPattern.startsWith("*.")) {
+    const suffix = normalizedPattern.slice(1);
+    return (
+      normalizedHost === normalizedPattern.slice(2) ||
+      normalizedHost.endsWith(suffix)
+    );
+  }
+
+  if (normalizedPattern.startsWith(".")) {
+    return normalizedHost.endsWith(normalizedPattern);
+  }
+
+  return normalizedHost === normalizedPattern;
+}
 
 function shouldInterceptHost(hostname) {
   const normalized = String(hostname || "").trim().toLowerCase();
@@ -54,6 +89,12 @@ function shouldInterceptHost(hostname) {
   }
 
   return LOCAL_INTERCEPT_HOSTS.has(normalized);
+}
+
+function shouldBlockHost(hostname) {
+  return BLOCKED_PROXY_HOSTS.some((pattern) =>
+    hostMatchesPattern(hostname, pattern),
+  );
 }
 
 function makeResponsePayload(req) {
@@ -76,38 +117,6 @@ function makeHttp2Payload(headers) {
     host: headers[":authority"] || headers.host || null,
     timestamp: new Date().toISOString(),
   };
-}
-
-const COPYCAT_XML_RESPONSE = `<?xml version="1.0" encoding="utf-8"?>\n<copycat />\n`;
-const COPYCAT_INI_RESPONSE = "autosave=3\ndatabase=copycat.xml\n";
-
-function tryServeInsiderAsset(res, targetUrl) {
-  if (!targetUrl) {
-    return false;
-  }
-
-  const hostname = String(targetUrl.hostname || "").trim().toLowerCase();
-  const pathname = String(targetUrl.pathname || "").trim();
-
-  if (hostname !== "content.eveonline.com") {
-    return false;
-  }
-
-  if (pathname === "/QA/insider/copycat.xml") {
-    res.statusCode = 200;
-    res.setHeader("content-type", "application/xml; charset=utf-8");
-    res.end(COPYCAT_XML_RESPONSE);
-    return true;
-  }
-
-  if (pathname === "/QA/insider/copycat.ini") {
-    res.statusCode = 200;
-    res.setHeader("content-type", "text/plain; charset=utf-8");
-    res.end(COPYCAT_INI_RESPONSE);
-    return true;
-  }
-
-  return false;
 }
 
 function parseConnectTarget(connectUrl) {
@@ -156,9 +165,7 @@ function pipeHttpProxyRequest(req, res, targetUrl) {
   headers.host = targetUrl.host;
   delete headers["proxy-connection"];
 
-  console.log(
-    `[HTTP PROXY FORWARD] ${req.method} ${targetUrl.href} -> ${targetHost}:${targetPort}`,
-  );
+  log.proxy(`${req.method} ${targetUrl.href} → ${targetHost}:${targetPort}`);
 
   const upstreamReq = http.request(
     {
@@ -180,9 +187,7 @@ function pipeHttpProxyRequest(req, res, targetUrl) {
   );
 
   upstreamReq.on("error", (err) => {
-    console.error(
-      `[HTTP PROXY FORWARD ERROR] ${targetUrl.href} ${err.message}`,
-    );
+    log.proxyErr(`forward failed ${targetUrl.href} ${err.message}`);
     if (!res.headersSent) {
       res.statusCode = 502;
       res.setHeader("content-type", "text/plain");
@@ -191,6 +196,13 @@ function pipeHttpProxyRequest(req, res, targetUrl) {
   });
 
   req.pipe(upstreamReq);
+}
+
+function blockHttpProxyRequest(req, res, targetUrl) {
+  log.proxy(`block ${req.method} ${targetUrl.href} -> local deny`);
+  res.statusCode = 204;
+  res.setHeader("x-evejs-proxy-blocked", "true");
+  res.end();
 }
 
 function loadLocalTlsOptions() {
@@ -251,24 +263,17 @@ function createLocalSecureResponder(httpsPort) {
       );
     }
   } catch (err) {
-    console.error("[LOCAL HTTPS CERT PARSE ERROR]", err.message);
+    log.http2Err(`cert parse error: ${err.message}`);
   }
 
   const secureServer = http2.createSecureServer(tlsOptions);
 
   secureServer.on("connection", (socket) => {
-    console.log(
-      `[LOCAL HTTPS TCP CONNECTION] ${socket.remoteAddress}:${socket.remotePort}`,
-    );
+    log.http2Log(`tcp connect ${socket.remoteAddress}:${socket.remotePort}`);
   });
 
   secureServer.on("secureConnection", (tlsSocket) => {
-    console.log(
-      "[LOCAL HTTPS SECURE CONNECTION]",
-      tlsSocket.remoteAddress,
-      "ALPN=",
-      tlsSocket.alpnProtocol || "none",
-    );
+    log.http2Log(`tls established ${tlsSocket.remoteAddress} ALPN=${tlsSocket.alpnProtocol || "none"}`);
   });
 
   secureServer.on("stream", (stream, headers) => {
@@ -277,14 +282,10 @@ function createLocalSecureResponder(httpsPort) {
     const authority = headers[":authority"] || headers.host || "";
     const contentType = String(headers["content-type"] || "");
 
-    console.log("---- LOCAL HTTP2 STREAM ----");
-    console.log("METHOD:", method);
-    console.log("PATH:", routePath);
-    console.log("AUTHORITY:", authority);
-    console.log("CONTENT-TYPE:", contentType || "<none>");
+    log.http2Log(`${method} ${routePath} host=${authority} type=${contentType || "none"}`);
 
     stream.on("error", (err) => {
-      console.error("[LOCAL HTTP2 STREAM ERROR]", err.message);
+      log.http2Err(`stream error: ${err.message}`);
     });
 
     if (contentType.includes("application/grpc") && handleGatewayStream(stream, headers)) {
@@ -297,7 +298,7 @@ function createLocalSecureResponder(httpsPort) {
     });
 
     stream.on("end", () => {
-      console.log("BODY BYTES:", bodyLength);
+      log.http2Log(`body ${bodyLength} bytes`);
     });
 
     if (contentType.includes("application/grpc")) {
@@ -319,7 +320,7 @@ function createLocalSecureResponder(httpsPort) {
             ),
           });
         } catch (err) {
-          console.error("[LOCAL HTTP2 TRAILER ERROR]", err.message);
+          log.http2Err(`trailer error: ${err.message}`);
         }
       });
       stream.end();
@@ -334,20 +335,15 @@ function createLocalSecureResponder(httpsPort) {
   });
 
   secureServer.on("sessionError", (err) => {
-    console.error("[LOCAL HTTP2 SESSION ERROR]", err.message);
+    log.http2Err(`session error: ${err.message}`);
   });
 
   secureServer.on("tlsClientError", (err) => {
-    console.error(
-      "[LOCAL HTTPS TLS ERROR]",
-      err.message,
-      "code=",
-      err.code || "n/a",
-    );
+    log.http2Err(`tls client error: ${err.message} code=${err.code || "n/a"}`);
   });
 
   secureServer.on("error", (err) => {
-    console.error("[LOCAL HTTPS SERVER ERROR]", err.message);
+    log.http2Err(`server error: ${err.message}`);
   });
 
   secureServer.listen(httpsPort, "127.0.0.1", () => {
@@ -381,32 +377,26 @@ function wireTunnel(clientSocket, upstreamSocket, head, label) {
   upstreamSocket.setTimeout(30000);
 
   upstreamSocket.on("timeout", () => {
-    console.error(
-      `[PROXY TUNNEL TIMEOUT] ${label} up=${upBytes} down=${downBytes}`,
-    );
+    log.proxyErr(`tunnel timeout ${label} ▲${upBytes}B ▼${downBytes}B`);
     upstreamSocket.destroy();
     clientSocket.destroy();
   });
 
   upstreamSocket.on("close", () => {
-    console.log(
-      `[PROXY TUNNEL CLOSE upstream] ${label} up=${upBytes} down=${downBytes}`,
-    );
+    log.proxy(`tunnel closed ${label} ▲${upBytes}B ▼${downBytes}B`);
   });
 
   clientSocket.on("close", () => {
-    console.log(
-      `[PROXY TUNNEL CLOSE client] ${label} up=${upBytes} down=${downBytes}`,
-    );
+    // upstream close already logs the summary — skip duplicate
   });
 
   upstreamSocket.on("error", (err) => {
-    console.error(`[PROXY TUNNEL upstream error] ${label}`, err.message);
+    log.proxyErr(`tunnel upstream error ${label} ${err.message}`);
     clientSocket.destroy();
   });
 
   clientSocket.on("error", (err) => {
-    console.error(`[PROXY TUNNEL client error] ${label}`, err.message);
+    log.proxyErr(`tunnel client error ${label} ${err.message}`);
     upstreamSocket.destroy();
   });
 }
@@ -427,14 +417,13 @@ function startServer() {
       return;
     }
 
-    if (tryServeInsiderAsset(res, targetUrl)) {
+    if (targetUrl && shouldBlockHost(targetUrl.hostname)) {
+      blockHttpProxyRequest(req, res, targetUrl);
       return;
     }
-    
+
     if (targetUrl && ENABLE_LOCAL_INTERCEPT && shouldInterceptHost(targetUrl.hostname)) {
-      console.log(
-        `[HTTP PROXY INTERCEPT] ${req.method} ${targetUrl.href} -> LOCAL STUB`,
-      );
+      log.proxy(`intercept ${req.method} ${targetUrl.href} → local`);
       next();
       return;
     }
@@ -444,11 +433,8 @@ function startServer() {
       return;
     }
 
-    console.log("---- HTTP REQUEST ----");
-    console.log("URL:", req.url);
-    console.log("METHOD:", req.method);
-    console.log("HEADERS:", req.headers);
-    console.log("----------------------");
+    log.proxy(`${req.method} ${req.url} host=${req.headers.host || "?"}`);
+
     next();
   });
 
@@ -482,13 +468,23 @@ function startServer() {
       return;
     }
 
+    if (shouldBlockHost(host)) {
+      log.proxy(`CONNECT ${targetRaw} -> BLOCKED local policy`);
+      clientSocket.write(
+        "HTTP/1.1 403 Forbidden\r\n" +
+        "Proxy-Agent: eve.js\r\n" +
+        "X-EveJS-Proxy-Blocked: true\r\n" +
+        "\r\n",
+      );
+      clientSocket.destroy();
+      return;
+    }
+
     const interceptLocal = ENABLE_LOCAL_INTERCEPT && shouldInterceptHost(host);
     const connectHost = interceptLocal ? "127.0.0.1" : host;
     const connectPort = interceptLocal ? httpsPort : port;
 
-    console.log(
-      `[HTTPS CONNECT] ${targetRaw} -> ${interceptLocal ? "LOCAL" : "REMOTE"} ${connectHost}:${connectPort}`,
-    );
+    log.proxy(`CONNECT ${targetRaw} → ${interceptLocal ? "LOCAL" : "REMOTE"} ${connectHost}:${connectPort}`);
 
     const upstreamSocket = net.connect(connectPort, connectHost, () => {
       clientSocket.write(
@@ -506,10 +502,7 @@ function startServer() {
     });
 
     upstreamSocket.on("error", (err) => {
-      console.error(
-        `[PROXY serverSocket ERROR] ${connectHost}:${connectPort}`,
-        err.message,
-      );
+      log.proxyErr(`connect failed ${connectHost}:${connectPort} ${err.message}`);
       if (!clientSocket.destroyed) {
         clientSocket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n");
       }
@@ -518,7 +511,7 @@ function startServer() {
   });
 
   proxyServer.on("error", (err) => {
-    console.error("[PROXY SERVER ERROR]", err.message);
+    log.proxyErr(`server error: ${err.message}`);
   });
 
   proxyServer.listen(httpPort, "127.0.0.1");

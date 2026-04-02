@@ -5,9 +5,24 @@ const { currentFileTime } = require(path.join(
   "./serviceHelpers",
 ));
 const worldData = require(path.join(__dirname, "../../space/worldData"));
+const structureState = require(path.join(
+  __dirname,
+  "../structure/structureState",
+));
+const structureLocatorGeometry = require(path.join(
+  __dirname,
+  "../structure/structureLocatorGeometry",
+));
+const {
+  getSessionStructureID,
+} = require(path.join(__dirname, "../structure/structureLocation"));
 const {
   getOwnerLookupRecord,
 } = require(path.join(__dirname, "../corporation/corporationState"));
+const {
+  getFactionRecord,
+  getFactionRecordByCorporationID,
+} = require(path.join(__dirname, "../faction/factionState"));
 
 const DEFAULT_STATION = {
   stationID: 60003760,
@@ -128,11 +143,97 @@ const STATION_SERVICES = [
   },
 ];
 
+function resolveFactionIdentity(corporationID, fallbackFactionID = null) {
+  const factionRecord = getFactionRecordByCorporationID(corporationID);
+  if (factionRecord) {
+    return {
+      factionID: factionRecord.factionID,
+      factionName: factionRecord.name,
+    };
+  }
+
+  const fallbackRecord = getFactionRecord(fallbackFactionID);
+  if (fallbackRecord) {
+    return {
+      factionID: fallbackRecord.factionID,
+      factionName: fallbackRecord.name,
+    };
+  }
+
+  return {
+    factionID: fallbackFactionID || null,
+    factionName: DEFAULT_STATION.factionName,
+  };
+}
+
 function getStationRecord(session = null, overrideStationID = null) {
   const stationID =
     overrideStationID ||
     (session && (session.stationid || session.stationID || session.locationid)) ||
     DEFAULT_STATION.stationID;
+
+  const structureID =
+    overrideStationID ||
+    getSessionStructureID(session) ||
+    null;
+  const structure =
+    structureID && !worldData.getStationByID(structureID)
+      ? structureState.getStructureByID(structureID)
+      : null;
+  if (structure) {
+    const dockingGeometry = structureLocatorGeometry.buildStructureDockingGeometry(
+      structure,
+      {
+        selectionStrategy: "first",
+      },
+    );
+    const ownerRecord =
+      getOwnerLookupRecord(structure.ownerCorpID) ||
+      NPC_OWNER_OVERRIDES[structure.ownerCorpID] ||
+      null;
+    const factionIdentity = resolveFactionIdentity(
+      structure.ownerCorpID,
+      DEFAULT_STATION.factionID,
+    );
+    const solarSystem = worldData.getSolarSystemByID(structure.solarSystemID);
+    return {
+      ...DEFAULT_STATION,
+      stationID: structure.structureID,
+      stationName: structure.itemName || structure.name || `Structure ${structure.structureID}`,
+      stationTypeID: structure.typeID,
+      solarSystemID: structure.solarSystemID,
+      solarSystemName:
+        (solarSystem && solarSystem.solarSystemName) ||
+        DEFAULT_STATION.solarSystemName,
+      constellationID: structure.constellationID,
+      regionID: structure.regionID,
+      ownerID: structure.ownerCorpID,
+      ownerName: ownerRecord ? ownerRecord.ownerName : DEFAULT_STATION.ownerName,
+      corporationID: structure.ownerCorpID,
+      corporationName: ownerRecord
+        ? ownerRecord.ownerName
+        : DEFAULT_STATION.corporationName,
+      corporationTicker: ownerRecord ? ownerRecord.tickerName : DEFAULT_STATION.corporationTicker,
+      factionID: factionIdentity.factionID,
+      factionName: factionIdentity.factionName,
+      orbitID: structure.structureID,
+      x: structure.position && structure.position.x ? structure.position.x : 0,
+      y: structure.position && structure.position.y ? structure.position.y : 0,
+      z: structure.position && structure.position.z ? structure.position.z : 0,
+      position: structure.position,
+      dockPosition: dockingGeometry.dockPosition,
+      dockOrientation: dockingGeometry.dockOrientation,
+      undockDirection: dockingGeometry.undockDirection,
+      undockPosition: dockingGeometry.undockPosition,
+      dunRotation: dockingGeometry.dunRotation,
+      isStructure: true,
+      structureID: structure.structureID,
+      structureTypeID: structure.typeID,
+      structureState: structure.state,
+      structureUpkeepState: structure.upkeepState,
+      serviceStates: structure.serviceStates || {},
+    };
+  }
 
   const station = worldData.getStationByID(stationID);
   if (station) {
@@ -142,6 +243,10 @@ function getStationRecord(session = null, overrideStationID = null) {
       NPC_OWNER_OVERRIDES[station.corporationID] ||
       NPC_OWNER_OVERRIDES[station.ownerID] ||
       null;
+    const factionIdentity = resolveFactionIdentity(
+      station.corporationID || station.ownerID,
+      DEFAULT_STATION.factionID,
+    );
     const solarSystem = worldData.getSolarSystemByID(station.solarSystemID);
     return {
       ...DEFAULT_STATION,
@@ -162,6 +267,8 @@ function getStationRecord(session = null, overrideStationID = null) {
         ? ownerRecord.ownerName
         : DEFAULT_STATION.corporationName,
       corporationTicker: ownerRecord ? ownerRecord.tickerName : DEFAULT_STATION.corporationTicker,
+      factionID: factionIdentity.factionID,
+      factionName: factionIdentity.factionName,
       security: Number(station.security || 0),
       orbitID: station.orbitID || null,
       x: station.position && station.position.x ? station.position.x : 0,
@@ -266,7 +373,14 @@ function getRentableItems(session = null, overrideStationID = null) {
   ];
 }
 
-function buildStationServiceMask() {
+function buildStationServiceMask(session = null, overrideStationID = null) {
+  const station = getStationRecord(session, overrideStationID);
+  if (station && station.isStructure && station.serviceStates) {
+    return Object.entries(station.serviceStates).reduce((mask, [serviceID, stateID]) => (
+      Number(stateID) === 1 ? mask | Number(serviceID) : mask
+    ), 0);
+  }
+
   return STATION_SERVICES.reduce(
     (mask, service) => mask | Number(service.serviceID),
     0,

@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node ."
+    "start": "node --report-on-fatalerror --report-uncaught-exception --report-dir=./logs/node-reports ."
   },
   "keywords": [],
   "author": "",

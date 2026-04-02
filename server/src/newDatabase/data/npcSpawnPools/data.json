@@ -1,0 +1,2120 @@
+{
+  "spawnPools": [
+    {
+      "spawnPoolID": "npc_laser_hostiles",
+      "name": "Legacy Laser Hostiles",
+      "description": "Legacy Blood Raiders-only hostile pool retained for older configs and targeted laser-only testing.",
+      "aliases": [
+        "laser",
+        "laser hostiles",
+        "blood lasers"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "generic_hostile",
+          "weight": 5
+        },
+        {
+          "profileID": "blood_raider_prophecy",
+          "weight": 3
+        },
+        {
+          "profileID": "blood_raider_apocalypse",
+          "weight": 2
+        },
+        {
+          "profileID": "blood_raider_paladin",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "npc_mining_ops",
+      "name": "Mining Operations",
+      "description": "Weighted diamond-style mining pool spanning Ventures, barges, and exhumers for manual mining-fleet spawning.",
+      "aliases": [
+        "mining",
+        "miner",
+        "npcminer",
+        "ore mining"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "ore_mining_venture",
+          "weight": 5
+        },
+        {
+          "profileID": "ore_mining_retriever",
+          "weight": 4
+        },
+        {
+          "profileID": "ore_mining_skiff",
+          "weight": 2
+        },
+        {
+          "profileID": "ore_mining_hulk",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "npc_mining_hauler_t1",
+      "name": "Mining Hauler T1",
+      "description": "Weighted T1 industrial hauler pool for empire mining fleets.",
+      "aliases": [
+        "mining hauler",
+        "hauler",
+        "hauler t1"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "ore_mining_bestower_hauler",
+          "weight": 3
+        },
+        {
+          "profileID": "ore_mining_badger_hauler",
+          "weight": 3
+        },
+        {
+          "profileID": "ore_mining_mammoth_hauler",
+          "weight": 2
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "npc_mining_hauler_t2",
+      "name": "Mining Hauler T2",
+      "description": "Weighted T2 industrial hauler pool for lower-security mining fleets.",
+      "aliases": [
+        "hauler t2",
+        "industrial t2"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "ore_mining_bustard_hauler",
+          "weight": 2
+        },
+        {
+          "profileID": "ore_mining_impel_hauler",
+          "weight": 2
+        },
+        {
+          "profileID": "ore_mining_mastodon_hauler",
+          "weight": 2
+        },
+        {
+          "profileID": "ore_mining_occator_hauler",
+          "weight": 2
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "npc_mining_hauler_highsec",
+      "name": "Mining Hauler Highsec",
+      "description": "High-security mining-hauler pool biased toward T1 industrials, matching public player reports.",
+      "aliases": [
+        "hauler highsec"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "ore_mining_bestower_hauler",
+          "weight": 3
+        },
+        {
+          "profileID": "ore_mining_badger_hauler",
+          "weight": 3
+        },
+        {
+          "profileID": "ore_mining_mammoth_hauler",
+          "weight": 2
+        },
+        {
+          "profileID": "ore_mining_bustard_hauler",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "npc_mining_hauler_lowsec",
+      "name": "Mining Hauler Lowsec",
+      "description": "Low-security mining-hauler pool with a stronger T2 industrial presence.",
+      "aliases": [
+        "hauler lowsec"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "ore_mining_bestower_hauler",
+          "weight": 2
+        },
+        {
+          "profileID": "ore_mining_badger_hauler",
+          "weight": 2
+        },
+        {
+          "profileID": "ore_mining_mammoth_hauler",
+          "weight": 1
+        },
+        {
+          "profileID": "ore_mining_bustard_hauler",
+          "weight": 2
+        },
+        {
+          "profileID": "ore_mining_impel_hauler",
+          "weight": 2
+        },
+        {
+          "profileID": "ore_mining_mastodon_hauler",
+          "weight": 2
+        },
+        {
+          "profileID": "ore_mining_occator_hauler",
+          "weight": 2
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "npc_mining_hauler_nullsec",
+      "name": "Mining Hauler Nullsec",
+      "description": "Null-security mining-hauler pool biased toward tougher T2 industrials.",
+      "aliases": [
+        "hauler nullsec"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "ore_mining_bustard_hauler",
+          "weight": 2
+        },
+        {
+          "profileID": "ore_mining_impel_hauler",
+          "weight": 2
+        },
+        {
+          "profileID": "ore_mining_mastodon_hauler",
+          "weight": 2
+        },
+        {
+          "profileID": "ore_mining_occator_hauler",
+          "weight": 2
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "blood_raiders",
+      "name": "Legacy Blood Raiders",
+      "description": "Legacy Blood Raiders-only pool retained for older tests now that parity pools own the public blood aliases.",
+      "aliases": [
+        "legacy blood",
+        "legacy blood raiders",
+        "blood legacy"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "generic_hostile",
+          "weight": 5
+        },
+        {
+          "profileID": "blood_raider_prophecy",
+          "weight": 3
+        },
+        {
+          "profileID": "blood_raider_apocalypse",
+          "weight": 2
+        },
+        {
+          "profileID": "blood_raider_paladin",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "concord_response_fleet",
+      "name": "CONCORD Response Fleet",
+      "description": "Default weighted /concord pool across supported police, SWAT, army, and special-ops laser hulls.",
+      "aliases": [
+        "concord",
+        "response",
+        "fleet"
+      ],
+      "entityType": "concord",
+      "entries": [
+        {
+          "profileID": "concord_response",
+          "weight": 5
+        },
+        {
+          "profileID": "concord_police_cruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "concord_police_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "concord_special_ops_frigate",
+          "weight": 3
+        },
+        {
+          "profileID": "concord_special_ops_battleship",
+          "weight": 1
+        },
+        {
+          "profileID": "concord_swat_frigate",
+          "weight": 3
+        },
+        {
+          "profileID": "concord_swat_battleship",
+          "weight": 1
+        },
+        {
+          "profileID": "concord_army_frigate",
+          "weight": 2
+        },
+        {
+          "profileID": "concord_army_battleship",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "concord_police",
+      "name": "CONCORD Police",
+      "description": "Police-only CONCORD pool for manual /concord police... spawns.",
+      "aliases": [
+        "police"
+      ],
+      "entityType": "concord",
+      "entries": [
+        {
+          "profileID": "concord_response",
+          "weight": 4
+        },
+        {
+          "profileID": "concord_police_cruiser",
+          "weight": 2
+        },
+        {
+          "profileID": "concord_police_battleship",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "concord_special_ops",
+      "name": "CONCORD Special Ops",
+      "description": "Special-ops-only CONCORD pool for manual /concord special... spawns.",
+      "aliases": [
+        "special",
+        "special ops"
+      ],
+      "entityType": "concord",
+      "entries": [
+        {
+          "profileID": "concord_special_ops_frigate",
+          "weight": 3
+        },
+        {
+          "profileID": "concord_special_ops_battleship",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "concord_swat",
+      "name": "CONCORD SWAT",
+      "description": "SWAT-only CONCORD pool for manual /concord swat... spawns.",
+      "aliases": [
+        "swat"
+      ],
+      "entityType": "concord",
+      "entries": [
+        {
+          "profileID": "concord_swat_frigate",
+          "weight": 3
+        },
+        {
+          "profileID": "concord_swat_battleship",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "concord_army",
+      "name": "CONCORD Army",
+      "description": "Army-only CONCORD pool for manual /concord army... spawns.",
+      "aliases": [
+        "army"
+      ],
+      "entityType": "concord",
+      "entries": [
+        {
+          "profileID": "concord_army_frigate",
+          "weight": 3
+        },
+        {
+          "profileID": "concord_army_battleship",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "blood",
+      "name": "Blood Raiders Hostiles",
+      "description": "Blood Raiders mixed pirate pool spanning hull classes, weapon doctrines, deadspace commanders, and officers.",
+      "aliases": [
+        "blood",
+        "blood raiders",
+        "blood raider"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_blood_raider_pulse_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_blood_raider_pulse_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_blood_raider_pulse_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_blood_raider_pulse_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_blood_raider_pulse_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_beam_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_blood_raider_beam_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_blood_raider_beam_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_blood_raider_beam_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_blood_raider_beam_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_collector",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_cleric",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_bishop",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_cardinal",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_apostle",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_officer_ahremen_arkah",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_blood_raider_officer_draclira_merlonne",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_blood_raider_officer_raysere_giant",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_blood_raider_officer_tairei_namazoth",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "blood_deadspace",
+      "name": "Blood Raiders Deadspace",
+      "description": "Blood Raiders named deadspace commander pool.",
+      "aliases": [
+        "blood deadspace",
+        "dark blood"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_blood_raider_dark_blood_collector",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_cleric",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_bishop",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_cardinal",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_apostle",
+          "weight": 2
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "blood_officer",
+      "name": "Blood Raiders Officers",
+      "description": "Blood Raiders named officer pool.",
+      "aliases": [
+        "blood officer",
+        "blood officers"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_blood_raider_officer_ahremen_arkah",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_blood_raider_officer_draclira_merlonne",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_blood_raider_officer_raysere_giant",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_blood_raider_officer_tairei_namazoth",
+          "weight": 3
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "blood_pulse",
+      "name": "Blood Raiders Pulse",
+      "description": "Blood Raiders pulse doctrine pool across all supported hull classes.",
+      "aliases": [
+        "blood pulse",
+        "blood pulses"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_blood_raider_pulse_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_blood_raider_pulse_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_blood_raider_pulse_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_blood_raider_pulse_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_blood_raider_pulse_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_officer_ahremen_arkah",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_blood_raider_officer_tairei_namazoth",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "blood_beam",
+      "name": "Blood Raiders Beam",
+      "description": "Blood Raiders beam doctrine pool across all supported hull classes.",
+      "aliases": [
+        "blood beam",
+        "blood beams"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_blood_raider_beam_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_blood_raider_beam_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_blood_raider_beam_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_blood_raider_beam_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_blood_raider_beam_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_officer_draclira_merlonne",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_blood_raider_officer_raysere_giant",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "sanshas",
+      "name": "Sansha Hostiles",
+      "description": "Sansha's Nation mixed pirate pool spanning hull classes, weapon doctrines, deadspace commanders, and officers.",
+      "aliases": [
+        "sansha",
+        "sanshas",
+        "sansha nation",
+        "sansha's nation"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_sansha_pulse_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_sansha_pulse_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_sansha_pulse_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_sansha_pulse_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_pulse_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_beam_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_sansha_beam_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_sansha_beam_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_sansha_beam_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_beam_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_true_centii_enslaver",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_true_centior_cannibal",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_true_centum_beast",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_true_centus_lord",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_true_centus_tyrant",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_officer_brokara_ryver",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_sansha_officer_chelm_soran",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_sansha_officer_selynne_mardakar",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_sansha_officer_vizan_ankonin",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "sanshas_deadspace",
+      "name": "Sansha Deadspace",
+      "description": "Sansha's Nation named deadspace commander pool.",
+      "aliases": [
+        "sansha deadspace",
+        "true sansha"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_sansha_true_centii_enslaver",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_true_centior_cannibal",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_true_centum_beast",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_true_centus_lord",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_true_centus_tyrant",
+          "weight": 2
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "sanshas_officer",
+      "name": "Sansha Officers",
+      "description": "Sansha's Nation named officer pool.",
+      "aliases": [
+        "sansha officer",
+        "sansha officers"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_sansha_officer_brokara_ryver",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_officer_chelm_soran",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_officer_selynne_mardakar",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_officer_vizan_ankonin",
+          "weight": 3
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "sansha_pulse",
+      "name": "Sansha Pulse",
+      "description": "Sansha's Nation pulse doctrine pool across all supported hull classes.",
+      "aliases": [
+        "sansha pulse",
+        "sansha pulses"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_sansha_pulse_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_sansha_pulse_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_sansha_pulse_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_sansha_pulse_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_pulse_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_officer_brokara_ryver",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_sansha_officer_vizan_ankonin",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "sansha_beam",
+      "name": "Sansha Beam",
+      "description": "Sansha's Nation beam doctrine pool across all supported hull classes.",
+      "aliases": [
+        "sansha beam",
+        "sansha beams"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_sansha_beam_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_sansha_beam_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_sansha_beam_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_sansha_beam_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_beam_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_officer_chelm_soran",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_sansha_officer_selynne_mardakar",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "serpentis",
+      "name": "Serpentis Hostiles",
+      "description": "Serpentis mixed pirate pool spanning hull classes, weapon doctrines, deadspace commanders, and officers.",
+      "aliases": [
+        "serpentis"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_serpentis_blaster_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_serpentis_blaster_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_serpentis_blaster_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_serpentis_blaster_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_serpentis_blaster_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_rail_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_serpentis_rail_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_serpentis_rail_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_serpentis_rail_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_serpentis_rail_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_shadow_coreli_agent",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_shadow_corelior_soldier",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_shadow_corelum_chief_guard",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_shadow_corelatis_captain",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_shadow_core_grand_admiral",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_officer_cormack_vaaja",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_serpentis_officer_setele_schellan",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_serpentis_officer_tuvan_orth",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "serpentis_deadspace",
+      "name": "Serpentis Deadspace",
+      "description": "Serpentis named deadspace commander pool.",
+      "aliases": [
+        "serpentis deadspace",
+        "shadow serpentis"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_serpentis_shadow_coreli_agent",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_shadow_corelior_soldier",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_shadow_corelum_chief_guard",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_shadow_corelatis_captain",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_shadow_core_grand_admiral",
+          "weight": 2
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "serpentis_officer",
+      "name": "Serpentis Officers",
+      "description": "Serpentis named officer pool.",
+      "aliases": [
+        "serpentis officer",
+        "serpentis officers"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_serpentis_officer_cormack_vaaja",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_serpentis_officer_setele_schellan",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_serpentis_officer_tuvan_orth",
+          "weight": 3
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "serpentis_blaster",
+      "name": "Serpentis Blaster",
+      "description": "Serpentis blaster doctrine pool across all supported hull classes.",
+      "aliases": [
+        "serpentis blaster",
+        "serpentis blasters"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_serpentis_blaster_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_serpentis_blaster_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_serpentis_blaster_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_serpentis_blaster_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_serpentis_blaster_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_officer_cormack_vaaja",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_serpentis_officer_tuvan_orth",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "serpentis_rail",
+      "name": "Serpentis Rail",
+      "description": "Serpentis rail doctrine pool across all supported hull classes.",
+      "aliases": [
+        "serpentis rail",
+        "serpentis rails"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_serpentis_rail_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_serpentis_rail_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_serpentis_rail_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_serpentis_rail_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_serpentis_rail_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_officer_setele_schellan",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "angels",
+      "name": "Angel Hostiles",
+      "description": "Angel Cartel mixed pirate pool spanning hull classes, weapon doctrines, deadspace commanders, and officers.",
+      "aliases": [
+        "angel",
+        "angels",
+        "angel cartel"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_angel_autocannon_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_angel_autocannon_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_angel_autocannon_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_angel_autocannon_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_angel_autocannon_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_artillery_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_angel_artillery_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_angel_artillery_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_angel_artillery_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_angel_artillery_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_gistii_domination_raider",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_gistior_domination_defacer",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_gistum_domination_liquidator",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_gistatis_domination_tribunus",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_gist_domination_war_general",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_officer_gotan_kreiss",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_angel_officer_hakim_stormare",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_angel_officer_tobias_kruzhor",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "angels_deadspace",
+      "name": "Angel Deadspace",
+      "description": "Angel Cartel named deadspace commander pool.",
+      "aliases": [
+        "angel deadspace",
+        "domination"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_angel_gistii_domination_raider",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_gistior_domination_defacer",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_gistum_domination_liquidator",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_gistatis_domination_tribunus",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_gist_domination_war_general",
+          "weight": 2
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "angels_officer",
+      "name": "Angel Officers",
+      "description": "Angel Cartel named officer pool.",
+      "aliases": [
+        "angel officer",
+        "angel officers"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_angel_officer_gotan_kreiss",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_angel_officer_hakim_stormare",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_angel_officer_tobias_kruzhor",
+          "weight": 3
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "angels_autocannon",
+      "name": "Angel Autocannon",
+      "description": "Angel Cartel autocannon doctrine pool across all supported hull classes.",
+      "aliases": [
+        "angel autocannon",
+        "angels autocannon"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_angel_autocannon_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_angel_autocannon_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_angel_autocannon_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_angel_autocannon_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_angel_autocannon_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_officer_gotan_kreiss",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "angels_artillery",
+      "name": "Angel Artillery",
+      "description": "Angel Cartel artillery doctrine pool across all supported hull classes.",
+      "aliases": [
+        "angel artillery",
+        "angels artillery"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_angel_artillery_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_angel_artillery_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_angel_artillery_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_angel_artillery_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_angel_artillery_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_officer_hakim_stormare",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_angel_officer_tobias_kruzhor",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "guristas",
+      "name": "Guristas Hostiles",
+      "description": "Guristas mixed pirate pool spanning hull classes, weapon doctrines, deadspace commanders, and officers.",
+      "aliases": [
+        "guristas"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_guristas_missile_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_guristas_missile_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_guristas_missile_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_guristas_missile_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_missile_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_rail_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_guristas_rail_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_guristas_rail_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_guristas_rail_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_rail_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_dread_pithi_arrogator",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_dread_pithum_abolisher",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_dread_pithatis_assaulter",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_dread_pith_extinguisher",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_officer_estamel_tharchon",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_guristas_officer_kaikka_peunato",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_guristas_officer_thon_eney",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_guristas_officer_vepas_minimala",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "guristas_deadspace",
+      "name": "Guristas Deadspace",
+      "description": "Guristas named deadspace commander pool.",
+      "aliases": [
+        "guristas deadspace",
+        "dread guristas"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_guristas_dread_pithi_arrogator",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_dread_pithum_abolisher",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_dread_pithatis_assaulter",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_dread_pith_extinguisher",
+          "weight": 2
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "guristas_officer",
+      "name": "Guristas Officers",
+      "description": "Guristas named officer pool.",
+      "aliases": [
+        "guristas officer",
+        "guristas officers"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_guristas_officer_estamel_tharchon",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_officer_kaikka_peunato",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_officer_thon_eney",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_officer_vepas_minimala",
+          "weight": 3
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "guristas_missile",
+      "name": "Guristas Missile",
+      "description": "Guristas missile doctrine pool across all supported hull classes.",
+      "aliases": [
+        "guristas missile",
+        "guristas missiles"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_guristas_missile_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_guristas_missile_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_guristas_missile_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_guristas_missile_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_missile_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_officer_estamel_tharchon",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_guristas_officer_thon_eney",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "guristas_rail",
+      "name": "Guristas Rail",
+      "description": "Guristas rail doctrine pool across all supported hull classes.",
+      "aliases": [
+        "guristas rail",
+        "guristas rails"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_guristas_rail_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_guristas_rail_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_guristas_rail_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_guristas_rail_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_rail_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_officer_kaikka_peunato",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_guristas_officer_vepas_minimala",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "npc_hostiles",
+      "name": "Pirate Hostiles",
+      "description": "Default mixed pirate pool spanning every authored pirate faction, weapon doctrine, deadspace commander, and officer profile.",
+      "aliases": [
+        "pirates",
+        "hostiles",
+        "npc"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_blood_raider_pulse_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_blood_raider_pulse_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_blood_raider_pulse_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_blood_raider_pulse_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_blood_raider_pulse_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_beam_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_blood_raider_beam_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_blood_raider_beam_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_blood_raider_beam_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_blood_raider_beam_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_collector",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_cleric",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_bishop",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_cardinal",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_apostle",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_blood_raider_officer_ahremen_arkah",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_blood_raider_officer_draclira_merlonne",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_blood_raider_officer_raysere_giant",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_blood_raider_officer_tairei_namazoth",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_sansha_pulse_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_sansha_pulse_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_sansha_pulse_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_sansha_pulse_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_pulse_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_beam_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_sansha_beam_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_sansha_beam_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_sansha_beam_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_beam_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_true_centii_enslaver",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_true_centior_cannibal",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_true_centum_beast",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_true_centus_lord",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_true_centus_tyrant",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_sansha_officer_brokara_ryver",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_sansha_officer_chelm_soran",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_sansha_officer_selynne_mardakar",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_sansha_officer_vizan_ankonin",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_serpentis_blaster_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_serpentis_blaster_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_serpentis_blaster_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_serpentis_blaster_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_serpentis_blaster_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_rail_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_serpentis_rail_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_serpentis_rail_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_serpentis_rail_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_serpentis_rail_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_shadow_coreli_agent",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_shadow_corelior_soldier",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_shadow_corelum_chief_guard",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_shadow_corelatis_captain",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_shadow_core_grand_admiral",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_serpentis_officer_cormack_vaaja",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_serpentis_officer_setele_schellan",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_serpentis_officer_tuvan_orth",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_angel_autocannon_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_angel_autocannon_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_angel_autocannon_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_angel_autocannon_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_angel_autocannon_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_artillery_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_angel_artillery_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_angel_artillery_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_angel_artillery_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_angel_artillery_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_gistii_domination_raider",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_gistior_domination_defacer",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_gistum_domination_liquidator",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_gistatis_domination_tribunus",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_gist_domination_war_general",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_angel_officer_gotan_kreiss",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_angel_officer_hakim_stormare",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_angel_officer_tobias_kruzhor",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_guristas_missile_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_guristas_missile_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_guristas_missile_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_guristas_missile_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_missile_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_rail_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_guristas_rail_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_guristas_rail_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_guristas_rail_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_rail_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_dread_pithi_arrogator",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_dread_pithior_anarchist",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_dread_pithum_abolisher",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_dread_pithatis_assaulter",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_dread_pith_extinguisher",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_officer_estamel_tharchon",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_guristas_officer_kaikka_peunato",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_guristas_officer_thon_eney",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_guristas_officer_vepas_minimala",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "npc_missile_hostiles",
+      "name": "Missile Hostiles",
+      "description": "Launcher-first hostile pool spanning the full Guristas missile ladder plus named Dread Guristas and missile officers.",
+      "aliases": [
+        "mnpc",
+        "missile",
+        "missile hostile",
+        "missile hostiles",
+        "guristas missiles"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_guristas_missile_frigate",
+          "weight": 6
+        },
+        {
+          "profileID": "parity_guristas_missile_destroyer",
+          "weight": 5
+        },
+        {
+          "profileID": "parity_guristas_missile_cruiser",
+          "weight": 4
+        },
+        {
+          "profileID": "parity_guristas_missile_battlecruiser",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_missile_battleship",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_dread_pithi_arrogator",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_dread_pithum_abolisher",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_dread_pithatis_assaulter",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_dread_pith_extinguisher",
+          "weight": 2
+        },
+        {
+          "profileID": "parity_guristas_officer_estamel_tharchon",
+          "weight": 1
+        },
+        {
+          "profileID": "parity_guristas_officer_thon_eney",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "npc_deadspace_hostiles",
+      "name": "Pirate Deadspace Hostiles",
+      "description": "All authored deadspace/commander pirate specials across every pirate faction.",
+      "aliases": [
+        "deadspace",
+        "deadspace specials",
+        "pirate deadspace"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_blood_raider_dark_blood_collector",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_cleric",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_bishop",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_cardinal",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_blood_raider_dark_blood_apostle",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_true_centii_enslaver",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_true_centior_cannibal",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_true_centum_beast",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_true_centus_lord",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_true_centus_tyrant",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_serpentis_shadow_coreli_agent",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_serpentis_shadow_corelior_soldier",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_serpentis_shadow_corelum_chief_guard",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_serpentis_shadow_corelatis_captain",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_serpentis_shadow_core_grand_admiral",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_angel_gistii_domination_raider",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_angel_gistior_domination_defacer",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_angel_gistum_domination_liquidator",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_angel_gistatis_domination_tribunus",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_angel_gist_domination_war_general",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_dread_pithi_arrogator",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_dread_pithior_anarchist",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_dread_pithum_abolisher",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_dread_pithatis_assaulter",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_dread_pith_extinguisher",
+          "weight": 3
+        }
+      ]
+    },
+    {
+      "spawnPoolID": "npc_officer_hostiles",
+      "name": "Pirate Officers",
+      "description": "All authored pirate officer specials across every pirate faction.",
+      "aliases": [
+        "officer",
+        "officers",
+        "pirate officers"
+      ],
+      "entityType": "npc",
+      "entries": [
+        {
+          "profileID": "parity_blood_raider_officer_ahremen_arkah",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_blood_raider_officer_draclira_merlonne",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_blood_raider_officer_raysere_giant",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_blood_raider_officer_tairei_namazoth",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_officer_brokara_ryver",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_officer_chelm_soran",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_officer_selynne_mardakar",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_sansha_officer_vizan_ankonin",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_serpentis_officer_cormack_vaaja",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_serpentis_officer_setele_schellan",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_serpentis_officer_tuvan_orth",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_angel_officer_gotan_kreiss",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_angel_officer_hakim_stormare",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_angel_officer_tobias_kruzhor",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_officer_estamel_tharchon",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_officer_kaikka_peunato",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_officer_thon_eney",
+          "weight": 3
+        },
+        {
+          "profileID": "parity_guristas_officer_vepas_minimala",
+          "weight": 3
+        }
+      ]
+    }
+  ]
+}
