@@ -3,7 +3,7 @@ const path = require("path");
 const BaseService = require(path.join(__dirname, "../baseService"));
 const {
   extractRepackageRequests,
-  repackageShipItemsForSession,
+  repackageItemsForSession,
 } = require(path.join(__dirname, "./repackagingSupport"));
 
 class RepackagingService extends BaseService {
@@ -12,7 +12,7 @@ class RepackagingService extends BaseService {
   }
 
   Handle_RepackageItems(args, session) {
-    repackageShipItemsForSession(
+    repackageItemsForSession(
       session,
       extractRepackageRequests(args && args[0]),
       "RepackagingSvc",
