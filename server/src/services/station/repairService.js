@@ -13,7 +13,7 @@ const {
 } = require(path.join(__dirname, "../_shared/serviceHelpers"));
 const {
   extractRepackageRequests,
-  repackageShipItemsForSession,
+  repackageItemsForSession,
 } = require(path.join(__dirname, "./repackagingSupport"));
 
 function buildDamageReport() {
@@ -59,7 +59,7 @@ class RepairService extends BaseService {
   }
 
   Handle_UnasembleItems(args, session) {
-    repackageShipItemsForSession(
+    repackageItemsForSession(
       session,
       extractRepackageRequests(args && args[0]),
       "RepairSvc",
