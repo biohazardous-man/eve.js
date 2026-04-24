@@ -26,6 +26,8 @@ function buildMaps() {
   const stationsById = new Map();
   const stationTypesById = new Map();
   const stargateTypesById = new Map();
+  const celestialsById = new Map();
+  const asteroidBeltsById = new Map();
   const stationsBySystem = new Map();
   const celestialsBySystem = new Map();
   const asteroidBeltsBySystem = new Map();
@@ -54,6 +56,7 @@ function buildMaps() {
   }
 
   for (const celestial of celestials) {
+    celestialsById.set(celestial.itemID, celestial);
     if (!celestialsBySystem.has(celestial.solarSystemID)) {
       celestialsBySystem.set(celestial.solarSystemID, []);
     }
@@ -61,6 +64,7 @@ function buildMaps() {
   }
 
   for (const asteroidBelt of asteroidBelts) {
+    asteroidBeltsById.set(asteroidBelt.itemID, asteroidBelt);
     if (!asteroidBeltsBySystem.has(asteroidBelt.solarSystemID)) {
       asteroidBeltsBySystem.set(asteroidBelt.solarSystemID, []);
     }
@@ -105,6 +109,8 @@ function buildMaps() {
     stationsById,
     stationTypesById,
     stargateTypesById,
+    celestialsById,
+    asteroidBeltsById,
     stationsBySystem,
     celestialsBySystem,
     asteroidBeltsBySystem,
@@ -137,6 +143,17 @@ function getStationByID(stationID) {
   return ensureLoaded().stationsById.get(Number(stationID)) || null;
 }
 
+function getStationsForOwner(ownerID) {
+  const numericOwnerID = Number(ownerID) || 0;
+  if (!numericOwnerID) {
+    return [];
+  }
+
+  return ensureLoaded().stations.filter((station) => (
+    Number(station.corporationID || station.ownerID || 0) === numericOwnerID
+  ));
+}
+
 function getStationTypeByID(stationTypeID) {
   return ensureLoaded().stationTypesById.get(Number(stationTypeID)) || null;
 }
@@ -157,10 +174,18 @@ function getAsteroidBeltsForSystem(solarSystemID) {
   ];
 }
 
+function getAsteroidBeltByID(asteroidBeltID) {
+  return ensureLoaded().asteroidBeltsById.get(Number(asteroidBeltID)) || null;
+}
+
 function getCelestialsForSystem(solarSystemID) {
   return [
     ...(ensureLoaded().celestialsBySystem.get(Number(solarSystemID)) || []),
   ];
+}
+
+function getCelestialByID(celestialID) {
+  return ensureLoaded().celestialsById.get(Number(celestialID)) || null;
 }
 
 function getStargatesForSystem(solarSystemID) {
@@ -201,10 +226,13 @@ module.exports = {
   getSolarSystems,
   getSolarSystemByID,
   getStationByID,
+  getStationsForOwner,
   getStationTypeByID,
   getStargateTypeByID,
   getStationsForSystem,
+  getAsteroidBeltByID,
   getAsteroidBeltsForSystem,
+  getCelestialByID,
   getStructureByID,
   getStructuresForSystem,
   getCelestialsForSystem,

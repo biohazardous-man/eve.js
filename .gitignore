@@ -1,3 +1,4 @@
 node_modules
 tools/ConfigEditor/assets/
 .claude
+server/src/_secondary/image/generated/Character

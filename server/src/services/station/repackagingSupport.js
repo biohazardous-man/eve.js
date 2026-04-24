@@ -9,12 +9,10 @@ const {
 } = require(path.join(__dirname, "../_shared/serviceHelpers"));
 const {
   ITEM_FLAGS,
-  SHIP_CATEGORY_ID,
-  findItemById,
+  findCharacterShipItem,
   getActiveShipItem,
   listContainerItems,
   setShipPackagingState,
-  setItemPackagingState,
 } = require(path.join(__dirname, "../inventory/itemStore"));
 const {
   syncInventoryItemForSession,
@@ -56,7 +54,7 @@ function extractRepackageRequests(rawValue) {
   return requests;
 }
 
-function repackageItemsForSession(session, requests, sourceLabel = "RepackagingSvc") {
+function repackageShipItemsForSession(session, requests, sourceLabel = "RepackagingSvc") {
   const stationID = normalizeNumber(
     session && (session.stationid || session.stationID),
     0,
@@ -73,102 +71,65 @@ function repackageItemsForSession(session, requests, sourceLabel = "RepackagingS
       continue;
     }
 
-    const item = findItemById(request.itemID);
-    if (!item) {
+    const shipItem = findCharacterShipItem(charID, request.itemID);
+    if (!shipItem) {
       continue;
     }
 
-    if (normalizeNumber(item.ownerID, 0) !== charID) {
+    if (
+      activeShip &&
+      normalizeNumber(activeShip.itemID, 0) === normalizeNumber(shipItem.itemID, 0)
+    ) {
       log.warn(
-        `[${sourceLabel}] Refusing to repackage item ${item.itemID} not owned by character ${charID}`,
+        `[${sourceLabel}] Refusing to repackage active ship ${shipItem.itemID}`,
       );
       continue;
     }
 
     if (
-      normalizeNumber(item.locationID, 0) !== stationID ||
-      normalizeNumber(item.flagID, 0) !== ITEM_FLAGS.HANGAR
+      normalizeNumber(shipItem.locationID, 0) !== stationID ||
+      normalizeNumber(shipItem.flagID, 0) !== ITEM_FLAGS.HANGAR
     ) {
       log.warn(
-        `[${sourceLabel}] Refusing to repackage item ${item.itemID} outside station hangar`,
+        `[${sourceLabel}] Refusing to repackage ship ${shipItem.itemID} outside station hangar`,
       );
       continue;
     }
 
-    const nestedItems = listContainerItems(charID, item.itemID, null);
+    const nestedItems = listContainerItems(charID, shipItem.itemID, null);
     if (nestedItems.length > 0) {
       log.warn(
-        `[${sourceLabel}] Refusing to repackage item ${item.itemID} with ${nestedItems.length} contained items`,
+        `[${sourceLabel}] Refusing to repackage ship ${shipItem.itemID} with ${nestedItems.length} contained items`,
       );
       continue;
     }
 
-    const isShip = normalizeNumber(item.categoryID, 0) === SHIP_CATEGORY_ID;
-
-    if (isShip) {
-      if (
-        activeShip &&
-        normalizeNumber(activeShip.itemID, 0) === normalizeNumber(item.itemID, 0)
-      ) {
-        log.warn(
-          `[${sourceLabel}] Refusing to repackage active ship ${item.itemID}`,
-        );
-        continue;
-      }
-
-      const updateResult = setShipPackagingState(item.itemID, true);
-      if (!updateResult.success) {
-        log.warn(
-          `[${sourceLabel}] Failed to repackage ship ${item.itemID}: ${normalizeText(updateResult.errorMsg, "WRITE_ERROR")}`,
-        );
-        continue;
-      }
-
-      syncInventoryItemForSession(
-        session,
-        updateResult.data,
-        {
-          locationID: updateResult.previousData.locationID,
-          flagID: updateResult.previousData.flagID,
-          quantity: updateResult.previousData.quantity,
-          singleton: updateResult.previousData.singleton,
-          stacksize: updateResult.previousData.stacksize,
-        },
-        { emitCfgLocation: false },
+    const updateResult = setShipPackagingState(shipItem.itemID, true);
+    if (!updateResult.success) {
+      log.warn(
+        `[${sourceLabel}] Failed to repackage ship ${shipItem.itemID}: ${normalizeText(updateResult.errorMsg, "WRITE_ERROR")}`,
       );
-    } else {
-      if (normalizeNumber(item.singleton, 0) !== 1) {
-        log.warn(
-          `[${sourceLabel}] Refusing to repackage item ${item.itemID}: already stackable`,
-        );
-        continue;
-      }
-
-      const updateResult = setItemPackagingState(item.itemID, true);
-      if (!updateResult.success) {
-        log.warn(
-          `[${sourceLabel}] Failed to repackage item ${item.itemID}: ${normalizeText(updateResult.errorMsg, "WRITE_ERROR")}`,
-        );
-        continue;
-      }
-
-      syncInventoryItemForSession(
-        session,
-        updateResult.data,
-        {
-          locationID: updateResult.previousData.locationID,
-          flagID: updateResult.previousData.flagID,
-          quantity: updateResult.previousData.quantity,
-          singleton: updateResult.previousData.singleton,
-          stacksize: updateResult.previousData.stacksize,
-        },
-        { emitCfgLocation: false },
-      );
+      continue;
     }
+
+    syncInventoryItemForSession(
+      session,
+      updateResult.data,
+      {
+        locationID: updateResult.previousData.locationID,
+        flagID: updateResult.previousData.flagID,
+        quantity: updateResult.previousData.quantity,
+        singleton: updateResult.previousData.singleton,
+        stacksize: updateResult.previousData.stacksize,
+      },
+      {
+        emitCfgLocation: false,
+      },
+    );
   }
 }
 
 module.exports = {
   extractRepackageRequests,
-  repackageItemsForSession,
+  repackageShipItemsForSession,
 };

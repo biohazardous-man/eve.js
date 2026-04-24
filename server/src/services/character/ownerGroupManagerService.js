@@ -1,22 +1,17 @@
 const path = require("path");
 
 const BaseService = require(path.join(__dirname, "../baseService"));
+const runtime = require(path.join(__dirname, "../bookmark/bookmarkRuntimeState"));
+const {
+  buildGroupPayload,
+} = require(path.join(__dirname, "../bookmark/bookmarkPayloads"));
 
-function cloneValue(value) {
-  if (value === undefined || value === null) {
-    return value;
-  }
-  return JSON.parse(JSON.stringify(value));
+function getCharacterID(session) {
+  return Number(session && session.characterID) || 0;
 }
 
-function normalizeInteger(value, fallback = 0) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.trunc(numeric) : fallback;
-}
-
-function normalizePositiveInteger(value, fallback = null) {
-  const numeric = normalizeInteger(value, 0);
-  return numeric > 0 ? numeric : fallback;
+function buildGroupList(groups = []) {
+  return (Array.isArray(groups) ? groups : []).map(buildGroupPayload);
 }
 
 class OwnerGroupManagerService extends BaseService {
@@ -24,24 +19,22 @@ class OwnerGroupManagerService extends BaseService {
     super("ownerGroupManager");
   }
 
-  Handle_GetMyGroups() {
-    return [];
+  Handle_GetMyGroups(args, session) {
+    return buildGroupList(runtime.listGroupsForCharacter(getCharacterID(session)));
   }
 
-  Handle_GetGroup(args) {
-    const groupID = normalizePositiveInteger(args && args[0], null);
-    if (!groupID) {
-      return null;
-    }
-    return null;
+  Handle_GetGroup(args, session) {
+    const group = runtime.getGroupForCharacter(getCharacterID(session), args && args[0]);
+    return group ? buildGroupPayload(group) : null;
   }
 
-  Handle_GetGroupsMany(args) {
-    const groupIDs = Array.isArray(args && args[0]) ? args[0] : [];
-    return groupIDs
-      .map((groupID) => normalizePositiveInteger(groupID, null))
-      .filter(Boolean)
-      .map(() => null);
+  Handle_GetGroupsMany(args, session) {
+    return buildGroupList(
+      runtime.getGroupsManyForCharacter(
+        getCharacterID(session),
+        Array.isArray(args && args[0]) ? args[0] : [],
+      ),
+    );
   }
 
   Handle_GetMembers() {
@@ -56,23 +49,24 @@ class OwnerGroupManagerService extends BaseService {
     return [];
   }
 
-  Handle_GetPublicGroupInfo() {
-    return null;
+  Handle_GetPublicGroupInfo(args, session) {
+    const group = runtime.getGroupForCharacter(getCharacterID(session), args && args[0]);
+    return group ? buildGroupPayload(group) : null;
   }
 
-  Handle_SearchGroups() {
-    return [];
+  Handle_SearchGroups(args, session) {
+    return buildGroupList(runtime.listGroupsForCharacter(getCharacterID(session)));
   }
 
-  Handle_GetMyGroupsAndMembers() {
+  Handle_GetMyGroupsAndMembers(args, session) {
     return {
-      groups: [],
+      groups: buildGroupList(runtime.listGroupsForCharacter(getCharacterID(session))),
       membersByGroupID: {},
     };
   }
 
-  Handle_GetMyGroupsToUseForBookmarks() {
-    return [];
+  Handle_GetMyGroupsToUseForBookmarks(args, session) {
+    return buildGroupList(runtime.listGroupsForCharacter(getCharacterID(session)));
   }
 
   Handle_CreateGroup() {
@@ -96,7 +90,7 @@ class OwnerGroupManagerService extends BaseService {
   }
 
   Handle_UpdateMemberships(args) {
-    return cloneValue(Array.isArray(args && args[0]) ? args[0] : []);
+    return Array.isArray(args && args[0]) ? args[0] : [];
   }
 }
 
